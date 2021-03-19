@@ -6,16 +6,6 @@ LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
 static constexpr const wchar_t* WIN_CLASS_NAME = L"Win32Control";
 
-Win32Control::Win32Control(const std::wstring& pAppName, size_t width, size_t height)
-    : IControl(pAppName, width, height)
-    , m_hinstance(nullptr)
-    , m_hwnd(0)
-{
-    m_hinstance = GetModuleHandle(NULL);;
-    assert(m_hinstance);
-    m_hwnd = 0;
-}
-
 Win32Control::~Win32Control()
 {
     DestroyWindow(m_hwnd);
@@ -23,6 +13,9 @@ Win32Control::~Win32Control()
 
 void Win32Control::init()
 {
+    m_hinstance = GetModuleHandle(NULL);
+    assert(m_hinstance);
+
     WNDCLASSEX wndcls = {};
 
     wndcls.cbSize = sizeof(wndcls);
@@ -51,7 +44,7 @@ void Win32Control::init()
 
     m_hwnd = CreateWindowEx(0,
         WIN_CLASS_NAME,                        // class name
-        m_appName.c_str(),
+        m_appName.data(),
         style,
         rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
         NULL,

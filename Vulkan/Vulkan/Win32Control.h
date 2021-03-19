@@ -11,9 +11,14 @@ class Win32Control : public IControl
 {
 public:
 
-    Win32Control(const std::wstring& pAppName, size_t width, size_t height);
+    constexpr Win32Control(std::wstring_view appName, size_t width, size_t height)
+        : IControl(appName, width, height)
+        , m_hinstance(nullptr)
+        , m_hwnd(0)
+    {
+    }
 
-    ~Win32Control();
+    virtual ~Win32Control();
 
     virtual void init() override;
 

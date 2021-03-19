@@ -3,7 +3,7 @@
 #include "VulkanCore.h"
 
 
-std::wstring _appName = L"Vulkan";
+static constexpr std::wstring_view _appName{ L"Vulkan" };
 
 static constexpr int16_t WINDOW_WIDTH = 1024;
 static constexpr int16_t WINDOW_HEIGHT = 1024;
