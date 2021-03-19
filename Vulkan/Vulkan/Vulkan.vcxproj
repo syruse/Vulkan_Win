@@ -150,6 +150,7 @@
     <ClCompile Include="Win32Control.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="IControl.h" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="VulkanCore.h" />
     <ClInclude Include="Win32Control.h" />

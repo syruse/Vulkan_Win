@@ -38,7 +38,7 @@ void VulkanCore::Init(Win32Control* pWindowControl)
 
     CreateInstance();
 
-    m_surface = pWindowControl->CreateSurface(m_inst);
+    m_surface = pWindowControl->createSurface(m_inst);
     assert(m_surface);
 
     printf("Surface created\n");

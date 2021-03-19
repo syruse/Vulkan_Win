@@ -4,24 +4,23 @@
 #include "vulkan/vulkan.h"
 #include "vulkan/vulkan_win32.h"
 #include "vulkan/vk_sdk_platform.h"
+#include "IControl.h"
 #include "string"
 
-class Win32Control
+class Win32Control : public IControl
 {
 public:
 
-    Win32Control(const std::wstring& pAppName);
+    Win32Control(const std::wstring& pAppName, size_t width, size_t height);
 
     ~Win32Control();
 
-    void Init(size_t Width, size_t Height);
+    virtual void init() override;
 
-    VkSurfaceKHR CreateSurface(VkInstance& inst);
+    virtual VkSurfaceKHR createSurface(VkInstance& inst) const override;
 
 private:
-
     HINSTANCE    m_hinstance;
     HWND         m_hwnd;
-    std::wstring m_appName;
 };
 

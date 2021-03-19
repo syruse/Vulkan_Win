@@ -6,10 +6,10 @@ LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
 static constexpr const wchar_t* WIN_CLASS_NAME = L"Win32Control";
 
-Win32Control::Win32Control(const std::wstring& pAppName)
-    : m_hinstance(nullptr)
+Win32Control::Win32Control(const std::wstring& pAppName, size_t width, size_t height)
+    : IControl(pAppName, width, height)
+    , m_hinstance(nullptr)
     , m_hwnd(0)
-    , m_appName(pAppName)
 {
     m_hinstance = GetModuleHandle(NULL);;
     assert(m_hinstance);
@@ -21,7 +21,7 @@ Win32Control::~Win32Control()
     DestroyWindow(m_hwnd);
 }
 
-void Win32Control::Init(size_t Width, size_t Height)
+void Win32Control::init()
 {
     WNDCLASSEX wndcls = {};
 
@@ -39,8 +39,8 @@ void Win32Control::Init(size_t Width, size_t Height)
     RECT rect;
     rect.left = 50;
     rect.top = 50;
-    rect.right = Width + rect.left;
-    rect.bottom = Height + rect.top;
+    rect.right = m_width + rect.left;
+    rect.bottom = m_height + rect.top;
 
     UINT style = WS_OVERLAPPEDWINDOW;
 
@@ -67,7 +67,7 @@ void Win32Control::Init(size_t Width, size_t Height)
     ShowWindow(m_hwnd, SW_SHOW);
 }
 
-VkSurfaceKHR Win32Control::CreateSurface(VkInstance& inst)
+VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const
 {
     VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
     surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
