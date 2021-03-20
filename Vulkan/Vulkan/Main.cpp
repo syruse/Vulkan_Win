@@ -2,6 +2,7 @@
 #include "Win32Control.h"
 #include "VulkanCore.h"
 
+#include <iostream>
 
 static constexpr std::wstring_view _appName{ L"Vulkan" };
 
@@ -11,15 +12,11 @@ static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr int16_t MAX_OBJECTS = 1;
 
 
-Win32Control* _pWindowControl;
-VulkanCore _core("Vulkan");
+VulkanCore _core(std::make_unique<Win32Control>(_appName, WINDOW_WIDTH, WINDOW_HEIGHT));
 
 int main(int argc, char** argv)
 {
-    _pWindowControl = new Win32Control(_appName, WINDOW_WIDTH, WINDOW_HEIGHT);
-    _pWindowControl->init();
-
-    _core.Init(_pWindowControl);
+    _core.init();
 
     /* program main loop */
     bool bQuit = false;

@@ -2,7 +2,7 @@
 #include "Utils.h"
 #include <vector>
 #include <cassert>
-
+#include "IControl.h"
 
 using namespace Utils;
 
@@ -23,45 +23,53 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(
 }
 
 
-VulkanCore::VulkanCore(const char* pAppName)
+VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController)
+    : m_winController(std::move(winController))
 {
-    m_appName = std::string(pAppName);
-    m_gfxDevIndex = -1;
-    m_gfxQueueFamily = -1;
 }
 
 
-void VulkanCore::Init(Win32Control* pWindowControl)
+void VulkanCore::init()
 {
+    assert(m_winController);
+
+    m_winController->init();
+
     std::vector<VkExtensionProperties> ExtProps;
     VulkanEnumExtProps(ExtProps);
 
-    CreateInstance();
+    createInstance();
 
-    m_surface = pWindowControl->createSurface(m_inst);
+    m_surface = createSurface(m_inst);
     assert(m_surface);
 
     printf("Surface created\n");
 
     VulkanGetPhysicalDevices(m_inst, m_surface, m_physDevices);
-    SelectPhysicalDevice();
-    CreateLogicalDevice();
+    selectPhysicalDevice();
+    createLogicalDevice();
 }
 
-const VkPhysicalDevice& VulkanCore::GetPhysDevice() const
+VkSurfaceKHR VulkanCore::createSurface(VkInstance& inst)
+{
+    assert(m_winController);
+    return m_winController->createSurface(inst);
+}
+
+const VkPhysicalDevice& VulkanCore::getPhysDevice() const
 {
     assert(m_gfxDevIndex >= 0);
     return m_physDevices.m_devices[m_gfxDevIndex];
 }
 
-const VkSurfaceFormatKHR& VulkanCore::GetSurfaceFormat() const
+const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const
 {
     assert(m_gfxDevIndex >= 0);
     return m_physDevices.m_surfaceFormats[m_gfxDevIndex][0];
 }
 
 
-const VkSurfaceCapabilitiesKHR VulkanCore::GetSurfaceCaps() const
+const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps() const
 {
     assert(m_gfxDevIndex >= 0);
     return m_physDevices.m_surfaceCaps[m_gfxDevIndex];
@@ -69,7 +77,7 @@ const VkSurfaceCapabilitiesKHR VulkanCore::GetSurfaceCaps() const
 }
 
 
-void VulkanCore::SelectPhysicalDevice()
+void VulkanCore::selectPhysicalDevice()
 {
     for (size_t i = 0; i < m_physDevices.m_devices.size(); ++i) {
 
@@ -104,11 +112,15 @@ void VulkanCore::SelectPhysicalDevice()
 }
 
 
-void VulkanCore::CreateInstance()
+void VulkanCore::createInstance()
 {
+    assert(m_winController);
+    const std::wstring appNameW(m_winController->getAppName().data());
+    const std::string appName(appNameW.begin(), appNameW.end());
+
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = m_appName.c_str();
+    appInfo.pApplicationName = appName.c_str();
     appInfo.engineVersion = 1;
     appInfo.apiVersion = VK_API_VERSION_1_2;
 
@@ -164,7 +176,7 @@ void VulkanCore::CreateInstance()
 }
 
 
-void VulkanCore::CreateLogicalDevice()
+void VulkanCore::createLogicalDevice()
 {
     VkDeviceQueueCreateInfo qInfo = {};
     qInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -185,7 +197,7 @@ void VulkanCore::CreateLogicalDevice()
     devInfo.queueCreateInfoCount = 1;
     devInfo.pQueueCreateInfos = &qInfo;
 
-    VkResult res = vkCreateDevice(GetPhysDevice(), &devInfo, NULL, &m_device);
+    VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, NULL, &m_device);
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 

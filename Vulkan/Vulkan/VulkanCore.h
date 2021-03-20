@@ -2,46 +2,49 @@
 
 #include "Win32Control.h"
 #include "Utils.h"
+#include <memory>
+
+class IControl;
 
 class VulkanCore
 {
-
 public:
-    VulkanCore(const char* pAppName);
+    explicit VulkanCore(std::unique_ptr<IControl>&& winController);
+
     ~VulkanCore() = default;
 
-    void Init(Win32Control* pWindowControl);
+    void init();
 
-    const VkPhysicalDevice& GetPhysDevice() const;
+    const VkPhysicalDevice& getPhysDevice() const;
 
-    const VkSurfaceFormatKHR& GetSurfaceFormat() const;
+    const VkSurfaceFormatKHR& getSurfaceFormat() const;
 
-    const VkSurfaceCapabilitiesKHR GetSurfaceCaps() const;
+    const VkSurfaceCapabilitiesKHR getSurfaceCaps() const;
 
-    const VkSurfaceKHR& GetSurface() const { return m_surface; }
+    const VkSurfaceKHR& getSurface() const { return m_surface; }
 
-    int GetQueueFamily() const { return m_gfxQueueFamily; }
+    int getQueueFamily() const { return m_gfxQueueFamily; }
 
-    VkInstance& GetInstance() { return m_inst; }
+    VkInstance& getInstance() { return m_inst; }
 
-    VkDevice& GetDevice() { return m_device; }
+    VkDevice& getDevice() { return m_device; }
 
 private:
-    void CreateInstance();
-    void CreateSurface();
-    void SelectPhysicalDevice();
-    void CreateLogicalDevice();
+    void createInstance();
+    VkSurfaceKHR createSurface(VkInstance& inst);
+    void selectPhysicalDevice();
+    void createLogicalDevice();
+
+    std::unique_ptr<IControl> m_winController = nullptr;
 
     // Vulkan objects
-    VkInstance m_inst;
-    VkSurfaceKHR m_surface;
-    Utils::VulkanPhysicalDevices m_physDevices;
-    VkDevice m_device;
+    VkInstance m_inst = nullptr;
+    VkSurfaceKHR m_surface = nullptr;
+    Utils::VulkanPhysicalDevices m_physDevices {};
+    VkDevice m_device = nullptr;
 
     // Internal stuff
-    std::string m_appName;
-    int m_gfxDevIndex;
-    int m_gfxQueueFamily;
-
+    int m_gfxDevIndex = - 1;
+    int m_gfxQueueFamily = -1;;
 };
 

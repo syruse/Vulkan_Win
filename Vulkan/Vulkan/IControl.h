@@ -19,6 +19,11 @@ public:
 
     virtual VkSurfaceKHR createSurface(VkInstance& inst) const = 0;
 
+    inline std::wstring_view getAppName() const 
+    { 
+        return m_appName;
+    }
+
 protected:
     std::wstring_view m_appName;
     size_t m_width;
