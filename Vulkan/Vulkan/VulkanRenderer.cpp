@@ -451,7 +451,7 @@ void VulkanRenderer::renderScene()
     vkResetFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
 
     uint32_t ImageIndex = 0;
-    VkResult res = vkAcquireNextImageKHR(m_core.getDevice(), m_swapChainKHR, UINT64_MAX, m_presentCompleteSem[m_currentFrame], NULL, &ImageIndex);
+    VkResult res = vkAcquireNextImageKHR(m_core.getDevice(), m_swapChainKHR, UINT64_MAX, m_presentCompleteSem[m_currentFrame], VK_NULL_HANDLE, &ImageIndex);
     CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
 
     VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;

@@ -44,6 +44,7 @@ namespace Utils {
 
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
+    void VulkanCheckValidationLayerSupport();
     void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps);
     void VulkanGetPhysicalDevices(const VkInstance& inst, const VkSurfaceKHR& Surface, VulkanPhysicalDevices& PhysDevices);
     size_t VulkanFindMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties);

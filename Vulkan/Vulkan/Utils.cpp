@@ -258,4 +258,18 @@ namespace Utils {
         return shaderModule;
     }
 
+    void VulkanCheckValidationLayerSupport() 
+    {
+        uint32_t layerCount;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+        for (const auto& layer : availableLayers) 
+        {
+            INFO(layer.layerName);
+        }
+    }
+
 }

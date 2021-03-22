@@ -38,6 +38,8 @@ void VulkanCore::init()
     std::vector<VkExtensionProperties> ExtProps;
     VulkanEnumExtProps(ExtProps);
 
+    VulkanCheckValidationLayerSupport();
+
     createInstance();
 
     m_surface = createSurface(m_inst);
@@ -145,7 +147,7 @@ void VulkanCore::createInstance()
     VkInstanceCreateInfo instInfo = {};
     instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instInfo.pApplicationInfo = &appInfo;
-#ifdef ENABLE_DEBUG_LAYERS    
+#ifdef _DEBUG    
     instInfo.enabledLayerCount = ARRAY_SIZE_IN_ELEMENTS(pInstLayers);
     instInfo.ppEnabledLayerNames = pInstLayers;
 #endif    
