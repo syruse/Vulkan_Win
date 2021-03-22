@@ -18,7 +18,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(
     const char* pMessage,
     void* pUserData)
 {
-    printf("%s\n", pMessage);
+    INFO("%s\n", pMessage);
     return VK_FALSE;
 }
 
@@ -43,7 +43,7 @@ void VulkanCore::init()
     m_surface = createSurface(m_inst);
     assert(m_surface);
 
-    printf("Surface created\n");
+    INFO("Surface created\n");
 
     VulkanGetPhysicalDevices(m_inst, m_surface, m_physDevices);
     selectPhysicalDevice();
@@ -84,9 +84,9 @@ void VulkanCore::selectPhysicalDevice()
         for (size_t j = 0; j < m_physDevices.m_qFamilyProps[i].size(); ++j) {
             VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[i][j];
 
-            printf("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+            INFO("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
             VkQueueFlags flags = QFamilyProp.queueFlags;
-            printf("    GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
+            INFO("    GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
                 (flags & VK_QUEUE_GRAPHICS_BIT) ? "Yes" : "No",
                 (flags & VK_QUEUE_COMPUTE_BIT) ? "Yes" : "No",
                 (flags & VK_QUEUE_TRANSFER_BIT) ? "Yes" : "No",
@@ -94,19 +94,19 @@ void VulkanCore::selectPhysicalDevice()
 
             if ((flags & VK_QUEUE_GRAPHICS_BIT) && (m_gfxDevIndex == -1)) {
                 if (!m_physDevices.m_qSupportsPresent[i][j]) {
-                    printf("Present is not supported\n");
+                    INFO("Present is not supported\n");
                     continue;
                 }
 
                 m_gfxDevIndex = i;
                 m_gfxQueueFamily = j;
-                printf("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
+                INFO("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
             }
         }
     }
 
     if (m_gfxDevIndex == -1) {
-        printf("No GFX device found!\n");
+        INFO("No GFX device found!\n");
         assert(0);
     }
 }
@@ -125,7 +125,7 @@ void VulkanCore::createInstance()
     appInfo.apiVersion = VK_API_VERSION_1_2;
 
     const char* pInstExt[] = {
-#ifdef ENABLE_DEBUG_LAYERS
+#ifdef _DEBUG
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif        
         VK_KHR_SURFACE_EXTENSION_NAME,
@@ -136,7 +136,7 @@ void VulkanCore::createInstance()
 #endif            
     };
 
-#ifdef ENABLE_DEBUG_LAYERS    
+#ifdef _DEBUG
     const char* pInstLayers[] = {
         "VK_LAYER_KHRONOS_validation"
     };
@@ -155,7 +155,7 @@ void VulkanCore::createInstance()
     VkResult res = vkCreateInstance(&instInfo, NULL, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
 
-#ifdef ENABLE_DEBUG_LAYERS
+#ifdef _DEBUG
     // Get the address to the vkCreateDebugReportCallbackEXT function
     my_vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));
 
@@ -201,5 +201,5 @@ void VulkanCore::createLogicalDevice()
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 
-    printf("Device created\n");
+    INFO("Device created\n");
 }

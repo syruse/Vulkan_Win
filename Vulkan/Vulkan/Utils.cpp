@@ -2,10 +2,11 @@
 #include <windows.h>
 #include <stdio.h>
 #include <assert.h>
+#include <fstream>
 
 namespace Utils {
 
-    void printErrorF(const char* pFileName, size_t line, const char* format, ...)
+    void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
         char msg[1000];
         va_list args;
@@ -13,10 +14,10 @@ namespace Utils {
         vsnprintf_s(msg, sizeof(msg), format, args);
         va_end(args);
 
-        printLog(true, pFileName, line, msg);
+        printLog(true, "\nin file: ", pFileName, " at line: ", line, " from function: ", pFuncName, " \n ", msg);
     }
 
-    void printInfoF(const char* pFileName, size_t line, const char* format, ...)
+    void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
         char msg[1000];
         va_list args;
@@ -24,7 +25,7 @@ namespace Utils {
         vsnprintf_s(msg, sizeof(msg), format, args);
         va_end(args);
 
-        printLog(false, pFileName, line, msg);
+        printLog(false, "\nin file: ", pFileName, " at line: ", line, " from function: ", pFuncName, " \n ", msg);
     }
 
     void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps)
@@ -40,8 +41,8 @@ namespace Utils {
         res = vkEnumerateInstanceExtensionProperties(NULL, &NumExt, &ExtProps[0]);
         CHECK_VULKAN_ERROR("vkEnumerateInstanceExtensionProperties error %d\n", res);
 
-        for (size_t i = 0; i < NumExt; ++i) {
-            printf("Instance extension %d - %s\n", i, ExtProps[i].extensionName);
+        for (decltype(NumExt) i = 0; i < NumExt; ++i) {
+            INFO("Instance extension %d - %s\n", i, ExtProps[i].extensionName);
         }
     }
 
@@ -154,7 +155,7 @@ namespace Utils {
         }
     }
 
-    size_t findMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties) 
+    size_t VulkanFindMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties)
     {
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -168,7 +169,7 @@ namespace Utils {
         ERROR("failed to find suitable memory type!");
     }
 
-    void createBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage, 
+    void VulkanÑreateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) 
     {
         VkBufferCreateInfo bufferInfo{};
@@ -187,7 +188,7 @@ namespace Utils {
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements, properties);
+        allocInfo.memoryTypeIndex = Utils::VulkanFindMemoryType(physicalDevice, memRequirements, properties);
 
         if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
             ERROR("failed to allocate buffer memory!");
@@ -196,7 +197,7 @@ namespace Utils {
         vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
-    void copyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+    void VulkanÑopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
     {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -230,5 +231,31 @@ namespace Utils {
         vkFreeCommandBuffers(device, cmdBufPool, 1, &commandBuffer);
     }
 
+    VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName)
+    {
+        assert(fileName.data());
+        std::ifstream file(fileName.data(), std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            ERROR(fileName.data());
+        }
+        size_t codeSize = (size_t)file.tellg();
+        assert(codeSize);
+
+        std::vector<char> buffer(codeSize);
+        file.seekg(0);
+        file.read(buffer.data(), codeSize);
+        file.close();
+
+        VkShaderModuleCreateInfo shaderCreateInfo = {};
+        shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shaderCreateInfo.codeSize = codeSize;
+        shaderCreateInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
+
+        VkShaderModule shaderModule;
+        VkResult res = vkCreateShaderModule(device, &shaderCreateInfo, NULL, &shaderModule);
+        CHECK_VULKAN_ERROR("vkCreateShaderModule error %d\n", res);
+        INFO("Created shader %s \n", fileName.data());
+        return shaderModule;
+    }
 
 }

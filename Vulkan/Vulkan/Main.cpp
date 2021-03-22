@@ -1,24 +1,21 @@
 #include <windows.h>
 #include "Win32Control.h"
-#include "VulkanCore.h"
+#include "VulkanRenderer.h"
 
 #include <iostream>
+
 
 static constexpr std::wstring_view _appName{ L"Vulkan" };
 
 static constexpr int16_t WINDOW_WIDTH = 1024;
-static constexpr int16_t WINDOW_HEIGHT = 1024;
-static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 2;
-static constexpr int16_t MAX_OBJECTS = 1;
+static constexpr int16_t WINDOW_HEIGHT = 1024; 
 
-
-VulkanCore _core(std::make_unique<Win32Control>(_appName, WINDOW_WIDTH, WINDOW_HEIGHT));
+VulkanRenderer _vulkanRenderer(_appName, WINDOW_WIDTH, WINDOW_HEIGHT);
 
 int main(int argc, char** argv)
 {
-    _core.init();
 
-    Utils::printLog(false, 10, 0.1f, "hello");
+    _vulkanRenderer.init();
 
     /* program main loop */
     bool bQuit = false;
@@ -41,7 +38,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            /* animation code goes here */
+            _vulkanRenderer.renderScene();
 
             Sleep(1);
         }

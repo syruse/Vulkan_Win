@@ -80,7 +80,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\VulkanSDK\VulkanLocalVer\Include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\VulkanSDK\VulkanLocalVer\Include;$(SolutionDir)\glm_0.9.9.9;$(IncludePath)</IncludePath>
     <LibraryPath>C:\VulkanSDK\VulkanLocalVer\Lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -123,7 +123,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\VulkanLocalVer\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\VulkanLocalVer\Include;$(SolutionDir)\glm_0.9.9.9;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -152,12 +152,14 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="VulkanCore.cpp" />
+    <ClCompile Include="VulkanRenderer.cpp" />
     <ClCompile Include="Win32Control.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IControl.h" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="VulkanCore.h" />
+    <ClInclude Include="VulkanRenderer.h" />
     <ClInclude Include="Win32Control.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
