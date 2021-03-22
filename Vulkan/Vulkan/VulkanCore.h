@@ -11,7 +11,7 @@ class VulkanCore
 public:
     explicit VulkanCore(std::unique_ptr<IControl>&& winController);
 
-    ~VulkanCore() = default;
+    ~VulkanCore();
 
     void init();
 

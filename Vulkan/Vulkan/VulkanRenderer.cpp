@@ -15,6 +15,12 @@ VulkanRenderer::~VulkanRenderer()
 
     _aligned_free(mp_modelTransferSpace);
 
+    vkDestroyShaderModule(m_core.getDevice(), m_vsModule, nullptr);
+    vkDestroyShaderModule(m_core.getDevice(), m_fsModule, nullptr);
+    vkDestroyPipeline(m_core.getDevice(), m_pipeline, nullptr);
+    vkDestroyPipelineLayout(m_core.getDevice(), m_pipelineLayout, nullptr);
+    vkDestroyRenderPass(m_core.getDevice(), m_renderPass, nullptr);
+
     vkDestroyBuffer(m_core.getDevice(), m_vertexBuffer, nullptr);
     vkFreeMemory(m_core.getDevice(), m_vertexBufferMemory, nullptr);
     vkDestroyBuffer(m_core.getDevice(), m_indexBuffer, nullptr);
@@ -48,9 +54,6 @@ VulkanRenderer::~VulkanRenderer()
     }
 
     vkDestroyCommandPool(m_core.getDevice(), m_cmdBufPool, nullptr);
-    vkDestroyDevice(m_core.getDevice(), nullptr);
-    vkDestroySurfaceKHR(m_core.getInstance(), m_core.getSurface(), nullptr);
-    vkDestroyInstance(m_core.getInstance(), nullptr);
 }
 
 void VulkanRenderer::createPushConstantRange()

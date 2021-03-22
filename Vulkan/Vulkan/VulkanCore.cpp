@@ -6,8 +6,6 @@
 
 using namespace Utils;
 
-PFN_vkCreateDebugReportCallbackEXT my_vkCreateDebugReportCallbackEXT = NULL;
-
 VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(
     VkDebugReportFlagsEXT       flags,
     VkDebugReportObjectTypeEXT  objectType,
@@ -28,6 +26,21 @@ VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController)
 {
 }
 
+VulkanCore::~VulkanCore()
+{
+
+#ifdef _DEBUG
+    // Get the address to the vkCreateDebugReportCallbackEXT function
+    auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_inst, "vkDestroyDebugUtilsMessengerEXT"));
+    if (func != nullptr) {
+        func(m_inst, NULL, NULL);
+    }
+#endif
+
+    vkDestroyDevice(m_device, nullptr);
+    vkDestroySurfaceKHR(m_inst, m_surface, nullptr);
+    vkDestroyInstance(m_inst, nullptr);
+}
 
 void VulkanCore::init()
 {
@@ -159,7 +172,8 @@ void VulkanCore::createInstance()
 
 #ifdef _DEBUG
     // Get the address to the vkCreateDebugReportCallbackEXT function
-    my_vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));
+    PFN_vkCreateDebugReportCallbackEXT my_vkCreateDebugReportCallbackEXT = 
+        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));
 
     // Register the debug callback
     VkDebugReportCallbackCreateInfoEXT callbackCreateInfo;

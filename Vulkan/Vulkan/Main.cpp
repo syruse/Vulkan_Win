@@ -7,8 +7,8 @@
 
 static constexpr std::wstring_view _appName{ L"Vulkan" };
 
-static constexpr int16_t WINDOW_WIDTH = 1024;
-static constexpr int16_t WINDOW_HEIGHT = 1024; 
+static constexpr int16_t WINDOW_WIDTH = 512;
+static constexpr int16_t WINDOW_HEIGHT = 512; 
 
 VulkanRenderer _vulkanRenderer(_appName, WINDOW_WIDTH, WINDOW_HEIGHT);
 
