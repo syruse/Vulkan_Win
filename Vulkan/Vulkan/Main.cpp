@@ -18,6 +18,8 @@ int main(int argc, char** argv)
 {
     _core.init();
 
+    Utils::printLog(false, 10, 0.1f, "hello");
+
     /* program main loop */
     bool bQuit = false;
     MSG msg;
