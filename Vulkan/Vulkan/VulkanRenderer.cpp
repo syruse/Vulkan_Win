@@ -44,6 +44,9 @@ VulkanRenderer::~VulkanRenderer()
 
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
 
+    vkDestroySampler(m_core.getDevice(), m_textureSampler, nullptr);
+    vkDestroyImageView(m_core.getDevice(), m_textureImageView, nullptr);
+
     vkDestroyImage(m_core.getDevice(), m_textureImage, nullptr);
     vkFreeMemory(m_core.getDevice(), m_textureImageMemory, nullptr);
 
@@ -139,7 +142,15 @@ void VulkanRenderer::createDescriptorSetLayout()
     modelLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     modelLayoutBinding.pImmutableSamplers = nullptr;
 
-    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = { uboLayoutBinding, modelLayoutBinding };
+    // Texture
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 2;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = { uboLayoutBinding, modelLayoutBinding, samplerLayoutBinding };
     // Create Descriptor Set Layout with given bindings
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -164,8 +175,13 @@ void VulkanRenderer::createDescriptorPool()
     modelPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     modelPoolSize.descriptorCount = static_cast<uint32_t>(m_images.size());
 
+    // Texture
+    VkDescriptorPoolSize texturePoolSize = {};
+    texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    texturePoolSize.descriptorCount = static_cast<uint32_t>(m_images.size());
+
     // List of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptorPoolSizes = { poolSize, modelPoolSize };
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes = { poolSize, modelPoolSize, texturePoolSize };
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -228,8 +244,24 @@ void VulkanRenderer::createDescriptorSets()
         modelSetWrite.descriptorCount = 1;
         modelSetWrite.pBufferInfo = &modelBufferInfo;
 
+
+        // Texture
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = m_textureImageView;
+        imageInfo.sampler = m_textureSampler;
+
+        VkWriteDescriptorSet textureSetWrite = {};
+        textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        textureSetWrite.dstSet = m_descriptorSets[i];
+        textureSetWrite.dstBinding = 2;
+        textureSetWrite.dstArrayElement = 0;
+        textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        textureSetWrite.descriptorCount = 1;
+        textureSetWrite.pImageInfo = &imageInfo;
+
         // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites = { descriptorWrite, modelSetWrite };
+        std::vector<VkWriteDescriptorSet> setWrites = { descriptorWrite, modelSetWrite, textureSetWrite };
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
@@ -377,6 +409,38 @@ void VulkanRenderer::createCommandBuffer()
 void VulkanRenderer::createTextureImage()
 {
     Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
+}
+
+void VulkanRenderer::createTextureImageView()
+{
+	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, m_textureImageView) != VK_SUCCESS) {
+		ERROR("failed to create texture image view!");
+	}
+}
+
+void VulkanRenderer::createTextureSampler()
+{
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(m_core.getPhysDevice(), &properties);
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; /// -> [0: 1]
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+    if (vkCreateSampler(m_core.getDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
+        ERROR("failed to create texture sampler!");
+    }
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
@@ -538,23 +602,9 @@ void VulkanRenderer::createFramebuffer()
     VkResult res;
 
     for (size_t i = 0; i < m_images.size(); i++) {
-        VkImageViewCreateInfo ViewCreateInfo = {};
-        ViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        ViewCreateInfo.image = m_images[i];
-        ViewCreateInfo.format = m_core.getSurfaceFormat().format;
-        ViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        ViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        ViewCreateInfo.subresourceRange.baseMipLevel = 0;
-        ViewCreateInfo.subresourceRange.levelCount = 1;
-        ViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        ViewCreateInfo.subresourceRange.layerCount = 1;
-
-        res = vkCreateImageView(m_core.getDevice(), &ViewCreateInfo, NULL, &m_views[i]);
-        CHECK_VULKAN_ERROR("vkCreateImageView error %d\n", res);
+        if(Utils::VulkanCreateImageView(m_core.getDevice(), m_images[i], m_core.getSurfaceFormat().format, m_views[i]) != VK_SUCCESS) {
+            ERROR("failed to create texture image view!");
+        }
 
         VkFramebufferCreateInfo fbCreateInfo = {};
         fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -715,6 +765,8 @@ void VulkanRenderer::init()
     createSwapChain();
     createCommandBuffer();
     createTextureImage();
+    createTextureImageView();
+    createTextureSampler();
     createVertexBuffer();
     createIndexBuffer();
     createDescriptorSetLayout();

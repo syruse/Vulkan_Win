@@ -62,6 +62,8 @@ namespace Utils {
 
     void VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool,
         std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
+
+    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageView& imageView);
 }
 
 #define ARRAY_SIZE_IN_ELEMENTS(a) (sizeof(a)/sizeof(a[0]))
@@ -70,7 +72,6 @@ namespace Utils {
 #define CHECK_VULKAN_ERROR(msg, res)    \
     if (res != VK_SUCCESS) {            \
         ERROR(msg, res);         \
-        abort();                        \
     }
 
 
