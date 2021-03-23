@@ -44,6 +44,9 @@ VulkanRenderer::~VulkanRenderer()
 
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
 
+    vkDestroyImage(m_core.getDevice(), m_textureImage, nullptr);
+    vkFreeMemory(m_core.getDevice(), m_textureImageMemory, nullptr);
+
     vkDestroyDescriptorSetLayout(m_core.getDevice(), m_descriptorSetLayout, nullptr);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -369,6 +372,11 @@ void VulkanRenderer::createCommandBuffer()
     CHECK_VULKAN_ERROR("vkAllocateCommandBuffers error %d\n", res);
 
     INFO("Created command buffers\n");
+}
+
+void VulkanRenderer::createTextureImage()
+{
+    Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
@@ -706,6 +714,7 @@ void VulkanRenderer::init()
 
     createSwapChain();
     createCommandBuffer();
+    createTextureImage();
     createVertexBuffer();
     createIndexBuffer();
     createDescriptorSetLayout();

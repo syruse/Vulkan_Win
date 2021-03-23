@@ -44,14 +44,24 @@ namespace Utils {
 
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
+
     void VulkanCheckValidationLayerSupport();
+
     void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps);
+
     void VulkanGetPhysicalDevices(const VkInstance& inst, const VkSurfaceKHR& Surface, VulkanPhysicalDevices& PhysDevices);
+
     size_t VulkanFindMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties);
+
     void Vulkan—reateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+
     void Vulkan—opyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
     VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName);
+
+    void VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool,
+        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
 }
 
 #define ARRAY_SIZE_IN_ELEMENTS(a) (sizeof(a)/sizeof(a[0]))

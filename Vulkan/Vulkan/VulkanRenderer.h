@@ -15,6 +15,7 @@ public:
 
     static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 2;
     static constexpr int16_t MAX_OBJECTS = 1;
+    static constexpr std::string_view TEXTURE_FILE_NAME{ "texture.jpg" };
 
     struct Vertex {
         glm::vec3 pos;
@@ -101,6 +102,7 @@ private:
     void createVertexBuffer();
     void createIndexBuffer();
     void createCommandBuffer();
+    void createTextureImage();
     void updateUniformBuffer(uint32_t currentImage);
     void createRenderPass();
     void createDescriptorSetLayout();
@@ -124,6 +126,8 @@ private:
     VkQueue m_queue;
     std::vector<VkCommandBuffer> m_cmdBufs;
     VkCommandPool m_cmdBufPool;
+    VkImage m_textureImage;
+    VkDeviceMemory m_textureImageMemory;
     std::vector<VkImageView> m_views;
     VkRenderPass m_renderPass;
     VkDescriptorSetLayout m_descriptorSetLayout;

@@ -22,7 +22,11 @@ int main(int argc, char** argv)
     MSG msg;
     while (!bQuit)
     {
-        /* check for messages */
+        /**
+        GetMessage does not return until a message matching the filter criteria is placed in the queue, whereas 
+        PeekMessage returns immediately regardless of whether a message is in the queue.
+        Remove any messages that may be in the queue of cpecified type like WM_QUIT
+        */
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
         {
             /* handle or dispatch messages */
