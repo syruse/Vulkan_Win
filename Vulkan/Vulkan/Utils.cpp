@@ -329,7 +329,7 @@ namespace Utils {
     }
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format, 
-        VkImageLayout oldLayout, VkImageLayout newLayout)
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask)
     {
         VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
@@ -340,7 +340,7 @@ namespace Utils {
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.aspectMask = aspectMask;
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.baseArrayLayer = 0;
@@ -410,7 +410,8 @@ namespace Utils {
         stbi_uc* pixels = stbi_load(pTextureFileName.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = texWidth * texHeight * 4;
 
-        if (!pixels) {
+        if (!pixels) 
+        {
             ERROR("failed to load texture image!");
         }
 
@@ -438,7 +439,7 @@ namespace Utils {
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
-    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageView& imageView)
+    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView)
     {
         VkResult res;
 
@@ -447,7 +448,7 @@ namespace Utils {
         viewInfo.image = image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = format;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.aspectMask = aspectMask;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;
@@ -458,6 +459,30 @@ namespace Utils {
         INFO("creation texture image view code:%d ", res);
 
         return res;
+    }
+
+    bool VulkanFindSupportedFormat(const VkPhysicalDevice& physicalDevice, const std::vector<VkFormat>& candidates, 
+        VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format)
+    {
+        bool status = false;
+        for (VkFormat format : candidates) 
+        {
+            VkFormatProperties props;
+            vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+
+            if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) 
+            {
+                ret_format = format;
+                status = true;
+            }
+            else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) 
+            {
+                ret_format = format;
+                status = true;
+            }
+        }
+
+        return status;
     }
 
 }

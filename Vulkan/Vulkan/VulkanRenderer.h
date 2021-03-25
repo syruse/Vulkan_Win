@@ -123,6 +123,7 @@ private:
     void createPipeline();
     void recordCommandBuffers(uint32_t currentImage);
     void createSemaphores();
+    void createDepthResources();
 
     size_t m_currentFrame = 0;
 
@@ -164,5 +165,10 @@ private:
     std::vector<VkDeviceMemory> m_dynamicUniformBuffersMemory;
     size_t m_modelUniformAlignment;
     DynamicUniformBufferObject* mp_modelTransferSpace = nullptr;
+
+    VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
+    VkImage m_depthImage;
+    VkDeviceMemory m_depthImageMemory;
+    VkImageView m_depthImageView;
 };
 

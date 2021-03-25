@@ -60,10 +60,19 @@ namespace Utils {
 
     VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName);
 
+    void VulkanCreateImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+        VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+
     void VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool,
         std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
 
-    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageView& imageView);
+    void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView);
+
+    bool VulkanFindSupportedFormat(const VkPhysicalDevice& physicalDevice, const std::vector<VkFormat>& candidates,
+        VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format);
 }
 
 #define ARRAY_SIZE_IN_ELEMENTS(a) (sizeof(a)/sizeof(a[0]))
