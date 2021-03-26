@@ -3,10 +3,29 @@
 #include <chrono>
 #include <limits>
 
+#ifdef WIN32
+#include "Win32Control.h"
+#else            
+///TO DO
+#endif 
+
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+
+VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
+    : m_width(width)
+    , m_height(height)
+    ,
+#ifdef WIN32
+    m_core(std::make_unique<Win32Control>(appName, width, height))
+#else            
+    ///TO DO
+#endif 
+{
+}
 
 
 VulkanRenderer::~VulkanRenderer()
@@ -522,8 +541,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     INFO("Command buffers recorded\n");
 }
 
-void VulkanRenderer::renderScene()
+bool VulkanRenderer::renderScene()
 {
+    bool ret_status = true;
+    const auto& winController = m_core.getWinController();
+    assert(winController);
+
+    const auto& windowQueueMSG = winController->processWindowQueueMSGs();
+    ret_status = windowQueueMSG.isQuited;
+
     // -- GET NEXT IMAGE --
     // Wait for given fence to signal (open) from last draw before continuing
     vkWaitForFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
@@ -564,6 +590,8 @@ void VulkanRenderer::renderScene()
 
     // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
     m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+
+    return ret_status;
 }
 
 void VulkanRenderer::createRenderPass()

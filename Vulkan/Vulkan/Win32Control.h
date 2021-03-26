@@ -2,8 +2,6 @@
 
 #include <windows.h>
 #include "vulkan/vulkan.h"
-#include "vulkan/vulkan_win32.h"
-#include "vulkan/vk_sdk_platform.h"
 #include "IControl.h"
 #include "string"
 
@@ -23,6 +21,10 @@ public:
     virtual void init() override;
 
     virtual VkSurfaceKHR createSurface(VkInstance& inst) const override;
+
+    virtual std::string_view getVulkanWindowSurfaceExtension() const override;
+
+    virtual const WindowQueueMSG& processWindowQueueMSGs() override;
 
 private:
     HINSTANCE    m_hinstance;

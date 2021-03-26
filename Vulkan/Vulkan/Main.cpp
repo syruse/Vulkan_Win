@@ -1,5 +1,4 @@
 #include <windows.h>
-#include "Win32Control.h"
 #include "VulkanRenderer.h"
 
 #include <iostream>
@@ -18,39 +17,12 @@ int main(int argc, char** argv)
     _vulkanRenderer.init();
 
     /* program main loop */
+
     bool bQuit = false;
-    MSG msg;
     while (!bQuit)
     {
-        /**
-        GetMessage does not return until a message matching the filter criteria is placed in the queue, whereas 
-        PeekMessage returns immediately regardless of whether a message is in the queue.
-        Remove any messages that may be in the queue of cpecified type like WM_QUIT
-        */
-        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-        {
-            /* handle or dispatch messages */
-            if (msg.message == WM_QUIT)
-            {
-                bQuit = TRUE;
-            }
-            else
-            {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-        }
-        else
-        {
-            _vulkanRenderer.renderScene();
-
-            Sleep(1);
-        }
+        bQuit = _vulkanRenderer.renderScene();
     }
-
-
-    /* destroy the window explicitly */
-    
 
     return 0;
 }

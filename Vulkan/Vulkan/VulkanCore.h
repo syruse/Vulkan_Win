@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Win32Control.h"
+#include "IControl.h"
 #include "Utils.h"
 #include <memory>
 
@@ -28,6 +28,8 @@ public:
     VkInstance& getInstance() { return m_inst; }
 
     VkDevice& getDevice() { return m_device; }
+
+    const std::unique_ptr<IControl>& getWinController() { return m_winController; }
 
 private:
     void createInstance();

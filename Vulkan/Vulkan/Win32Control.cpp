@@ -1,4 +1,6 @@
 #include "Win32Control.h"
+#include "vulkan/vulkan_win32.h"
+#include "vulkan/vk_sdk_platform.h"
 #include "Utils.h"
 #include <cassert>
 
@@ -9,6 +11,11 @@ static constexpr const wchar_t* WIN_CLASS_NAME = L"Win32Control";
 Win32Control::~Win32Control()
 {
     DestroyWindow(m_hwnd);
+}
+
+std::string_view Win32Control::getVulkanWindowSurfaceExtension() const
+{
+    return VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
 }
 
 void Win32Control::init()
@@ -75,6 +82,31 @@ VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const
     return surface;
 }
 
+const IControl::WindowQueueMSG& Win32Control::processWindowQueueMSGs()
+{
+    MSG msg;
+   /**
+   GetMessage does not return until a message matching the filter criteria is placed in the queue, whereas
+   PeekMessage returns immediately regardless of whether a message is in the queue.
+   Remove any messages that may be in the queue of cpecified type like WM_QUIT
+   */
+   if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+   {
+       /* handle or dispatch messages */
+       if (msg.message == WM_QUIT)
+       {
+           m_windowQueueMSG.isQuited = true;
+       }
+       else
+       {
+           TranslateMessage(&msg);
+           DispatchMessage(&msg);
+       }
+   }
+
+   return m_windowQueueMSG;
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
@@ -82,6 +114,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_CLOSE:
         PostQuitMessage(0);
         break;
+
+    case WM_SIZE:
+    {
+        UINT width = LOWORD(lParam);
+        UINT height = HIWORD(lParam);
+        //OnResize(width, height);
+        break;
+    }
 
     case WM_DESTROY:
         return 0;

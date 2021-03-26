@@ -81,17 +81,7 @@ public:
     };
 
 
-    VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
-        : m_width(width)
-        , m_height(height)
-        ,
-#ifdef WIN32
-        m_core(std::make_unique<Win32Control>(appName, width, height))
-#else            
-        ///TO DO
-#endif 
-    {
-    }
+    VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
 
     ~VulkanRenderer();
 
@@ -99,7 +89,7 @@ public:
 
     inline VulkanCore& getVulkanCore() { return m_core; };
 
-    void renderScene();
+    bool renderScene();
 
 private:
 

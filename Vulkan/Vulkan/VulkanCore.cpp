@@ -2,7 +2,6 @@
 #include "Utils.h"
 #include <vector>
 #include <cassert>
-#include "IControl.h"
 
 using namespace Utils;
 
@@ -144,11 +143,7 @@ void VulkanCore::createInstance()
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif        
         VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef _WIN32    
-        VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-#else    
-        VK_KHR_XCB_SURFACE_EXTENSION_NAME
-#endif            
+        m_winController->getVulkanWindowSurfaceExtension().data()
     };
 
 #ifdef _DEBUG
