@@ -11,7 +11,7 @@ namespace Utils {
 
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[1000];
+        char msg[100000];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);
@@ -22,7 +22,7 @@ namespace Utils {
 
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[1000];
+        char msg[100000];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);

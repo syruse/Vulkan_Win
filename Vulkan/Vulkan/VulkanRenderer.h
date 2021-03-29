@@ -76,7 +76,7 @@ public:
         {{0.7f, -0.7f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}
     };
 
-    const std::vector<uint16_t> indices = {
+    const std::vector<uint32_t> indices = {
         0, 1, 2, 3
     };
 
@@ -108,12 +108,14 @@ private:
     void allocateDynamicBufferTransferSpace();
     void createDescriptorPool();
     void createDescriptorSets();
+    void createDescriptorSetsSecondPass();
     void createFramebuffer();
     void createShaders();
     void createPipeline();
     void recordCommandBuffers(uint32_t currentImage);
     void createSemaphores();
     void createDepthResources();
+    void createColourBufferImage();
 
     size_t m_currentFrame = 0;
 
@@ -160,5 +162,17 @@ private:
     VkImage m_depthImage;
     VkDeviceMemory m_depthImageMemory;
     VkImageView m_depthImageView;
+
+    VkFormat m_colourFormat = VK_FORMAT_UNDEFINED;
+    VkDescriptorSetLayout m_descriptorSetLayoutSecondPass;
+    std::vector<VkDescriptorSet> m_descriptorSetsSecondPass;
+    VkDescriptorPool m_descriptorPoolSecondPass;
+    std::vector<VkImage> m_colourBufferImage;
+    std::vector<VkDeviceMemory> m_colourBufferImageMemory;
+    std::vector<VkImageView> m_colourBufferImageView;
+    VkShaderModule m_vsModuleSecondPass;
+    VkShaderModule m_fsModuleSecondPass;
+    VkPipeline m_pipelineSecondPass;
+    VkPipelineLayout m_pipelineLayoutSecondPass;
 };
 

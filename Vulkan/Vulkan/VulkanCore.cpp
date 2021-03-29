@@ -201,12 +201,16 @@ void VulkanCore::createLogicalDevice()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+
     VkDeviceCreateInfo devInfo = {};
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     devInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pDevExt);
     devInfo.ppEnabledExtensionNames = pDevExt;
     devInfo.queueCreateInfoCount = 1;
     devInfo.pQueueCreateInfos = &qInfo;
+    devInfo.pEnabledFeatures = &deviceFeatures;
 
     VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, NULL, &m_device);
 
