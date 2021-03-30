@@ -119,6 +119,8 @@ private:
 
     size_t m_currentFrame = 0;
 
+    uint32_t m_mipLevels;///TO BE FIXED
+
     int16_t m_width;
     int16_t m_height;
     VulkanCore m_core;

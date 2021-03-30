@@ -563,12 +563,12 @@ void VulkanRenderer::createCommandBuffer()
 
 void VulkanRenderer::createTextureImage()
 {
-    Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
+    m_mipLevels = Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
 }
 
 void VulkanRenderer::createTextureImageView()
 {
-	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView) != VK_SUCCESS) {
+	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView, m_mipLevels) != VK_SUCCESS) {
 		ERROR("failed to create texture image view!");
 	}
 }
@@ -594,6 +594,9 @@ void VulkanRenderer::createTextureSampler()
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(m_mipLevels);
+    samplerInfo.mipLodBias = 0.0f;
 
     if (vkCreateSampler(m_core.getDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
         ERROR("failed to create texture sampler!");
@@ -1025,7 +1028,7 @@ void VulkanRenderer::createPipeline()
     VkPipelineRasterizationStateCreateInfo rastCreateInfo = {};
     rastCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rastCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-    rastCreateInfo.cullMode = VK_CULL_MODE_NONE;
+    rastCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
     rastCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rastCreateInfo.lineWidth = 1.0f;
 
