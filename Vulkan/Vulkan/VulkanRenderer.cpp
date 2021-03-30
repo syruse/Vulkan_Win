@@ -578,7 +578,7 @@ void VulkanRenderer::createTextureSampler()
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(m_core.getPhysDevice(), &properties);
 
-    INFO("maxSamplerAnisotrop: %d", properties.limits.maxSamplerAnisotropy);
+    INFO("maxSamplerAnisotrop: %f", properties.limits.maxSamplerAnisotropy);
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -608,7 +608,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     std::array<VkClearValue, 3> clearValues{};
     clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-    clearValues[1].color = { 0.6f, 0.0f, 0.0f, 1.0f };
+    clearValues[1].color = { 0.2f, 0.0f, 0.0f, 1.0f };
     clearValues[2].depthStencil.depth = 1.0f;
 
     VkImageSubresourceRange imageRange = {};
@@ -673,8 +673,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineSecondPass);
     vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayoutSecondPass,
         0, 1, &m_descriptorSetsSecondPass[currentImage], 0, nullptr);
-    vkCmdDraw(m_cmdBufs[currentImage], 3, 1, 0, 0);
-
+    vkCmdDraw(m_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(m_cmdBufs[currentImage]);
 
@@ -790,7 +789,7 @@ void VulkanRenderer::createRenderPass()
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; /// for more efficiency and since it will not be used after drawing has finished 
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;                       // for more efficiency and since it will not be used after drawing has finished 
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -814,16 +813,16 @@ void VulkanRenderer::createRenderPass()
     // Swapchain colour attachment
     VkAttachmentDescription swapchainColourAttachment = {};
     swapchainColourAttachment.format = m_core.getSurfaceFormat().format;					// Format to use for attachment
-    swapchainColourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;					// Number of samples to write for multisampling
-    swapchainColourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;				// Describes what to do with attachment before rendering
-    swapchainColourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;			// Describes what to do with attachment after rendering
-    swapchainColourAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	// Describes what to do with stencil before rendering
-    swapchainColourAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;// Describes what to do with stencil after rendering
+    swapchainColourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;					            // Number of samples to write for multisampling
+    swapchainColourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;				            // Describes what to do with attachment before rendering
+    swapchainColourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;			            // Describes what to do with attachment after rendering
+    swapchainColourAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	            // Describes what to do with stencil before rendering
+    swapchainColourAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;            // Describes what to do with stencil after rendering
 
     // Framebuffer data will be stored as an image, but images can be given different data layouts
     // to give optimal use for certain operations
-    swapchainColourAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;			// Image data layout before render pass starts
-    swapchainColourAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;		// Image data layout after render pass (to change to)
+    swapchainColourAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;			        // Image data layout before render pass starts
+    swapchainColourAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;		        // Image data layout after render pass (to change to)
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
     VkAttachmentReference swapchainColourAttachmentReference = {};
@@ -852,19 +851,20 @@ void VulkanRenderer::createRenderPass()
 
     // Conversion from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     // Transition must happen after...
-    subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;						                                                // Subpass index (VK_SUBPASS_EXTERNAL = Special value meaning outside of renderpass)
-    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;		// Pipeline stage
-    subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;				                                                // Stage access mask (memory access)
+    subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;						          // Subpass index (VK_SUBPASS_EXTERNAL = Special value meaning outside of renderpass)
+    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;		          // Pipeline stage
+    subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;				          // Stage access mask (memory access)
     // But must happen before...
     subpassDependencies[0].dstSubpass = 0;
-    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | 
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     subpassDependencies[0].dependencyFlags = 0;
 
     // Subpass 1 layout (colour/depth) to Subpass 2 layout (shader read)
     subpassDependencies[1].srcSubpass = 0;
     subpassDependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subpassDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[1].dstSubpass = 1;
     subpassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -1108,6 +1108,8 @@ void VulkanRenderer::createPipeline()
 
     res = vkCreatePipelineLayout(m_core.getDevice(), &secondPipelineLayoutCreateInfo, nullptr, &m_pipelineLayoutSecondPass);
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout error %d\n", res);
+
+    pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // as a simple set with two triangles for quad drawing
 
     pipelineInfo.pStages = &shaderStageCreateInfo[0];	// Update second shader stage list
     pipelineInfo.layout = m_pipelineLayoutSecondPass;	// Change pipeline layout for input attachment descriptor sets
