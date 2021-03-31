@@ -93,10 +93,14 @@ public:
 
 private:
 
+    void cleanupSwapChain();
+    void recreateSwapChain(int16_t width, int16_t height);
+
     void createSwapChain();
     void createUniformBuffers();
     void createVertexBuffer();
     void createIndexBuffer();
+    void createCommandPool();
     void createCommandBuffer();
     void createTextureImage();
     void createTextureImageView();

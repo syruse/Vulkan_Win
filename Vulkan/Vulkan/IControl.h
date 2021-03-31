@@ -10,13 +10,15 @@ public:
     struct WindowQueueMSG
     {
         bool isQuited = false;
+        bool isResized = false;
+        unsigned short width = 0;
+        unsigned short height = 0;
     };
 
     constexpr IControl(std::wstring_view appName, size_t width, size_t height)
         : m_appName(appName)
         , m_width(width)
         , m_height(height)
-        , m_windowQueueMSG()
     {}
 
     virtual ~IControl() = default;
@@ -35,11 +37,11 @@ public:
         return "";
     }
 
-    virtual const WindowQueueMSG& processWindowQueueMSGs() { return m_windowQueueMSG; }
+    /// falls into NRVO
+    virtual WindowQueueMSG processWindowQueueMSGs() { return WindowQueueMSG{}; }
 
 protected:
     std::wstring_view m_appName;
     size_t m_width;
     size_t m_height;
-    IControl::WindowQueueMSG m_windowQueueMSG;
 };

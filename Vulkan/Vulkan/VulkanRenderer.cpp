@@ -27,34 +27,16 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
 {
 }
 
-
 VulkanRenderer::~VulkanRenderer()
 {
-    // Wait until no actions being run on device before destroying
-    vkDeviceWaitIdle(m_core.getDevice());
+    cleanupSwapChain();
 
     _aligned_free(mp_modelTransferSpace);
-
-    vkDestroyImageView(m_core.getDevice(), m_depthImageView, nullptr);
-    vkDestroyImage(m_core.getDevice(), m_depthImage, nullptr);
-    vkFreeMemory(m_core.getDevice(), m_depthImageMemory, nullptr);
-
-    for (size_t i = 0; i < m_colourBufferImage.size(); ++i)
-    {
-        vkDestroyImageView(m_core.getDevice(), m_colourBufferImageView[i], nullptr);
-        vkDestroyImage(m_core.getDevice(), m_colourBufferImage[i], nullptr);
-        vkFreeMemory(m_core.getDevice(), m_colourBufferImageMemory[i], nullptr);
-    }
 
     vkDestroyShaderModule(m_core.getDevice(), m_vsModule, nullptr);
     vkDestroyShaderModule(m_core.getDevice(), m_fsModule, nullptr);
     vkDestroyShaderModule(m_core.getDevice(), m_vsModuleSecondPass, nullptr);
     vkDestroyShaderModule(m_core.getDevice(), m_fsModuleSecondPass, nullptr);
-    vkDestroyPipeline(m_core.getDevice(), m_pipeline, nullptr);
-    vkDestroyPipelineLayout(m_core.getDevice(), m_pipelineLayout, nullptr);
-    vkDestroyPipeline(m_core.getDevice(), m_pipelineSecondPass, nullptr);
-    vkDestroyPipelineLayout(m_core.getDevice(), m_pipelineLayoutSecondPass, nullptr);
-    vkDestroyRenderPass(m_core.getDevice(), m_renderPass, nullptr);
 
     vkDestroyBuffer(m_core.getDevice(), m_vertexBuffer, nullptr);
     vkFreeMemory(m_core.getDevice(), m_vertexBufferMemory, nullptr);
@@ -66,19 +48,6 @@ VulkanRenderer::~VulkanRenderer()
         vkDestroyBuffer(m_core.getDevice(), m_dynamicUniformBuffers[i], nullptr);
         vkFreeMemory(m_core.getDevice(), m_dynamicUniformBuffersMemory[i], nullptr);
     }
-
-    for (auto framebuffer : m_fbs) {
-        vkDestroyFramebuffer(m_core.getDevice(), framebuffer, nullptr);
-    }
-
-    for (auto imageView : m_views) {
-        vkDestroyImageView(m_core.getDevice(), imageView, nullptr);
-    }
-
-    vkDestroySwapchainKHR(m_core.getDevice(), m_swapChainKHR, nullptr);
-
-    vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
-    vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPoolSecondPass, nullptr);
 
     vkDestroySampler(m_core.getDevice(), m_textureSampler, nullptr);
     vkDestroyImageView(m_core.getDevice(), m_textureImageView, nullptr);
@@ -97,6 +66,68 @@ VulkanRenderer::~VulkanRenderer()
     }
 
     vkDestroyCommandPool(m_core.getDevice(), m_cmdBufPool, nullptr);
+}
+
+void VulkanRenderer::cleanupSwapChain()
+{
+    // Wait until no actions being run on device before destroying
+    vkDeviceWaitIdle(m_core.getDevice());
+
+    vkFreeCommandBuffers(m_core.getDevice(), m_cmdBufPool, static_cast<uint32_t>(m_cmdBufs.size()), m_cmdBufs.data());
+
+    vkDestroyImageView(m_core.getDevice(), m_depthImageView, nullptr);
+    vkDestroyImage(m_core.getDevice(), m_depthImage, nullptr);
+    vkFreeMemory(m_core.getDevice(), m_depthImageMemory, nullptr);
+
+    for (size_t i = 0; i < m_colourBufferImage.size(); ++i)
+    {
+        vkDestroyImageView(m_core.getDevice(), m_colourBufferImageView[i], nullptr);
+        vkDestroyImage(m_core.getDevice(), m_colourBufferImage[i], nullptr);
+        vkFreeMemory(m_core.getDevice(), m_colourBufferImageMemory[i], nullptr);
+    }
+
+    for (auto framebuffer : m_fbs) {
+        vkDestroyFramebuffer(m_core.getDevice(), framebuffer, nullptr);
+    }
+
+    for (auto imageView : m_views) {
+        vkDestroyImageView(m_core.getDevice(), imageView, nullptr);
+    }
+
+    vkDestroySwapchainKHR(m_core.getDevice(), m_swapChainKHR, nullptr);
+
+    vkDestroyPipeline(m_core.getDevice(), m_pipeline, nullptr);
+    vkDestroyPipelineLayout(m_core.getDevice(), m_pipelineLayout, nullptr);
+    vkDestroyPipeline(m_core.getDevice(), m_pipelineSecondPass, nullptr);
+    vkDestroyPipelineLayout(m_core.getDevice(), m_pipelineLayoutSecondPass, nullptr);
+    vkDestroyRenderPass(m_core.getDevice(), m_renderPass, nullptr);
+
+    vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
+    vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPoolSecondPass, nullptr);
+}
+
+void VulkanRenderer::recreateSwapChain(int16_t width, int16_t height)
+{
+    INFO_FORMAT(" new width=%d; new height=%d", width, height);
+    if (m_width != width || m_height != height)
+    {
+        cleanupSwapChain();
+
+        m_width = width;
+        m_height = height;
+        m_currentFrame = 0u;
+
+        createSwapChain();
+        createCommandBuffer();
+        createDepthResources();
+        createColourBufferImage();
+        createDescriptorPool();
+        createDescriptorSets();
+        createDescriptorSetsSecondPass();
+        createRenderPass();
+        createFramebuffer();
+        createPipeline();
+    }
 }
 
 void VulkanRenderer::createDescriptorSetsSecondPass()
@@ -257,7 +288,7 @@ void VulkanRenderer::createDescriptorSetLayout()
     layoutCreateInfo.pBindings = layoutBindings.data();
 
     if (vkCreateDescriptorSetLayout(m_core.getDevice(), &layoutCreateInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
-        ERROR("failed to create descriptor set layout!");
+        Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout!");
     }
 
 
@@ -288,7 +319,7 @@ void VulkanRenderer::createDescriptorSetLayout()
 
     // Create Descriptor Set Layout
     if (vkCreateDescriptorSetLayout(m_core.getDevice(), &inputLayoutCreateInfo, nullptr, &m_descriptorSetLayoutSecondPass) != VK_SUCCESS) {
-        ERROR("failed to create descriptor set layout for second pass!");
+        Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout for second pass!");
     }
 }
 
@@ -320,7 +351,7 @@ void VulkanRenderer::createDescriptorPool()
     poolInfo.maxSets = static_cast<uint32_t>(m_images.size());					    // Maximum number of Descriptor Sets that can be created from pool
 
     if (vkCreateDescriptorPool(m_core.getDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
-        ERROR("failed to create descriptor pool!");
+        Utils::printLog(ERROR_PARAM, "failed to create descriptor pool!");
     }
 
     ///----------------------------------------------------------------------------------///
@@ -345,7 +376,7 @@ void VulkanRenderer::createDescriptorPool()
     inputPoolCreateInfo.pPoolSizes = inputPoolSizes.data();
 
     if (vkCreateDescriptorPool(m_core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPoolSecondPass) != VK_SUCCESS) {
-    ERROR("failed to create descriptor pool for second pass!");
+    Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
     }
 }
 
@@ -360,7 +391,7 @@ void VulkanRenderer::createDescriptorSets()
 
     m_descriptorSets.resize(m_images.size());
     if (vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, m_descriptorSets.data()) != VK_SUCCESS) {
-        ERROR("failed to allocate descriptor sets!");
+        Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets!");
     }
 
     // connect the descriptors with buffer when binding
@@ -452,13 +483,13 @@ void VulkanRenderer::createSwapChain()
     VkResult res = vkCreateSwapchainKHR(m_core.getDevice(), &SwapChainCreateInfo, NULL, &m_swapChainKHR);
     CHECK_VULKAN_ERROR("vkCreateSwapchainKHR error %d\n", res);
 
-    INFO("Swap chain created\n");
+    Utils::printLog(INFO_PARAM, "Swap chain created");
 
     uint32_t NumSwapChainImages = 0;
     res = vkGetSwapchainImagesKHR(m_core.getDevice(), m_swapChainKHR, &NumSwapChainImages, NULL);
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
     assert(MAX_FRAMES_IN_FLIGHT == NumSwapChainImages);
-    INFO("Number of images %d\n", NumSwapChainImages);
+    Utils::printLog(INFO_PARAM, "Number of images ", NumSwapChainImages);
 
     m_images.resize(NumSwapChainImages);
     m_views.resize(NumSwapChainImages);
@@ -537,7 +568,7 @@ void VulkanRenderer::createIndexBuffer()
     vkFreeMemory(m_core.getDevice(), stagingBufferMemory, nullptr);
 }
 
-void VulkanRenderer::createCommandBuffer()
+void VulkanRenderer::createCommandPool()
 {
     VkCommandPoolCreateInfo cmdPoolCreateInfo = {};
     cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -547,18 +578,21 @@ void VulkanRenderer::createCommandBuffer()
     VkResult res = vkCreateCommandPool(m_core.getDevice(), &cmdPoolCreateInfo, NULL, &m_cmdBufPool);
     CHECK_VULKAN_ERROR("vkCreateCommandPool error %d\n", res);
 
-    INFO("Command buffer pool created\n");
+    Utils::printLog(INFO_PARAM, "Command buffer pool created");
+}
 
+void VulkanRenderer::createCommandBuffer()
+{
     VkCommandBufferAllocateInfo cmdBufAllocInfo = {};
     cmdBufAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdBufAllocInfo.commandPool = m_cmdBufPool;
     cmdBufAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdBufAllocInfo.commandBufferCount = m_images.size();
 
-    res = vkAllocateCommandBuffers(m_core.getDevice(), &cmdBufAllocInfo, &m_cmdBufs[0]);
+    VkResult res = vkAllocateCommandBuffers(m_core.getDevice(), &cmdBufAllocInfo, &m_cmdBufs[0]);
     CHECK_VULKAN_ERROR("vkAllocateCommandBuffers error %d\n", res);
 
-    INFO("Created command buffers\n");
+    Utils::printLog(INFO_PARAM, "Created command buffers");
 }
 
 void VulkanRenderer::createTextureImage()
@@ -569,7 +603,7 @@ void VulkanRenderer::createTextureImage()
 void VulkanRenderer::createTextureImageView()
 {
 	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView, m_mipLevels) != VK_SUCCESS) {
-		ERROR("failed to create texture image view!");
+		Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
 	}
 }
 
@@ -578,7 +612,7 @@ void VulkanRenderer::createTextureSampler()
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(m_core.getPhysDevice(), &properties);
 
-    INFO("maxSamplerAnisotrop: %f", properties.limits.maxSamplerAnisotropy);
+    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", properties.limits.maxSamplerAnisotropy);
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -599,7 +633,7 @@ void VulkanRenderer::createTextureSampler()
     samplerInfo.mipLodBias = 0.0f;
 
     if (vkCreateSampler(m_core.getDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
-        ERROR("failed to create texture sampler!");
+        Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
     }
 }
 
@@ -682,9 +716,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     res = vkEndCommandBuffer(m_cmdBufs[currentImage]);
     CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
-    //}
 
-    INFO("Command buffers recorded\n");
+    Utils::printLog(INFO_PARAM, "Command buffers recorded");
 }
 
 void VulkanRenderer::createColourBufferImage()
@@ -702,7 +735,7 @@ void VulkanRenderer::createColourBufferImage()
         m_colourFormat
     ))
     {
-        ERROR("failed to find supported format!");
+        Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
 
     for (size_t i = 0; i < m_images.size(); ++i)
@@ -722,49 +755,63 @@ bool VulkanRenderer::renderScene()
     const auto& winController = m_core.getWinController();
     assert(winController);
 
-    const auto& windowQueueMSG = winController->processWindowQueueMSGs();
+    auto windowQueueMSG = winController->processWindowQueueMSGs(); /// falls into NRVO
     ret_status = windowQueueMSG.isQuited;
 
-    // -- GET NEXT IMAGE --
-    // Wait for given fence to signal (open) from last draw before continuing
-    vkWaitForFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-    // Manually reset (close) fences
-    vkResetFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
+    if (windowQueueMSG.isResized)
+    {
+        recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
+    }
+    else
+    {
+        // -- GET NEXT IMAGE --
+        // Wait for given fence to signal (open) from last draw before continuing
+        vkWaitForFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+        // Manually reset (close) fences
+        vkResetFences(m_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
 
-    uint32_t ImageIndex = 0;
-    VkResult res = vkAcquireNextImageKHR(m_core.getDevice(), m_swapChainKHR, UINT64_MAX, m_presentCompleteSem[m_currentFrame], VK_NULL_HANDLE, &ImageIndex);
-    CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
+        uint32_t ImageIndex = 0;
+        VkResult res = vkAcquireNextImageKHR(m_core.getDevice(), m_swapChainKHR, UINT64_MAX, m_presentCompleteSem[m_currentFrame], VK_NULL_HANDLE, &ImageIndex);
+        CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
 
-    VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &m_cmdBufs[ImageIndex];
-    submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame];
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitDstStageMask = &waitFlags;
-    submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
-    submitInfo.signalSemaphoreCount = 1;
+        VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &m_cmdBufs[ImageIndex];
+        submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame];
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitDstStageMask = &waitFlags;
+        submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
+        submitInfo.signalSemaphoreCount = 1;
 
-    recordCommandBuffers(ImageIndex); /// added here since now comand buffer is reset after each vkBegin command
-    updateUniformBuffer(ImageIndex);
+        recordCommandBuffers(ImageIndex); /// added here since now comand buffer is reset after each vkBegin command
+        updateUniformBuffer(ImageIndex);
 
-    res = vkQueueSubmit(m_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
-    CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
+        res = vkQueueSubmit(m_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
+        CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
 
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &m_swapChainKHR;
-    presentInfo.pImageIndices = &ImageIndex;
-    presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
-    presentInfo.waitSemaphoreCount = 1;
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &m_swapChainKHR;
+        presentInfo.pImageIndices = &ImageIndex;
+        presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
+        presentInfo.waitSemaphoreCount = 1;
 
-    res = vkQueuePresentKHR(m_queue, &presentInfo);
-    CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
+        res = vkQueuePresentKHR(m_queue, &presentInfo);
+        if (res == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            recreateSwapChain(m_width, m_height);
+        }
+        else
+        {
+            CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
+        }
 
-    // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
-    m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+        // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
+        m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+    }
 
     return ret_status;
 }
@@ -899,7 +946,7 @@ void VulkanRenderer::createRenderPass()
     VkResult res = vkCreateRenderPass(m_core.getDevice(), &renderPassCreateInfo, NULL, &m_renderPass);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
-    INFO("Created a render pass\n");
+    Utils::printLog(INFO_PARAM, "Created a render pass");
 }
 
 void VulkanRenderer::createFramebuffer()
@@ -910,7 +957,7 @@ void VulkanRenderer::createFramebuffer()
 
     for (size_t i = 0; i < m_images.size(); i++) {
         if(Utils::VulkanCreateImageView(m_core.getDevice(), m_images[i], m_core.getSurfaceFormat().format, VK_IMAGE_ASPECT_COLOR_BIT, m_views[i]) != VK_SUCCESS) {
-            ERROR("failed to create texture image view!");
+            Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
         }
 
 		std::array<VkImageView, 3> attachments = { m_views[i], m_colourBufferImageView[i], m_depthImageView };
@@ -932,7 +979,7 @@ void VulkanRenderer::createFramebuffer()
         CHECK_VULKAN_ERROR("vkCreateFramebuffer error %d\n", res);
     }
 
-    INFO("Frame buffers created\n");
+    Utils::printLog(INFO_PARAM, "Frame buffers created");
 }
 
 void VulkanRenderer::createShaders()
@@ -972,7 +1019,7 @@ void VulkanRenderer::createSemaphores()
             vkCreateSemaphore(m_core.getDevice(), &semaphoreCreateInfo, nullptr, &m_renderCompleteSem[i]) != VK_SUCCESS ||
             vkCreateFence(m_core.getDevice(), &fenceCreateInfo, nullptr, &m_drawFences[i]) != VK_SUCCESS)
         {
-            ERROR("Failed to create a Semaphore and/or Fence!");
+            Utils::printLog(ERROR_PARAM, "Failed to create a Semaphore and/or Fence!");
         }
     }
 }
@@ -1122,7 +1169,7 @@ void VulkanRenderer::createPipeline()
     res = vkCreateGraphicsPipelines(m_core.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipelineSecondPass);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
 
-    INFO("Graphics pipeline created\n");
+    Utils::printLog(INFO_PARAM, "Graphics pipeline created");
 }
 
 void VulkanRenderer::createDepthResources()
@@ -1135,7 +1182,7 @@ void VulkanRenderer::createDepthResources()
         m_depthFormat
     ))
     {
-        ERROR("failed to find supported format!");
+        Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
 
     Utils::VulkanCreateImage(m_core.getDevice(), m_core.getPhysDevice(), m_width, m_height, m_depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_depthImage, m_depthImageMemory);
@@ -1157,6 +1204,7 @@ void VulkanRenderer::init()
     vkGetDeviceQueue(m_core.getDevice(), m_core.getQueueFamily(), 0, &m_queue);
 
     createSwapChain();
+    createCommandPool();
     createCommandBuffer();
     createDepthResources();
     createColourBufferImage();

@@ -11,7 +11,7 @@ namespace Utils {
 
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[10000];
+        char msg[100];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);
@@ -22,7 +22,7 @@ namespace Utils {
 
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[10000];
+        char msg[100];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);
@@ -45,7 +45,7 @@ namespace Utils {
         CHECK_VULKAN_ERROR("vkEnumerateInstanceExtensionProperties error %d\n", res);
 
         for (decltype(NumExt) i = 0; i < NumExt; ++i) {
-            INFO("Instance extension %d - %s\n", i, ExtProps[i].extensionName);
+            INFO_FORMAT("Instance extension %d - %s\n", i, ExtProps[i].extensionName);
         }
     }
 
@@ -169,7 +169,7 @@ namespace Utils {
             }
         }
 
-        ERROR("failed to find suitable memory type!");
+        Utils::printLog(ERROR_PARAM, "failed to find suitable memory type!");
     }
 
     void VulkanÑreateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
@@ -182,7 +182,7 @@ namespace Utils {
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-            ERROR("failed to create buffer!");
+            Utils::printLog(ERROR_PARAM, "failed to create buffer!");
         }
 
         VkMemoryRequirements memRequirements;
@@ -194,7 +194,7 @@ namespace Utils {
         allocInfo.memoryTypeIndex = Utils::VulkanFindMemoryType(physicalDevice, memRequirements, properties);
 
         if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            ERROR("failed to allocate buffer memory!");
+            Utils::printLog(ERROR_PARAM, "failed to allocate buffer memory!");
         }
 
         vkBindBufferMemory(device, buffer, bufferMemory, 0);
@@ -210,7 +210,7 @@ namespace Utils {
 
         VkCommandBuffer commandBuffer;
         if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-            ERROR("failed to allocate command buffer!");
+            Utils::printLog(ERROR_PARAM, "failed to allocate command buffer!");
         }
 
         VkCommandBufferBeginInfo beginInfo{};
@@ -225,7 +225,7 @@ namespace Utils {
     void VulkanEndSingleTimeCommands(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkCommandBuffer* commandBuffer)
     {
         if (commandBuffer != nullptr && vkEndCommandBuffer(*commandBuffer) != VK_SUCCESS) {
-            ERROR("failed to end one-off command buffer!");
+            Utils::printLog(ERROR_PARAM, "failed to end one-off command buffer!");
         }
 
         VkSubmitInfo submitInfo{};
@@ -255,7 +255,7 @@ namespace Utils {
         assert(fileName.data());
         std::ifstream file(fileName.data(), std::ios::ate | std::ios::binary);
         if (!file.is_open()) {
-            ERROR(fileName.data());
+            Utils::printLog(ERROR_PARAM, fileName.data());
         }
         size_t codeSize = (size_t)file.tellg();
         assert(codeSize);
@@ -273,7 +273,7 @@ namespace Utils {
         VkShaderModule shaderModule;
         VkResult res = vkCreateShaderModule(device, &shaderCreateInfo, NULL, &shaderModule);
         CHECK_VULKAN_ERROR("vkCreateShaderModule error %d\n", res);
-        INFO("Created shader %s \n", fileName.data());
+        Utils::printLog(INFO_PARAM, "Created shader ", fileName.data());
         return shaderModule;
     }
 
@@ -287,7 +287,7 @@ namespace Utils {
 
         for (const auto& layer : availableLayers) 
         {
-            INFO(layer.layerName);
+            Utils::printLog(INFO_PARAM, layer.layerName);
         }
     }
 
@@ -310,7 +310,7 @@ namespace Utils {
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-            ERROR("failed to create image!");
+            Utils::printLog(ERROR_PARAM, "failed to create image!");
         }
 
         VkMemoryRequirements memRequirements;
@@ -322,7 +322,7 @@ namespace Utils {
         allocInfo.memoryTypeIndex = VulkanFindMemoryType(physicalDevice, memRequirements, properties);
 
         if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-            ERROR("failed to allocate image memory!");
+            Utils::printLog(ERROR_PARAM, "failed to allocate image memory!");
         }
 
         vkBindImageMemory(device, image, imageMemory, 0);
@@ -364,7 +364,7 @@ namespace Utils {
             destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         }
         else {
-            ERROR("unsupported layout transition!");
+            Utils::printLog(ERROR_PARAM, "unsupported layout transition!");
         }
 
         vkCmdPipelineBarrier(
@@ -500,7 +500,7 @@ namespace Utils {
 
         if (!pixels) 
         {
-            ERROR("failed to load texture image!");
+            Utils::printLog(ERROR_PARAM, "failed to load texture image!");
         }
 
         VkBuffer stagingBuffer;
@@ -526,7 +526,7 @@ VkFormatProperties formatProperties;
 vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
 
 if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-    ERROR("texture image format does not support linear blitting!");
+    Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
 }
         
         if (!miplevelsEnabling)
@@ -562,7 +562,7 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
 
         res = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
-        INFO("creation texture image view code:%d ", res);
+        Utils::printLog(INFO_PARAM, "creation texture image view code ", res);
 
         return res;
     }

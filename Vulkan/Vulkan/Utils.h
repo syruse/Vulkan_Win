@@ -77,11 +77,13 @@ namespace Utils {
 
 #define MAX(a, b)                          (((a) > (b)) ? (a) : (b))
 #define ARRAY_SIZE_IN_ELEMENTS(a)          (sizeof(a)/sizeof(a[0]))
-#define INFO(msg, ...)                     Utils::printInfoF(__FILE__, __LINE__, __FUNCTION__,  msg, __VA_ARGS__)
-#define ERROR(msg, ...)                    Utils::printErrorF(__FILE__, __LINE__, __FUNCTION__, msg, __VA_ARGS__)
+#define INFO_PARAM                         false,  "\nin file: ", __FILE__, " at line: ",  __LINE__, " from function: ", __FUNCTION__, " \n "
+#define ERROR_PARAM                        true,  "\nin file: ", __FILE__, " at line: ",  __LINE__, " from function: ", __FUNCTION__, " \n "
+#define INFO_FORMAT(msg, ...)              Utils::printInfoF(__FILE__, __LINE__, __FUNCTION__,  msg, __VA_ARGS__)
+#define ERROR_FORMAT(msg, ...)             Utils::printErrorF(__FILE__, __LINE__, __FUNCTION__, msg, __VA_ARGS__)
 #define CHECK_VULKAN_ERROR(msg, res)       \
     if (res != VK_SUCCESS) {               \
-        ERROR(msg, res);                   \
+        ERROR_FORMAT(msg, res);                   \
     }
 
 

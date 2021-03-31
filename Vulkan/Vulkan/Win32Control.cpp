@@ -33,7 +33,7 @@ void Win32Control::init()
 
     if (!RegisterClassEx(&wndcls)) {
         DWORD error = GetLastError();
-        ERROR("RegisterClassEx error %d", error);
+        Utils::printLog(ERROR_PARAM, "RegisterClassEx error %d", error);
     }
 
     RECT rect;
@@ -61,7 +61,7 @@ void Win32Control::init()
 
     if (m_hwnd == 0) {
         DWORD error = GetLastError();
-        ERROR("CreateWindowEx error %d", error);
+        Utils::printLog(ERROR_PARAM, "CreateWindowEx error %d", error);
     }
 
     ShowWindow(m_hwnd, SW_SHOW);
@@ -82,9 +82,12 @@ VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const
     return surface;
 }
 
-const IControl::WindowQueueMSG& Win32Control::processWindowQueueMSGs()
+IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs()
 {
     MSG msg;
+
+    IControl::WindowQueueMSG windowQueueMsg;
+    
    /**
    GetMessage does not return until a message matching the filter criteria is placed in the queue, whereas
    PeekMessage returns immediately regardless of whether a message is in the queue.
@@ -95,7 +98,13 @@ const IControl::WindowQueueMSG& Win32Control::processWindowQueueMSGs()
        /* handle or dispatch messages */
        if (msg.message == WM_QUIT)
        {
-           m_windowQueueMSG.isQuited = true;
+           windowQueueMsg.isQuited = true;
+       }
+       else if (msg.message == WM_SIZE)
+       {
+           windowQueueMsg.width = LOWORD(msg.lParam);
+           windowQueueMsg.height = HIWORD(msg.lParam);
+           windowQueueMsg.isResized = true;
        }
        else
        {
@@ -104,7 +113,7 @@ const IControl::WindowQueueMSG& Win32Control::processWindowQueueMSGs()
        }
    }
 
-   return m_windowQueueMSG;
+   return windowQueueMsg;
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -115,16 +124,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         PostQuitMessage(0);
         break;
 
-    case WM_SIZE:
-    {
-        UINT width = LOWORD(lParam);
-        UINT height = HIWORD(lParam);
-        //OnResize(width, height);
-        break;
-    }
-
     case WM_DESTROY:
         return 0;
+
+    case WM_SIZE:
+    {
+        PostMessageW(hwnd, uMsg, wParam, lParam);
+        break;
+    }
 
     case WM_KEYDOWN:
     {

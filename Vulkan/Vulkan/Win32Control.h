@@ -24,7 +24,7 @@ public:
 
     virtual std::string_view getVulkanWindowSurfaceExtension() const override;
 
-    virtual const WindowQueueMSG& processWindowQueueMSGs() override;
+    virtual WindowQueueMSG processWindowQueueMSGs() override;
 
 private:
     HINSTANCE    m_hinstance;

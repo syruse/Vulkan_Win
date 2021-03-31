@@ -15,7 +15,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(
     const char* pMessage,
     void* pUserData)
 {
-    INFO("%s\n", pMessage);
+    Utils::printLog(INFO_PARAM, pMessage);
     return VK_FALSE;
 }
 
@@ -57,7 +57,7 @@ void VulkanCore::init()
     m_surface = createSurface(m_inst);
     assert(m_surface);
 
-    INFO("Surface created\n");
+    Utils::printLog(INFO_PARAM, "Surface created");
 
     VulkanGetPhysicalDevices(m_inst, m_surface, m_physDevices);
     selectPhysicalDevice();
@@ -86,7 +86,13 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const
 const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps() const
 {
     assert(m_gfxDevIndex >= 0);
-    return m_physDevices.m_surfaceCaps[m_gfxDevIndex];
+
+    VkSurfaceCapabilitiesKHR SurfaceCaps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        getPhysDevice(),
+        m_surface,
+        &m_physDevices.m_surfaceCaps[m_gfxDevIndex]);
+    return //m_physDevices.m_surfaceCaps[m_gfxDevIndex];
 
 }
 
@@ -98,9 +104,9 @@ void VulkanCore::selectPhysicalDevice()
         for (size_t j = 0; j < m_physDevices.m_qFamilyProps[i].size(); ++j) {
             VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[i][j];
 
-            INFO("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+            INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
             VkQueueFlags flags = QFamilyProp.queueFlags;
-            INFO("    GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
+            INFO_FORMAT("    GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
                 (flags & VK_QUEUE_GRAPHICS_BIT) ? "Yes" : "No",
                 (flags & VK_QUEUE_COMPUTE_BIT) ? "Yes" : "No",
                 (flags & VK_QUEUE_TRANSFER_BIT) ? "Yes" : "No",
@@ -108,19 +114,19 @@ void VulkanCore::selectPhysicalDevice()
 
             if ((flags & VK_QUEUE_GRAPHICS_BIT) && (m_gfxDevIndex == -1)) {
                 if (!m_physDevices.m_qSupportsPresent[i][j]) {
-                    INFO("Present is not supported\n");
+                    Utils::printLog(INFO_PARAM, "Present is not supported");
                     continue;
                 }
 
                 m_gfxDevIndex = i;
                 m_gfxQueueFamily = j;
-                INFO("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
+                INFO_FORMAT("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
             }
         }
     }
 
     if (m_gfxDevIndex == -1) {
-        INFO("No GFX device found!\n");
+        Utils::printLog(INFO_PARAM, "No GFX device found!");
         assert(0);
     }
 }
@@ -216,5 +222,5 @@ void VulkanCore::createLogicalDevice()
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 
-    INFO("Device created\n");
+    Utils::printLog(INFO_PARAM, "Device created");
 }
