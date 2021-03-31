@@ -83,17 +83,18 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const
 }
 
 
-const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps() const
+const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps()
 {
     assert(m_gfxDevIndex >= 0);
 
-    VkSurfaceCapabilitiesKHR SurfaceCaps;
+    /// Note: must be refreshed for example when resizing
+    ///       otherwise programm will use cached previous surface size causing the crash
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         getPhysDevice(),
         m_surface,
-        &m_physDevices.m_surfaceCaps[m_gfxDevIndex]);
-    return //m_physDevices.m_surfaceCaps[m_gfxDevIndex];
+        &(m_physDevices.m_surfaceCaps[m_gfxDevIndex]));
 
+    return m_physDevices.m_surfaceCaps[m_gfxDevIndex];
 }
 
 
@@ -130,7 +131,6 @@ void VulkanCore::selectPhysicalDevice()
         assert(0);
     }
 }
-
 
 void VulkanCore::createInstance()
 {

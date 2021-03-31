@@ -13,6 +13,14 @@ public:
         bool isResized = false;
         unsigned short width = 0;
         unsigned short height = 0;
+
+        void reset() 
+        { 
+            isQuited = false; 
+            isResized = false;
+            width = 0;
+            height = 0;
+        }
     };
 
     constexpr IControl(std::wstring_view appName, size_t width, size_t height)
@@ -37,8 +45,7 @@ public:
         return "";
     }
 
-    /// falls into NRVO
-    virtual WindowQueueMSG processWindowQueueMSGs() { return WindowQueueMSG{}; }
+    virtual WindowQueueMSG processWindowQueueMSGs() = 0;
 
 protected:
     std::wstring_view m_appName;

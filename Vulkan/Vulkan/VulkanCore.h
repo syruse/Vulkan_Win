@@ -19,7 +19,7 @@ public:
 
     const VkSurfaceFormatKHR& getSurfaceFormat() const;
 
-    const VkSurfaceCapabilitiesKHR getSurfaceCaps() const;
+    const VkSurfaceCapabilitiesKHR getSurfaceCaps();
 
     const VkSurfaceKHR& getSurface() const { return m_surface; }
 

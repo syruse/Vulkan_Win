@@ -7,6 +7,7 @@
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
 static constexpr const wchar_t* WIN_CLASS_NAME = L"Win32Control";
+static IControl::WindowQueueMSG _windowQueueMsg{};
 
 Win32Control::~Win32Control()
 {
@@ -86,8 +87,6 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs()
 {
     MSG msg;
 
-    IControl::WindowQueueMSG windowQueueMsg;
-    
    /**
    GetMessage does not return until a message matching the filter criteria is placed in the queue, whereas
    PeekMessage returns immediately regardless of whether a message is in the queue.
@@ -98,13 +97,7 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs()
        /* handle or dispatch messages */
        if (msg.message == WM_QUIT)
        {
-           windowQueueMsg.isQuited = true;
-       }
-       else if (msg.message == WM_SIZE)
-       {
-           windowQueueMsg.width = LOWORD(msg.lParam);
-           windowQueueMsg.height = HIWORD(msg.lParam);
-           windowQueueMsg.isResized = true;
+           _windowQueueMsg.isQuited = true;
        }
        else
        {
@@ -112,6 +105,9 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs()
            DispatchMessage(&msg);
        }
    }
+
+   IControl::WindowQueueMSG windowQueueMsg(_windowQueueMsg);
+   _windowQueueMsg.reset();
 
    return windowQueueMsg;
 }
@@ -129,7 +125,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
     {
-        PostMessageW(hwnd, uMsg, wParam, lParam);
+        _windowQueueMsg.width = LOWORD(lParam);
+        _windowQueueMsg.height = HIWORD(lParam);
+        _windowQueueMsg.isResized = true;
         break;
     }
 

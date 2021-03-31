@@ -94,7 +94,7 @@ public:
 private:
 
     void cleanupSwapChain();
-    void recreateSwapChain(int16_t width, int16_t height);
+    void recreateSwapChain(uint16_t width, uint16_t height);
 
     void createSwapChain();
     void createUniformBuffers();
@@ -125,8 +125,8 @@ private:
 
     uint32_t m_mipLevels;///TO BE FIXED
 
-    int16_t m_width;
-    int16_t m_height;
+    uint16_t m_width;
+    uint16_t m_height;
     VulkanCore m_core;
     std::vector<VkImage> m_images;
     VkSwapchainKHR m_swapChainKHR;

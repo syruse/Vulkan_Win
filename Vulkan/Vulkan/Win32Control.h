@@ -27,7 +27,7 @@ public:
     virtual WindowQueueMSG processWindowQueueMSGs() override;
 
 private:
-    HINSTANCE    m_hinstance;
-    HWND         m_hwnd;
+    HINSTANCE       m_hinstance;
+    HWND            m_hwnd;
 };
 

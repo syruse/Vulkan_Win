@@ -106,7 +106,7 @@ void VulkanRenderer::cleanupSwapChain()
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPoolSecondPass, nullptr);
 }
 
-void VulkanRenderer::recreateSwapChain(int16_t width, int16_t height)
+void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height)
 {
     INFO_FORMAT(" new width=%d; new height=%d", width, height);
     if (m_width != width || m_height != height)
@@ -755,7 +755,7 @@ bool VulkanRenderer::renderScene()
     const auto& winController = m_core.getWinController();
     assert(winController);
 
-    auto windowQueueMSG = winController->processWindowQueueMSGs(); /// falls into NRVO
+    auto windowQueueMSG = winController->processWindowQueueMSGs(); /// falls into NRVO    TO FIX
     ret_status = windowQueueMSG.isQuited;
 
     if (windowQueueMSG.isResized)
@@ -806,7 +806,7 @@ bool VulkanRenderer::renderScene()
         }
         else
         {
-            CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
+          CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
         }
 
         // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
