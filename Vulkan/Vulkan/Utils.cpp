@@ -11,7 +11,7 @@ namespace Utils {
 
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[100000];
+        char msg[10000];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);
@@ -22,7 +22,7 @@ namespace Utils {
 
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...)
     {
-        char msg[100000];
+        char msg[10000];
         va_list args;
         va_start(args, format);
         vsnprintf_s(msg, sizeof(msg), format, args);
@@ -404,13 +404,6 @@ namespace Utils {
     }
 
     void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
-        // Check if image format supports linear blitting
-        /*VkFormatProperties formatProperties;
-        vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
-
-        if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-            throw std::runtime_error("texture image format does not support linear blitting!");
-        }*/
 
         VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
@@ -523,10 +516,18 @@ namespace Utils {
         stbi_image_free(pixels);
 
         VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, mipLevels);
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, mipLevels);
 
-        VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
+        VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
         VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+
+        // Check if image format supports linear blitting
+VkFormatProperties formatProperties;
+vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+
+if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+    ERROR("texture image format does not support linear blitting!");
+}
         
         if (!miplevelsEnabling)
         {
@@ -555,9 +556,9 @@ namespace Utils {
         viewInfo.format = format;
         viewInfo.subresourceRange.aspectMask = aspectMask;
         viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.levelCount = mipLevels;
         viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = mipLevels;
+        viewInfo.subresourceRange.layerCount = 1;
 
         res = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
