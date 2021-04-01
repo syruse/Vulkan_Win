@@ -154,6 +154,7 @@
     <ClCompile Include="VulkanCore.cpp" />
     <ClCompile Include="VulkanRenderer.cpp" />
     <ClCompile Include="Win32Control.cpp" />
+    <ClCompile Include="XCBControl.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IControl.h" />
@@ -161,6 +162,7 @@
     <ClInclude Include="VulkanCore.h" />
     <ClInclude Include="VulkanRenderer.h" />
     <ClInclude Include="Win32Control.h" />
+    <ClInclude Include="XCBControl.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

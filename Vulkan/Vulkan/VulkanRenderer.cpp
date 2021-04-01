@@ -3,8 +3,10 @@
 #include <chrono>
 #include <limits>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include "Win32Control.h"
+#elif __linux__
+#include "XCBControl.h"
 #else            
 ///TO DO
 #endif 
@@ -19,8 +21,10 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
     : m_width(width)
     , m_height(height)
     ,
-#ifdef WIN32
+#ifdef _WIN32
     m_core(std::make_unique<Win32Control>(appName, width, height))
+#elif __linux__
+    m_core(std::make_unique<XCBControl>(appName, width, height))
 #else            
     ///TO DO
 #endif 

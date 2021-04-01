@@ -63,8 +63,12 @@ namespace Utils {
     void VulkanCreateImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U);
 
+    /// <summary>
+    /// VulkanCreateTextureImage function
+    /// </summary>
+    /// <param name="is_flippingVertically"> keep it in 'true' by default since texture applies from top to bottom in Vulkan</param>
     int VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool,
-        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool miplevelsEnabling = true);
+        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);

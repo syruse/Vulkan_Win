@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef _WIN32
+
 #include <windows.h>
 #include "vulkan/vulkan.h"
 #include "IControl.h"
@@ -30,4 +32,6 @@ private:
     HINSTANCE       m_hinstance;
     HWND            m_hwnd;
 };
+
+#endif
 

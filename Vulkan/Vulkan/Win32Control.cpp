@@ -1,3 +1,5 @@
+#ifdef _WIN32
+
 #include "Win32Control.h"
 #include "vulkan/vulkan_win32.h"
 #include "vulkan/vk_sdk_platform.h"
@@ -148,3 +150,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
     return 0;
 }
+
+
+#endif

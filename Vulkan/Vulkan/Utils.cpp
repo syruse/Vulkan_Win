@@ -200,7 +200,7 @@ namespace Utils {
         vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
-    VkCommandBuffer VulkanBeginSingleTimeCommands(VkDevice device,  VkCommandPool cmdBufPool)
+    VkCommandBuffer VulkanBeginSingleTimeCommands(VkDevice device,  VkCommandPool cmdBufPool) /// TO FIX  in one command buffer 
     {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -484,8 +484,10 @@ namespace Utils {
     }
 
     int VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool, 
-        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool miplevelsEnabling)
+        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_miplevelsEnabling, bool is_flippingVertically) /// TO FIX combine with sampler , imageview
     {
+        stbi_set_flip_vertically_on_load(is_flippingVertically);
+
         int texWidth, texHeight, texChannels;
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
         /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
@@ -496,7 +498,7 @@ namespace Utils {
         ///       std::log2 - how many times that dimension can be divided by 2
         ///       std::floor function handles cases where the largest dimension is not a power of 2
         ///       1 is added so that the original image has a mip level
-        uint32_t mipLevels = miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
+        uint32_t mipLevels = is_miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
 
         if (!pixels) 
         {
@@ -523,13 +525,13 @@ namespace Utils {
 
         // Check if image format supports linear blitting
 VkFormatProperties formatProperties;
-vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);
+vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);   /// TO FIX
 
 if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
     Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
 }
         
-        if (!miplevelsEnabling)
+        if (!is_miplevelsEnabling)
         {
             VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
