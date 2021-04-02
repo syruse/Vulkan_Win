@@ -13,7 +13,12 @@ class VulkanRenderer
 {
 public:
 
-    static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 2;
+    /// <summary>
+    /// Using double buffering and vsync locks rendering to an integer fraction of the vsync rate. 
+    /// In turn, reducing the performance of the application if rendering is slower than vsync. 
+    /// Consider setting minImageCount to 3 to use triple buffering to maximize performance in such cases.
+    /// </summary>
+    static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
     static constexpr int16_t MAX_OBJECTS = 1;
     static constexpr std::string_view TEXTURE_FILE_NAME{ "texture.jpg" };
 

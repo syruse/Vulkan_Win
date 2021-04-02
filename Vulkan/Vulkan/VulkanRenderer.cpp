@@ -471,7 +471,13 @@ void VulkanRenderer::createSwapChain()
     assert(SurfaceCaps.currentExtent.width != -1);
 
     assert(MAX_FRAMES_IN_FLIGHT >= SurfaceCaps.minImageCount);
-    assert(MAX_FRAMES_IN_FLIGHT <= SurfaceCaps.maxImageCount);
+    /// <summary>
+    /// maxImageCount: value of 0 means that there is no limit on the number of images
+    /// </summary>
+    if (SurfaceCaps.maxImageCount)
+    {
+        assert(MAX_FRAMES_IN_FLIGHT <= SurfaceCaps.maxImageCount);
+    }
 
     VkSwapchainCreateInfoKHR SwapChainCreateInfo = {};
 
