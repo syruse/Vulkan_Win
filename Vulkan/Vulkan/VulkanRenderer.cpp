@@ -5,8 +5,13 @@
 
 #ifdef _WIN32
 #include "Win32Control.h"
+///already included 'windows.h' with own implementations of aligned_alloc...
 #elif __linux__
 #include "XCBControl.h"
+#include <cstring> // memcpy
+#include <stdlib.h> // aligned_alloc/free
+#define _aligned_free free
+#define _aligned_malloc aligned_alloc
 #else            
 ///TO DO
 #endif 
@@ -521,9 +526,9 @@ void VulkanRenderer::createUniformBuffers()
     * we don't want to update the buffer in preparation of the next frame while a previous one is still reading from it!
     */
     for (size_t i = 0; i < m_images.size(); i++) {
-        Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             m_uniformBuffers[i], m_uniformBuffersMemory[i]);
-        Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             m_dynamicUniformBuffers[i], m_dynamicUniformBuffersMemory[i]);
     }
 
@@ -536,16 +541,16 @@ void VulkanRenderer::createVertexBuffer()
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
     void* data;
     vkMapMemory(m_core.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, vertices.data(), (size_t)bufferSize);
     vkUnmapMemory(m_core.getDevice(), stagingBufferMemory);
 
-    Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
 
-    Utils::VulkanÑopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_vertexBuffer, bufferSize);
+    Utils::VulkanCopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_vertexBuffer, bufferSize);
 
     vkDestroyBuffer(m_core.getDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_core.getDevice(), stagingBufferMemory, nullptr);
@@ -557,16 +562,16 @@ void VulkanRenderer::createIndexBuffer()
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
     void* data;
     vkMapMemory(m_core.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, indices.data(), (size_t)bufferSize);
     vkUnmapMemory(m_core.getDevice(), stagingBufferMemory);
 
-    Utils::VulkanÑreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
+    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
 
-    Utils::VulkanÑopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_indexBuffer, bufferSize);
+    Utils::VulkanCopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_indexBuffer, bufferSize);
 
     vkDestroyBuffer(m_core.getDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_core.getDevice(), stagingBufferMemory, nullptr);

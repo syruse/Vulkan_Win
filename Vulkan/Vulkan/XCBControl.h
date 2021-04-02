@@ -30,7 +30,7 @@ public:
 private:
     xcb_connection_t* m_pXCBConn;
     xcb_screen_t*     m_pXCBScreen;
-    xcb_window_t      m_xcbWindow;
+    xcb_window_t      m_xcbWindow{};
 };
 
 

@@ -1,5 +1,5 @@
 #include "Utils.h"
-#include <windows.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <assert.h>
 #include <fstream>
@@ -14,7 +14,7 @@ namespace Utils {
         char msg[100];
         va_list args;
         va_start(args, format);
-        vsnprintf_s(msg, sizeof(msg), format, args);
+        vsnprintf(msg, sizeof(msg), format, args);
         va_end(args);
 
         printLog(true, "\nin file: ", pFileName, " at line: ", line, " from function: ", pFuncName, " \n ", msg);
@@ -25,7 +25,7 @@ namespace Utils {
         char msg[100];
         va_list args;
         va_start(args, format);
-        vsnprintf_s(msg, sizeof(msg), format, args);
+        vsnprintf(msg, sizeof(msg), format, args);
         va_end(args);
 
         printLog(false, "\nin file: ", pFileName, " at line: ", line, " from function: ", pFuncName, " \n ", msg);
@@ -172,7 +172,7 @@ namespace Utils {
         Utils::printLog(ERROR_PARAM, "failed to find suitable memory type!");
     }
 
-    void Vulkan—reateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
+    void VulkanCreateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) 
     {
         VkBufferCreateInfo bufferInfo{};
@@ -239,7 +239,7 @@ namespace Utils {
         vkFreeCommandBuffers(device, cmdBufPool, 1, commandBuffer);
     }
 
-    void Vulkan—opyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+    void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
     {
         VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
@@ -507,7 +507,7 @@ namespace Utils {
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
-        Vulkan—reateBuffer(device, physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        VulkanCreateBuffer(device, physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             stagingBuffer, stagingBufferMemory);
 
         void* data;

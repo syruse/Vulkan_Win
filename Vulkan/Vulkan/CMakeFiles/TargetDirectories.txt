@@ -1,0 +1,3 @@
+/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/CMakeFiles/rebuild_cache.dir
+/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/CMakeFiles/VulkanApp.dir
+/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/CMakeFiles/edit_cache.dir

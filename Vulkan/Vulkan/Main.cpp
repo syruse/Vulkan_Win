@@ -1,4 +1,3 @@
-#include <windows.h>
 #include "VulkanRenderer.h"
 
 #include <iostream>

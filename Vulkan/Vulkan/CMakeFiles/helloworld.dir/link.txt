@@ -1,0 +1,1 @@
+/usr/bin/c++    -rdynamic CMakeFiles/helloworld.dir/Main.cpp.o CMakeFiles/helloworld.dir/Utils.cpp.o CMakeFiles/helloworld.dir/VulkanCore.cpp.o CMakeFiles/helloworld.dir/VulkanRenderer.cpp.o CMakeFiles/helloworld.dir/Win32Control.cpp.o CMakeFiles/helloworld.dir/XCBControl.cpp.o  -o helloworld 
