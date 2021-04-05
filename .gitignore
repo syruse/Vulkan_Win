@@ -8,3 +8,5 @@
 /Vulkan/x64/Debug
 /Vulkan/Vulkan/x64/Release/Vulkan.tlog
 /Vulkan/Vulkan/x64/Release
+Vulkan/Vulkan/CMakeFiles/
+build/
