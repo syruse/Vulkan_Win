@@ -1,0 +1,32 @@
+[
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Main.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Main.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Main.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Utils.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Utils.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Utils.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/VulkanCore.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/VulkanCore.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/VulkanCore.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/VulkanRenderer.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/VulkanRenderer.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/VulkanRenderer.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Win32Control.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Win32Control.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Win32Control.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/XCBControl.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/XCBControl.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/XCBControl.cpp"
+}
+]
