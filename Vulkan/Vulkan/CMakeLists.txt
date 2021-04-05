@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.0)
 
 project(VulkanApp)
 
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+endif()
+
 SET(MYINCLUDE_DIR "../")
 
 INCLUDE_DIRECTORIES( ${MYINCLUDE_DIR} )
@@ -21,4 +25,9 @@ find_package(Vulkan REQUIRED)
 #/usr/lib/x86_64-linux-gnu/libxcb.so
 
 add_executable(VulkanApp ${VulkanApp_SRC})
-target_link_libraries(VulkanApp "libvulkan.so.1" "libxcb.so")
+
+if(LINUX)
+    target_link_libraries(VulkanApp "libvulkan.so.1" "libxcb.so")
+else(WIN32)
+    message("set specific libs for linking!!!")
+endif()

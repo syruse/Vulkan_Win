@@ -58,8 +58,8 @@ void XCBControl::init()
                       0,
                       XCB_WINDOW_CLASS_INPUT_OUTPUT,
                       m_pXCBScreen->root_visual,
-                      0,
-                      0);
+                      XCB_CW_EVENT_MASK,
+                      &MASK);
 
     xcb_map_window(m_pXCBConn, m_xcbWindow);
 
@@ -94,7 +94,74 @@ VkSurfaceKHR XCBControl::createSurface(VkInstance& inst) const
 
 IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs()
 {
+    m_windowQueueMsg.reset();
 
+    if (auto e = xcb_poll_for_event(m_pXCBConn))
+    {
+        switch (e->response_type & ~0x80)
+        {
+        case XCB_RESIZE_REQUEST:
+        {
+            xcb_resize_request_event_t *ev = (xcb_resize_request_event_t *)e;
+            m_windowQueueMsg.isResized = true;
+            m_windowQueueMsg.width = ev->width;
+            m_windowQueueMsg.height = ev->height;
+            break;
+        }
+        case XCB_CONFIGURE_NOTIFY:
+        {
+            xcb_configure_notify_event_t *ev = (xcb_configure_notify_event_t *)e;
+            break;
+        }
+        case XCB_EXPOSE:
+        {
+            xcb_expose_event_t *ev = (xcb_expose_event_t *)e;
+            break;
+        }
+        case XCB_BUTTON_PRESS:
+        {
+            xcb_button_press_event_t *ev = (xcb_button_press_event_t *)e;
+        }
+        case XCB_BUTTON_RELEASE:
+        {
+            xcb_button_release_event_t *ev = (xcb_button_release_event_t *)e;
+            break;
+        }
+        case XCB_MOTION_NOTIFY:
+        {
+            xcb_motion_notify_event_t *ev = (xcb_motion_notify_event_t *)e;
+            break;
+        }
+        case XCB_ENTER_NOTIFY:
+        {
+            xcb_enter_notify_event_t *ev = (xcb_enter_notify_event_t *)e;
+            break;
+        }
+        case XCB_LEAVE_NOTIFY:
+        {
+            xcb_leave_notify_event_t *ev = (xcb_leave_notify_event_t *)e;
+            break;
+        }
+        case XCB_KEY_PRESS:
+        {
+            xcb_key_press_event_t *ev = (xcb_key_press_event_t *)e;
+            break;
+        }
+        case XCB_KEY_RELEASE:
+        {
+            xcb_key_release_event_t *ev = (xcb_key_release_event_t *)e;
+            break;
+        }
+        default:
+            Utils::printLog(INFO_PARAM, "Unknown event: ", e->response_type);
+            break;
+        }
+        
+        /* Free the Generic Event */
+        free(e);
+    }
+
+    return m_windowQueueMsg;
 }
 
 #endif
