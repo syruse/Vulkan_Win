@@ -8,24 +8,29 @@
 
 #include "VulkanCore.h"
 
-
 class VulkanRenderer
 {
 public:
-
     /// <summary>
-    /// Using double buffering and vsync locks rendering to an integer fraction of the vsync rate. 
-    /// In turn, reducing the performance of the application if rendering is slower than vsync. 
+    /// Using double buffering and vsync locks rendering to an integer fraction of the vsync rate.
+    /// In turn, reducing the performance of the application if rendering is slower than vsync.
     /// Consider setting minImageCount to 3 to use triple buffering to maximize performance in such cases.
     /// </summary>
     static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
     static constexpr int16_t MAX_OBJECTS = 1;
-    static constexpr std::string_view TEXTURE_FILE_NAME{ "texture.jpg" };
+    static constexpr std::string_view TEXTURE_FILE_NAME{"textures/viking_room.png"};
+    static constexpr std::string_view MODEL_PATH{"models/viking_room.obj"};
 
-    struct Vertex {
+    struct Vertex
+    {
         glm::vec3 pos;
         glm::vec3 color;
         glm::vec2 texCoord;
+
+        bool operator==(const Vertex &other) const
+        {
+            return pos == other.pos && color == other.color && texCoord == other.texCoord;
+        }
 
         static VkVertexInputBindingDescription getBindingDescription()
         {
@@ -61,19 +66,22 @@ public:
         }
     };
 
-    struct UniformBufferObject {
+    struct UniformBufferObject
+    {
         alignas(16) glm::mat4 view;
         alignas(16) glm::mat4 proj;
     };
 
-    struct DynamicUniformBufferObject {
+    struct DynamicUniformBufferObject
+    {
         alignas(16) glm::mat4 model;
     };
 
-    struct PushConstant {
+    struct PushConstant
+    {
         alignas(16) glm::mat4 model;
     } _pushConstant;
-
+    /*
     const std::vector<Vertex> vertices = {
         {{-0.7f, 0.7f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
         {{0.7f, 0.7f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
@@ -83,8 +91,7 @@ public:
 
     const std::vector<uint32_t> indices = {
         0, 1, 2, 3
-    };
-
+    };*/
 
     VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
 
@@ -92,12 +99,11 @@ public:
 
     void init();
 
-    inline VulkanCore& getVulkanCore() { return m_core; };
+    inline VulkanCore &getVulkanCore() { return m_core; };
 
     bool renderScene();
 
 private:
-
     void cleanupSwapChain();
     void recreateSwapChain(uint16_t width, uint16_t height);
 
@@ -125,10 +131,11 @@ private:
     void createSemaphores();
     void createDepthResources();
     void createColourBufferImage();
+    void loadModel();
 
     size_t m_currentFrame = 0;
 
-    uint32_t m_mipLevels;///TO BE FIXED
+    uint32_t m_mipLevels; ///TO BE FIXED
 
     uint16_t m_width;
     uint16_t m_height;
@@ -158,6 +165,8 @@ private:
     std::vector<VkSemaphore> m_renderCompleteSem;
     std::vector<VkFence> m_drawFences;
 
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     VkBuffer m_vertexBuffer;
     VkDeviceMemory m_vertexBufferMemory;
     VkBuffer m_indexBuffer;
@@ -167,7 +176,7 @@ private:
     std::vector<VkBuffer> m_dynamicUniformBuffers;
     std::vector<VkDeviceMemory> m_dynamicUniformBuffersMemory;
     size_t m_modelUniformAlignment;
-    DynamicUniformBufferObject* mp_modelTransferSpace = nullptr;
+    DynamicUniformBufferObject *mp_modelTransferSpace = nullptr;
 
     VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
     VkImage m_depthImage;
@@ -186,4 +195,3 @@ private:
     VkPipeline m_pipelineSecondPass;
     VkPipelineLayout m_pipelineLayoutSecondPass;
 };
-
