@@ -11,6 +11,10 @@
 #endif
 
 namespace Utils {
+
+    static constexpr std::string_view SHADERS_DIR{"shaders"};
+    static constexpr std::string_view TEXTURES_DIR{"textures"};
+
     struct VulkanPhysicalDevices {
         std::vector<VkPhysicalDevice> m_devices;
         std::vector<VkPhysicalDeviceProperties> m_devProps;
@@ -78,6 +82,12 @@ namespace Utils {
     bool VulkanFindSupportedFormat(const VkPhysicalDevice& physicalDevice, const std::vector<VkFormat>& candidates,
         VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format);
 }
+
+#ifdef _WIN32
+    static constexpr char DIR_SEPARATOR = '\\';
+#else
+    static constexpr char DIR_SEPARATOR = '/';
+#endif
 
 #define MAX(a, b)                          (((a) > (b)) ? (a) : (b))
 #define ARRAY_SIZE_IN_ELEMENTS(a)          (sizeof(a)/sizeof(a[0]))

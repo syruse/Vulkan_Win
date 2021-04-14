@@ -250,12 +250,23 @@ namespace Utils {
         VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
     }
 
+    void formPath(std::string_view dir, std::string_view fileName, std::string& resultPath)
+    {
+        resultPath.reserve(dir.length() + fileName.length() + 1);
+        resultPath = dir.data();
+        resultPath += DIR_SEPARATOR;
+        resultPath += fileName.data();
+    }
+
     VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName)
     {
-        assert(fileName.data());
-        std::ifstream file(fileName.data(), std::ios::ate | std::ios::binary);
+        std::string shaderPath;
+        formPath(SHADERS_DIR, fileName, shaderPath);
+
+        assert(shaderPath.c_str());
+        std::ifstream file(shaderPath.c_str(), std::ios::ate | std::ios::binary);
         if (!file.is_open()) {
-            Utils::printLog(ERROR_PARAM, fileName.data());
+            Utils::printLog(ERROR_PARAM, shaderPath.c_str());
         }
         size_t codeSize = (size_t)file.tellg();
         assert(codeSize);
@@ -273,7 +284,7 @@ namespace Utils {
         VkShaderModule shaderModule;
         VkResult res = vkCreateShaderModule(device, &shaderCreateInfo, NULL, &shaderModule);
         CHECK_VULKAN_ERROR("vkCreateShaderModule error %d\n", res);
-        Utils::printLog(INFO_PARAM, "Created shader ", fileName.data());
+        Utils::printLog(INFO_PARAM, "Created shader ", shaderPath.c_str());
         return shaderModule;
     }
 
@@ -488,10 +499,13 @@ namespace Utils {
     {
         stbi_set_flip_vertically_on_load(is_flippingVertically);
 
+        std::string texturePath;
+        formPath(TEXTURES_DIR, pTextureFileName, texturePath);
+
         int texWidth, texHeight, texChannels;
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
         /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
-        stbi_uc* pixels = stbi_load(pTextureFileName.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
 
         /// Note: calculating the number of levels in the mip chain: 
@@ -502,7 +516,7 @@ namespace Utils {
 
         if (!pixels) 
         {
-            Utils::printLog(ERROR_PARAM, "failed to load texture image!");
+            Utils::printLog(ERROR_PARAM, texturePath.c_str(), "failed to load texture image!");
         }
 
         VkBuffer stagingBuffer;

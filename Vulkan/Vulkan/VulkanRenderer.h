@@ -18,8 +18,9 @@ public:
     /// </summary>
     static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
     static constexpr int16_t MAX_OBJECTS = 1;
-    static constexpr std::string_view TEXTURE_FILE_NAME{"textures/viking_room.png"};
-    static constexpr std::string_view MODEL_PATH{"models/viking_room.obj"};
+    static constexpr std::string_view MTL_DIR{"models"};
+    static constexpr std::string_view TEXTURE_FILE_NAME{"PzVl_Tiger_I.png"};
+    static constexpr std::string_view MODEL_PATH{"models/Tank.obj"};
 
     struct Vertex
     {

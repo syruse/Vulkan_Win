@@ -173,7 +173,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(glm::vec3(10.0f, 10.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(65.0f), m_width / (float)m_height, 0.01f, 1000.0f);
 
     /**
@@ -787,9 +787,9 @@ void VulkanRenderer::loadModel()
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.data()))
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.data(), MTL_DIR.data(), false, false))
     {
-        throw std::runtime_error(warn + err);
+        Utils::printLog(ERROR_PARAM, (warn + err));
     }
 
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
