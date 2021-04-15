@@ -20,23 +20,6 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include "glm/gtx/hash.hpp"
-
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-#include <unordered_map>
-
-namespace std
-{
-    template <>
-    struct hash<VulkanRenderer::Vertex>
-    {
-        size_t operator()(VulkanRenderer::Vertex const &vertex) const
-        {
-            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
-        }
-    };
-}
 
 VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
     : m_width(width)
@@ -780,46 +763,9 @@ void VulkanRenderer::createColourBufferImage()
     }
 }
 
-void VulkanRenderer::loadModel()
+void VulkanRenderer::loadModels()
 {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.data(), MTL_DIR.data(), false, false))
-    {
-        Utils::printLog(ERROR_PARAM, (warn + err));
-    }
-
-    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-    for (const auto &shape : shapes)
-    {
-        for (const auto &index : shape.mesh.indices)
-        {
-            Vertex vertex{};
-
-            vertex.pos = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]};
-
-            vertex.texCoord = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                attrib.texcoords[2 * index.texcoord_index + 1]};
-
-            vertex.color = {1.0f, 1.0f, 1.0f};
-
-            if (uniqueVertices.count(vertex) == 0)
-            {
-                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-                vertices.push_back(vertex);
-            }
-
-            indices.push_back(uniqueVertices[vertex]);
-        }
-    }
+    m_objModel.loadModel(MODEL_PATH.data());
 }
 
 bool VulkanRenderer::renderScene()
@@ -1112,8 +1058,8 @@ void VulkanRenderer::createPipeline()
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    auto bindingDescription = Vertex::getBindingDescription();
-    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+    auto bindingDescription = I3DModel::Vertex::getBindingDescription();
+    auto attributeDescriptions = I3DModel::Vertex::getAttributeDescriptions();
 
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
@@ -1284,7 +1230,7 @@ void VulkanRenderer::init()
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
-    loadModel();
+    loadModels();
     createVertexBuffer();
     createIndexBuffer();
     createDescriptorSetLayout();

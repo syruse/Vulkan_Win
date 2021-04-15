@@ -7,6 +7,7 @@
 #include <array>
 
 #include "VulkanCore.h"
+#include "ObjModel.h"
 
 class VulkanRenderer
 {
@@ -18,54 +19,8 @@ public:
     /// </summary>
     static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
     static constexpr int16_t MAX_OBJECTS = 1;
-    static constexpr std::string_view MTL_DIR{"models"};
     static constexpr std::string_view TEXTURE_FILE_NAME{"PzVl_Tiger_I.png"};
     static constexpr std::string_view MODEL_PATH{"models/Tank.obj"};
-
-    struct Vertex
-    {
-        glm::vec3 pos;
-        glm::vec3 color;
-        glm::vec2 texCoord;
-
-        bool operator==(const Vertex &other) const
-        {
-            return pos == other.pos && color == other.color && texCoord == other.texCoord;
-        }
-
-        static VkVertexInputBindingDescription getBindingDescription()
-        {
-            VkVertexInputBindingDescription bindingDescription{};
-            bindingDescription.binding = 0;
-            bindingDescription.stride = sizeof(Vertex);
-            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-            return bindingDescription;
-        }
-
-        static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions()
-        {
-
-            static std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-
-            attributeDescriptions[0].binding = 0;
-            attributeDescriptions[0].location = 0;
-            attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-            attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-            attributeDescriptions[1].binding = 0;
-            attributeDescriptions[1].location = 1;
-            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-            attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-            attributeDescriptions[2].binding = 0;
-            attributeDescriptions[2].location = 2;
-            attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-            attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-            return attributeDescriptions;
-        }
-    };
 
     struct UniformBufferObject
     {
@@ -82,17 +37,6 @@ public:
     {
         alignas(16) glm::mat4 model;
     } _pushConstant;
-    /*
-    const std::vector<Vertex> vertices = {
-        {{-0.7f, 0.7f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-        {{0.7f, 0.7f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.7f, -0.7f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-        {{0.7f, -0.7f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}
-    };
-
-    const std::vector<uint32_t> indices = {
-        0, 1, 2, 3
-    };*/
 
     VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
 
@@ -132,7 +76,7 @@ private:
     void createSemaphores();
     void createDepthResources();
     void createColourBufferImage();
-    void loadModel();
+    void loadModels();
 
     size_t m_currentFrame = 0;
 
@@ -166,8 +110,7 @@ private:
     std::vector<VkSemaphore> m_renderCompleteSem;
     std::vector<VkFence> m_drawFences;
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    ObjModel m_objModel;
     VkBuffer m_vertexBuffer;
     VkDeviceMemory m_vertexBufferMemory;
     VkBuffer m_indexBuffer;
