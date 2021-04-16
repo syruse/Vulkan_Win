@@ -53,12 +53,6 @@ VulkanRenderer::~VulkanRenderer()
         vkFreeMemory(m_core.getDevice(), m_dynamicUniformBuffersMemory[i], nullptr);
     }
 
-    vkDestroySampler(m_core.getDevice(), m_textureSampler, nullptr);
-    vkDestroyImageView(m_core.getDevice(), m_textureImageView, nullptr);
-
-    vkDestroyImage(m_core.getDevice(), m_textureImage, nullptr);
-    vkFreeMemory(m_core.getDevice(), m_textureImageMemory, nullptr);
-
     vkDestroyDescriptorSetLayout(m_core.getDevice(), m_descriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(m_core.getDevice(), m_descriptorSetLayoutSecondPass, nullptr);
 
@@ -561,48 +555,6 @@ void VulkanRenderer::createCommandBuffer()
     CHECK_VULKAN_ERROR("vkAllocateCommandBuffers error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Created command buffers");
-}
-
-void VulkanRenderer::createTextureImage()
-{
-    m_mipLevels = Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
-}
-
-void VulkanRenderer::createTextureImageView()
-{
-	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView, m_mipLevels) != VK_SUCCESS) {
-		Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
-	}
-}
-
-void VulkanRenderer::createTextureSampler()
-{
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(m_core.getPhysDevice(), &properties);
-
-    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", properties.limits.maxSamplerAnisotropy);
-
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = (properties.limits.maxSamplerAnisotropy < 1 ? VK_FALSE : VK_TRUE);
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE; /// -> [0: 1]
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = static_cast<float>(m_mipLevels);
-    samplerInfo.mipLodBias = 0.0f;
-
-    if (vkCreateSampler(m_core.getDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
-        Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
-    }
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
@@ -1178,9 +1130,6 @@ void VulkanRenderer::init()
     createCommandBuffer();
     createDepthResources();
     createColourBufferImage();
-    createTextureImage();
-    createTextureImageView();
-    createTextureSampler();
     loadModels();
     createDescriptorSetLayout();
     createPushConstantRange();

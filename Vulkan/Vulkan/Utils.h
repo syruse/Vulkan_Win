@@ -13,7 +13,6 @@
 namespace Utils {
 
     static constexpr std::string_view SHADERS_DIR{"shaders"};
-    static constexpr std::string_view TEXTURES_DIR{"textures"};
 
     struct VulkanPhysicalDevices {
         std::vector<VkPhysicalDevice> m_devices;

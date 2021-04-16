@@ -22,6 +22,11 @@ I3DModel::~I3DModel()
 
 void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue)
 {
+    assert(device);
+    assert(physicalDevice);
+    assert(cmdBufPool);
+    assert(queue);
+
     m_device = device;
     m_physicalDevice = physicalDevice;
     load(path);

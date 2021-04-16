@@ -56,9 +56,6 @@ private:
     void createUniformBuffers();
     void createCommandPool();
     void createCommandBuffer();
-    void createTextureImage();
-    void createTextureImageView();
-    void createTextureSampler();
     void updateUniformBuffer(uint32_t currentImage);
     void createRenderPass();
     void createDescriptorSetLayout();
@@ -78,8 +75,6 @@ private:
 
     size_t m_currentFrame = 0;
 
-    uint32_t m_mipLevels; ///TO BE FIXED
-
     uint16_t m_width;
     uint16_t m_height;
     VulkanCore m_core;
@@ -88,10 +83,6 @@ private:
     VkQueue m_queue;
     std::vector<VkCommandBuffer> m_cmdBufs;
     VkCommandPool m_cmdBufPool;
-    VkImage m_textureImage;
-    VkImageView m_textureImageView;
-    VkSampler m_textureSampler;
-    VkDeviceMemory m_textureImageMemory;
     std::vector<VkImageView> m_views;
     VkRenderPass m_renderPass;
     VkDescriptorSetLayout m_descriptorSetLayout;
