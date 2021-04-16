@@ -2,14 +2,13 @@
 
 #include "I3DModel.h"
 
-class ObjModel: public I3DModel
+class ObjModel : public I3DModel
 {
 public:
+    ObjModel() = default;
 
-ObjModel() = default;
-
-virtual void loadModel(std::string_view path) override;
+    virtual void draw(VkCommandBuffer cmdBuf) override;
 
 private:
-
+    virtual void load(std::string_view path) override;
 };

@@ -20,7 +20,7 @@ public:
     static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
     static constexpr int16_t MAX_OBJECTS = 1;
     static constexpr std::string_view TEXTURE_FILE_NAME{"PzVl_Tiger_I.png"};
-    static constexpr std::string_view MODEL_PATH{"models/Tank.obj"};
+    static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
     struct UniformBufferObject
     {
@@ -54,8 +54,6 @@ private:
 
     void createSwapChain();
     void createUniformBuffers();
-    void createVertexBuffer();
-    void createIndexBuffer();
     void createCommandPool();
     void createCommandBuffer();
     void createTextureImage();
@@ -111,10 +109,6 @@ private:
     std::vector<VkFence> m_drawFences;
 
     ObjModel m_objModel;
-    VkBuffer m_vertexBuffer;
-    VkDeviceMemory m_vertexBufferMemory;
-    VkBuffer m_indexBuffer;
-    VkDeviceMemory m_indexBufferMemory;
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersMemory;
     std::vector<VkBuffer> m_dynamicUniformBuffers;

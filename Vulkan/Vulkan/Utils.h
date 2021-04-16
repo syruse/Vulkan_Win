@@ -49,37 +49,39 @@ namespace Utils {
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
 
+    void formPath(std::string_view dir, std::string_view fileName, std::string& resultPath);
+
     void VulkanCheckValidationLayerSupport();
 
     void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps);
 
-    void VulkanGetPhysicalDevices(const VkInstance& inst, const VkSurfaceKHR& Surface, VulkanPhysicalDevices& PhysDevices);
+    void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysicalDevices& PhysDevices);
 
-    size_t VulkanFindMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties);
+    size_t VulkanFindMemoryType(VkPhysicalDevice physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties);
 
-    void VulkanCreateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
+    void VulkanCreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
     void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
-    VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName);
+    VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName);
 
-    void VulkanCreateImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+    void VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U);
 
     /// <summary>
     /// VulkanCreateTextureImage function
     /// </summary>
     /// <param name="is_flippingVertically"> keep it in 'true' by default since texture applies from top to bottom in Vulkan</param>
-    int VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool,
+    int VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
         std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);
 
-    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels = 1U);
+    VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels = 1U);
 
-    bool VulkanFindSupportedFormat(const VkPhysicalDevice& physicalDevice, const std::vector<VkFormat>& candidates,
+    bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates,
         VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format);
 }
 

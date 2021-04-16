@@ -46,10 +46,6 @@ VulkanRenderer::~VulkanRenderer()
     vkDestroyShaderModule(m_core.getDevice(), m_vsModuleSecondPass, nullptr);
     vkDestroyShaderModule(m_core.getDevice(), m_fsModuleSecondPass, nullptr);
 
-    vkDestroyBuffer(m_core.getDevice(), m_vertexBuffer, nullptr);
-    vkFreeMemory(m_core.getDevice(), m_vertexBufferMemory, nullptr);
-    vkDestroyBuffer(m_core.getDevice(), m_indexBuffer, nullptr);
-    vkFreeMemory(m_core.getDevice(), m_indexBufferMemory, nullptr);
     for (size_t i = 0; i < m_images.size(); i++) {
         vkDestroyBuffer(m_core.getDevice(), m_uniformBuffers[i], nullptr);
         vkFreeMemory(m_core.getDevice(), m_uniformBuffersMemory[i], nullptr);
@@ -540,48 +536,6 @@ void VulkanRenderer::createUniformBuffers()
     /// uniform buffer updating with a new transformation occurs every frame, so there will be no vkMapMemory here
 }
 
-void VulkanRenderer::createVertexBuffer()
-{
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(m_core.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), (size_t)bufferSize);
-    vkUnmapMemory(m_core.getDevice(), stagingBufferMemory);
-
-    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
-
-    Utils::VulkanCopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_vertexBuffer, bufferSize);
-
-    vkDestroyBuffer(m_core.getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(m_core.getDevice(), stagingBufferMemory, nullptr);
-}
-
-void VulkanRenderer::createIndexBuffer() 
-{
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(m_core.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, indices.data(), (size_t)bufferSize);
-    vkUnmapMemory(m_core.getDevice(), stagingBufferMemory);
-
-    Utils::VulkanCreateBuffer(m_core.getDevice(), m_core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
-
-    Utils::VulkanCopyBuffer(m_core.getDevice(), m_queue, m_cmdBufPool, stagingBuffer, m_indexBuffer, bufferSize);
-
-    vkDestroyBuffer(m_core.getDevice(), stagingBuffer, nullptr);
-    vkFreeMemory(m_core.getDevice(), stagingBufferMemory, nullptr);
-}
-
 void VulkanRenderer::createCommandPool()
 {
     VkCommandPoolCreateInfo cmdPoolCreateInfo = {};
@@ -688,10 +642,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
 
     /// For Each mesh start
-    VkBuffer vertexBuffers[] = { m_vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(m_cmdBufs[currentImage], 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(m_cmdBufs[currentImage], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
 
     // Dynamic Offset Amount
     size_t meshIndex = 0;
@@ -714,7 +665,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     /** no need to draw over vertices vkCmdDraw(m_cmdBufs[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); */
     // Execute pipeline
-    vkCmdDrawIndexed(m_cmdBufs[currentImage], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    m_objModel.draw(m_cmdBufs[currentImage]);
     /// For Each mesh end
 
     ///-----------------------------------------------------------------------------------///
@@ -765,7 +716,7 @@ void VulkanRenderer::createColourBufferImage()
 
 void VulkanRenderer::loadModels()
 {
-    m_objModel.loadModel(MODEL_PATH.data());
+    m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue);
 }
 
 bool VulkanRenderer::renderScene()
@@ -781,7 +732,7 @@ bool VulkanRenderer::renderScene()
     {
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
     }
-    else
+    else if(!windowQueueMSG.isQuited)
     {
         // -- GET NEXT IMAGE --
         // Wait for given fence to signal (open) from last draw before continuing
@@ -1231,8 +1182,6 @@ void VulkanRenderer::init()
     createTextureImageView();
     createTextureSampler();
     loadModels();
-    createVertexBuffer();
-    createIndexBuffer();
     createDescriptorSetLayout();
     createPushConstantRange();
     allocateDynamicBufferTransferSpace();

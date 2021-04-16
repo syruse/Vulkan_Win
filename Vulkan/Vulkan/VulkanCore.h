@@ -15,19 +15,19 @@ public:
 
     void init();
 
-    const VkPhysicalDevice& getPhysDevice() const;
+    VkPhysicalDevice getPhysDevice() const;
 
     const VkSurfaceFormatKHR& getSurfaceFormat() const;
 
     const VkSurfaceCapabilitiesKHR getSurfaceCaps();
 
-    const VkSurfaceKHR& getSurface() const { return m_surface; }
+    VkSurfaceKHR getSurface() const { return m_surface; }
 
     int getQueueFamily() const { return m_gfxQueueFamily; }
 
-    VkInstance& getInstance() { return m_inst; }
+    VkInstance getInstance() { return m_inst; }
 
-    VkDevice& getDevice() { return m_device; }
+    VkDevice getDevice() { return m_device; }
 
     const std::unique_ptr<IControl>& getWinController() { return m_winController; }
 

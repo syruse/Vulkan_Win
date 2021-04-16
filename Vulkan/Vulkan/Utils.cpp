@@ -81,7 +81,7 @@ namespace Utils {
     }
 
 
-    void VulkanGetPhysicalDevices(const VkInstance& inst, const VkSurfaceKHR& Surface, VulkanPhysicalDevices& PhysDevices)
+    void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysicalDevices& PhysDevices)
     {
         uint32_t NumDevices = 0;
 
@@ -158,7 +158,7 @@ namespace Utils {
         }
     }
 
-    size_t VulkanFindMemoryType(const VkPhysicalDevice& physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties)
+    size_t VulkanFindMemoryType(VkPhysicalDevice physicalDevice, const VkMemoryRequirements& memRequirements, VkMemoryPropertyFlags properties)
     {
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -172,7 +172,7 @@ namespace Utils {
         Utils::printLog(ERROR_PARAM, "failed to find suitable memory type!");
     }
 
-    void VulkanCreateBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
+    void VulkanCreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) 
     {
         VkBufferCreateInfo bufferInfo{};
@@ -258,7 +258,7 @@ namespace Utils {
         resultPath += fileName.data();
     }
 
-    VkShaderModule VulkanCreateShaderModule(VkDevice& device, std::string_view fileName)
+    VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName)
     {
         std::string shaderPath;
         formPath(SHADERS_DIR, fileName, shaderPath);
@@ -302,7 +302,7 @@ namespace Utils {
         }
     }
 
-    void VulkanCreateImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+    void VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels)
     {
         VkImageCreateInfo imageInfo{};
@@ -494,7 +494,7 @@ namespace Utils {
         VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
     }
 
-    int VulkanCreateTextureImage(const VkDevice& device, const VkPhysicalDevice& physicalDevice, const VkQueue& queue, const VkCommandPool& cmdBufPool, 
+    int VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool, 
         std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_miplevelsEnabling, bool is_flippingVertically) /// TO FIX combine with sampler , imageview
     {
         stbi_set_flip_vertically_on_load(is_flippingVertically);
@@ -561,7 +561,7 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
         return mipLevels;
     }
 
-    VkResult VulkanCreateImageView(const VkDevice& device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels)
+    VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels)
     {
         VkResult res;
 
@@ -583,7 +583,7 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
         return res;
     }
 
-    bool VulkanFindSupportedFormat(const VkPhysicalDevice& physicalDevice, const std::vector<VkFormat>& candidates, 
+    bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, 
         VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format)
     {
         bool status = false;

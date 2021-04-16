@@ -70,7 +70,7 @@ VkSurfaceKHR VulkanCore::createSurface(VkInstance& inst)
     return m_winController->createSurface(inst);
 }
 
-const VkPhysicalDevice& VulkanCore::getPhysDevice() const
+VkPhysicalDevice VulkanCore::getPhysDevice() const
 {
     assert(m_gfxDevIndex >= 0);
     return m_physDevices.m_devices[m_gfxDevIndex];

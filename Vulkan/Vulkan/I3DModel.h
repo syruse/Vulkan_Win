@@ -25,7 +25,7 @@ public:
         static VkVertexInputBindingDescription getBindingDescription()
         {
             static VkVertexInputBindingDescription bindingDescription{};
-            
+
             bindingDescription.binding = 0;
             bindingDescription.stride = sizeof(Vertex);
             bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -57,16 +57,28 @@ public:
         }
     };
 
-    virtual ~I3DModel() = 0;
+    virtual ~I3DModel();
 
-    virtual void loadModel(std::string_view path) = 0;
+    virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) final;
+    virtual void draw(VkCommandBuffer cmdBuf) = 0;
 
 private:
-    std::vector<Vertex> m_vertices;
-    std::vector<uint32_t> m_indices;
+    virtual void load(std::string_view path) = 0; 
+    virtual void createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
+    virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
+
+protected:
+    std::uint32_t m_indecesAmount = 0u;
+    std::vector<Vertex> m_vertices{};
+    std::vector<uint32_t> m_indices{};
+    VkBuffer m_vertexBuffer = nullptr;
+    VkDeviceMemory m_vertexBufferMemory = nullptr;
+    VkBuffer m_indexBuffer = nullptr;
+    VkDeviceMemory m_indexBufferMemory = nullptr;
+    VkDevice m_device = nullptr;
+    VkPhysicalDevice m_physicalDevice = nullptr;
 };
 
-std::string I3DModel::MODEL_DIR = "models";
 namespace std
 {
     template <>

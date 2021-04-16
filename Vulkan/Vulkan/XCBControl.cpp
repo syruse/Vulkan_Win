@@ -145,6 +145,8 @@ IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs()
         case XCB_KEY_PRESS:
         {
             xcb_key_press_event_t *ev = (xcb_key_press_event_t *)e;
+            //printf("Keycode: %d\n", (ev->detail));
+            m_windowQueueMsg.isQuited = (ev->detail) ? true : false;
             break;
         }
         case XCB_KEY_RELEASE:

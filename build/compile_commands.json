@@ -1,8 +1,18 @@
 [
 {
   "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/I3DModel.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/I3DModel.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/I3DModel.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
   "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Main.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Main.cpp",
   "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Main.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/ObjModel.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/ObjModel.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/ObjModel.cpp"
 },
 {
   "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
