@@ -15,27 +15,43 @@ TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice,
     assert(m_physicalDevice);
     assert(m_cmdBufPool);
     assert(m_queue);
+
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
+    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", m_properties.limits.maxSamplerAnisotropy);
 }
 
 TextureFactory::~TextureFactory()
 {
-            vkDestroySampler(m_core.getDevice(), m_textureSampler, nullptr);
-            vkDestroyImageView(m_core.getDevice(), m_textureImageView, nullptr);
-            vkDestroyImage(m_core.getDevice(), m_textureImage, nullptr);
-            vkFreeMemory(m_core.getDevice(), m_textureImageMemory, nullptr);
+    for( const auto& [key, value] : m_samplers ) 
+    {
+        Utils::printLog(INFO_PARAM, "sampler removal with miplevels: ", key);
+        vkDestroySampler(m_device, value, nullptr);
+    }
 }
 
-TextureFactory::Texture TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
+void TextureFactory::texture_deleter(TextureFactory::Texture *p)
 {
-    TextureFactory::Texture texture{};
+    Utils::printLog(INFO_PARAM, "texture resources removal");
+    vkDestroyImageView(m_device, p->m_textureImageView, nullptr);
+    vkDestroyImage(m_device, p->m_textureImage, nullptr);
+    vkFreeMemory(m_device, p->m_textureImageMemory, nullptr);
+    delete p;
+}
+
+std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
+{
+    std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture, texture_deleter);
+    uint32_t mipLevels = 0u;
 
     if(m_textures.count(pTextureFileName.data()) == 0)
     {
-        m_mipLevels = Utils::VulkanCreateTextureImage(m_core.getDevice(), m_core.getPhysDevice(), m_queue, m_cmdBufPool, TEXTURE_FILE_NAME, m_textureImage, m_textureImageMemory);
+        std::string texturePath;
+        Utils::formPath(TEXTURES_DIR, pTextureFileName, texturePath);
 
-        	if (Utils::VulkanCreateImageView(m_core.getDevice(), m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView, m_mipLevels) != VK_SUCCESS) {
-		Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
-	}
+        mipLevels = Utils::VulkanCreateTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory);
+        Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, mipLevels);
+
+        m_textures[pTextureFileName.data()] = texture;
     }
     else
     {
@@ -45,32 +61,41 @@ TextureFactory::Texture TextureFactory::create2DTexture(std::string_view pTextur
     return texture;
 }
 
-void VulkanRenderer::createTextureSampler()
+VkSampler TextureFactory::createTextureSampler(uint32_t mipLevels)
 {
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(m_core.getPhysDevice(), &properties);
+    VkSampler sampler = nullptr;
 
-    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", properties.limits.maxSamplerAnisotropy);
+    if (m_samplers.count(mipLevels) == 0)
+    {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = (m_properties.limits.maxSamplerAnisotropy < 1 ? VK_FALSE : VK_TRUE);
+        samplerInfo.maxAnisotropy = m_properties.limits.maxSamplerAnisotropy;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE; /// -> [0: 1]
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = static_cast<float>(mipLevels);
+        samplerInfo.mipLodBias = 0.0f;
 
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = (properties.limits.maxSamplerAnisotropy < 1 ? VK_FALSE : VK_TRUE);
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE; /// -> [0: 1]
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = static_cast<float>(m_mipLevels);
-    samplerInfo.mipLodBias = 0.0f;
+        if (vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
+        }
 
-    if (vkCreateSampler(m_core.getDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
-        Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
+        m_samplers[mipLevels] = sampler;
     }
+    else
+    {
+        sampler = m_samplers[mipLevels];
+    }
+
+    return sampler;
 }

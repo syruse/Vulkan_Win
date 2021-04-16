@@ -3,6 +3,7 @@
 #include <string>
 #include "vulkan/vulkan.h"
 #include <unordered_map>
+#include <memory>
 
 class TextureFactory
 {
@@ -15,10 +16,8 @@ public:
         VkImage m_textureImage = nullptr;
         VkDeviceMemory m_textureImageMemory = nullptr;
         VkImageView m_textureImageView = nullptr;
-        VkSampler m_textureSampler = nullptr;
+        uint32_t mipLevels;
     };
-
-    ~TextureFactory();
 
     static TextureFactory& init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue)
     {
@@ -26,13 +25,18 @@ public:
         return texFactory;
     }
 
-    Texture& create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
+    ~TextureFactory();
+
+    std::shared_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
 
 private:
     TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue);
-
+    void texture_deleter(TextureFactory::Texture *p);
+    VkSampler createTextureSampler(uint32_t mipLevels);
 private:
-    std::unordered_map<std::string, Texture> m_textures{};
+    std::unordered_map<std::string, std::shared_ptr<Texture>> m_textures{};
+    std::unordered_map<uint32_t, VkSampler> m_samplers{};
+    VkPhysicalDeviceProperties m_properties{};
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
     VkCommandPool m_cmdBufPool = nullptr;
