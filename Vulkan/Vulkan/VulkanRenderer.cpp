@@ -164,7 +164,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     // Copy Model data
     for (size_t i = 0; i < MAX_OBJECTS; i++)
     {
-        DynamicUniformBufferObject* pModel = (DynamicUniformBufferObject*)((uint64_t)mp_modelTransferSpace + (i * m_modelUniformAlignment));
+        I3DModel::DynamicUniformBufferObject* pModel = (I3DModel::DynamicUniformBufferObject*)((uint64_t)mp_modelTransferSpace + (i * m_modelUniformAlignment));
         pModel->model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     }
 
@@ -183,11 +183,11 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace()
     size_t minUniformBufferOffset = static_cast<size_t>(deviceProperties.limits.minUniformBufferOffsetAlignment);
 
     // Calculate alignment of model data
-    m_modelUniformAlignment = (sizeof(DynamicUniformBufferObject) + minUniformBufferOffset - 1)
+    m_modelUniformAlignment = (sizeof(I3DModel::DynamicUniformBufferObject) + minUniformBufferOffset - 1)
         & ~(minUniformBufferOffset - 1);
 
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds MAX_OBJECTS
-    mp_modelTransferSpace = (DynamicUniformBufferObject*)_aligned_malloc(m_modelUniformAlignment * MAX_OBJECTS, m_modelUniformAlignment);
+    mp_modelTransferSpace = (I3DModel::DynamicUniformBufferObject*)_aligned_malloc(m_modelUniformAlignment * MAX_OBJECTS, m_modelUniformAlignment);
 }
 
 void VulkanRenderer::createDescriptorSetLayout()

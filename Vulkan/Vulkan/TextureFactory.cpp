@@ -40,7 +40,11 @@ void TextureFactory::texture_deleter(TextureFactory::Texture *p)
 
 std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
 {
-    std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture, texture_deleter);
+    std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), [this](TextureFactory::Texture* p)
+        {
+            texture_deleter(p);
+        });
+
     uint32_t mipLevels = 0u;
 
     if(m_textures.count(pTextureFileName.data()) == 0)
@@ -48,9 +52,17 @@ std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::st
         std::string texturePath;
         Utils::formPath(TEXTURES_DIR, pTextureFileName, texturePath);
 
-        mipLevels = Utils::VulkanCreateTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory);
-        Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, mipLevels);
+        if(Utils::VulkanCreateTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory, mipLevels) != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to create texture image ");
+        }
+        if(Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, mipLevels) != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to create texture imageView ");
+        }
 
+        /// Note: creation of sampler in advance
+        getTextureSampler(mipLevels);
         m_textures[pTextureFileName.data()] = texture;
     }
     else
@@ -61,7 +73,7 @@ std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::st
     return texture;
 }
 
-VkSampler TextureFactory::createTextureSampler(uint32_t mipLevels)
+VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels)
 {
     VkSampler sampler = nullptr;
 

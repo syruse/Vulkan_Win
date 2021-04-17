@@ -7,6 +7,7 @@
 
 void ObjModel::load(std::string_view path)
 {
+    assert(mp_textureFactory);
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -35,6 +36,9 @@ void ObjModel::load(std::string_view path)
 
     for (const auto &shape : shapes)
     {
+        assert(shape.mesh.material_ids.size() && materials.size());
+        m_texture = mp_textureFactory->create2DTexture(materials[shape.mesh.material_ids[0]].diffuse_texname.c_str());
+
         for (const auto &index : shape.mesh.indices)
         {
             vertex.pos = {

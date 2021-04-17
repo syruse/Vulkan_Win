@@ -1,15 +1,22 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <glm/glm.hpp>
 #include "vulkan/vulkan.h"
 #include "glm/gtx/hash.hpp"
+#include "TextureFactory.h"
 
 class I3DModel
 {
 public:
 
     static std::string MODEL_DIR;
+
+    struct DynamicUniformBufferObject
+    {
+        alignas(16) glm::mat4 model;
+    };
 
     struct Vertex
     {
@@ -68,7 +75,7 @@ private:
     virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
 
 protected:
-    std::uint32_t m_indecesAmount = 0u;
+    std::size_t m_indecesAmount = 0u;
     std::vector<Vertex> m_vertices{};
     std::vector<uint32_t> m_indices{};
     VkBuffer m_vertexBuffer = nullptr;
@@ -77,6 +84,9 @@ protected:
     VkDeviceMemory m_indexBufferMemory = nullptr;
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
+    std::shared_ptr<TextureFactory::Texture> m_texture = nullptr;
+    DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
+    TextureFactory* mp_textureFactory = nullptr;
 };
 
 namespace std

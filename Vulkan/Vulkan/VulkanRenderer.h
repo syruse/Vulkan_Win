@@ -28,11 +28,6 @@ public:
         alignas(16) glm::mat4 proj;
     };
 
-    struct DynamicUniformBufferObject
-    {
-        alignas(16) glm::mat4 model;
-    };
-
     struct PushConstant
     {
         alignas(16) glm::mat4 model;
@@ -105,7 +100,7 @@ private:
     std::vector<VkBuffer> m_dynamicUniformBuffers;
     std::vector<VkDeviceMemory> m_dynamicUniformBuffersMemory;
     size_t m_modelUniformAlignment;
-    DynamicUniformBufferObject *mp_modelTransferSpace = nullptr;
+    I3DModel::DynamicUniformBufferObject *mp_modelTransferSpace = nullptr;
 
     VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
     VkImage m_depthImage;

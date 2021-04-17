@@ -302,9 +302,11 @@ namespace Utils {
         }
     }
 
-    void VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+    VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels)
     {
+        VkResult res;
+
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -320,8 +322,10 @@ namespace Utils {
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-            Utils::printLog(ERROR_PARAM, "failed to create image!");
+        res = vkCreateImage(device, &imageInfo, nullptr, &image);
+        if (res != VK_SUCCESS) {
+            Utils::printLog(ERROR_PARAM, "failed to create image: ", res);
+            return res;
         }
 
         VkMemoryRequirements memRequirements;
@@ -332,11 +336,15 @@ namespace Utils {
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = VulkanFindMemoryType(physicalDevice, memRequirements, properties);
 
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-            Utils::printLog(ERROR_PARAM, "failed to allocate image memory!");
+        res = vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory);
+        if ( res != VK_SUCCESS) {
+            Utils::printLog(ERROR_PARAM, "failed to allocate image memory: ", res);
+            return res;
         }
 
-        vkBindImageMemory(device, image, imageMemory, 0);
+        res = vkBindImageMemory(device, image, imageMemory, 0);
+
+        return res;
     }
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format, 
@@ -494,29 +502,29 @@ namespace Utils {
         VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
     }
 
-    int VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool, 
-        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_miplevelsEnabling, bool is_flippingVertically) /// TO FIX combine with sampler , imageview
+    VkResult VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+        std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, std::uint32_t& mipLevels,
+        bool is_miplevelsEnabling, bool is_flippingVertically)
     {
-        stbi_set_flip_vertically_on_load(is_flippingVertically);
+        VkResult res;
 
-        std::string texturePath;
-        formPath(TEXTURES_DIR, pTextureFileName, texturePath);
+        stbi_set_flip_vertically_on_load(is_flippingVertically);
 
         int texWidth, texHeight, texChannels;
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
         /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
-        stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc* pixels = stbi_load(pTextureFileName.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
 
         /// Note: calculating the number of levels in the mip chain: 
         ///       std::log2 - how many times that dimension can be divided by 2
         ///       std::floor function handles cases where the largest dimension is not a power of 2
         ///       1 is added so that the original image has a mip level
-        uint32_t mipLevels = is_miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
+        mipLevels = is_miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
 
         if (!pixels) 
         {
-            Utils::printLog(ERROR_PARAM, texturePath.c_str(), "failed to load texture image!");
+            Utils::printLog(ERROR_PARAM, pTextureFileName.data(), "failed to load texture image!");
         }
 
         VkBuffer stagingBuffer;
@@ -531,7 +539,7 @@ namespace Utils {
 
         stbi_image_free(pixels);
 
-        VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
+        res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, mipLevels);
 
         VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
@@ -558,7 +566,7 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-        return mipLevels;
+        return res;
     }
 
     VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels)

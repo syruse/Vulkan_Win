@@ -32,7 +32,7 @@ public:
 private:
     TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue);
     void texture_deleter(TextureFactory::Texture *p);
-    VkSampler createTextureSampler(uint32_t mipLevels);
+    VkSampler getTextureSampler(uint32_t mipLevels);
 private:
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_textures{};
     std::unordered_map<uint32_t, VkSampler> m_samplers{};

@@ -34,6 +34,8 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
     createIndexBuffer(cmdBufPool, queue);
     m_vertices.clear();
     m_indices.clear();
+
+    mp_textureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
 }
 
 void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue)
