@@ -67,7 +67,7 @@ public:
     virtual ~I3DModel();
 
     virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) final;
-    virtual void draw(VkCommandBuffer cmdBuf) = 0;
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(VkImageView imageView, VkSampler sampler)> descriptorUpdater) = 0;
 
 private:
     virtual void load(std::string_view path) = 0; 

@@ -26,6 +26,8 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
     assert(physicalDevice);
     assert(cmdBufPool);
     assert(queue);
+    
+    mp_textureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
 
     m_device = device;
     m_physicalDevice = physicalDevice;
@@ -34,8 +36,6 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
     createIndexBuffer(cmdBufPool, queue);
     m_vertices.clear();
     m_indices.clear();
-
-    mp_textureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
 }
 
 void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue)

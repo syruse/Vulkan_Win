@@ -58,6 +58,7 @@ private:
     void allocateDynamicBufferTransferSpace();
     void createDescriptorPool();
     void createDescriptorSets();
+    void updateDescriptorSet(uint32_t swapChainImageIndex, VkImageView imageView, VkSampler sampler);
     void createDescriptorSetsSecondPass();
     void createFramebuffer();
     void createShaders();

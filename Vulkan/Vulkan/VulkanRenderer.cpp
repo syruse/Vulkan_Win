@@ -329,66 +329,67 @@ void VulkanRenderer::createDescriptorSets()
     if (vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, m_descriptorSets.data()) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets!");
     }
+}
 
+void VulkanRenderer::updateDescriptorSet(uint32_t swapChainImageIndex, VkImageView imageView, VkSampler sampler)
+{
     // connect the descriptors with buffer when binding
-    for (size_t i = 0; i < m_images.size(); i++) {
-        // VIEW PROJECTION DESCRIPTOR
-        // Buffer info and data offset info
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = m_descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
-        descriptorWrite.pImageInfo = nullptr; // Optional
-        descriptorWrite.pTexelBufferView = nullptr; // Optional
+    // VIEW PROJECTION DESCRIPTOR
+    // Buffer info and data offset info
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = m_uniformBuffers[swapChainImageIndex];
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
 
-        // MODEL DESCRIPTOR
-        // Model Buffer Binding Info
-        VkDescriptorBufferInfo modelBufferInfo = {};
-        modelBufferInfo.buffer = m_dynamicUniformBuffers[i];
-        modelBufferInfo.offset = 0;
-        modelBufferInfo.range = m_modelUniformAlignment;
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_descriptorSets[swapChainImageIndex];
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+    descriptorWrite.pImageInfo = nullptr;       // Optional
+    descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-        VkWriteDescriptorSet modelSetWrite = {};
-        modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        modelSetWrite.dstSet = m_descriptorSets[i];
-        modelSetWrite.dstBinding = 1;
-        modelSetWrite.dstArrayElement = 0;
-        modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        modelSetWrite.descriptorCount = 1;
-        modelSetWrite.pBufferInfo = &modelBufferInfo;
+    // MODEL DESCRIPTOR
+    // Model Buffer Binding Info
+    VkDescriptorBufferInfo modelBufferInfo = {};
+    modelBufferInfo.buffer = m_dynamicUniformBuffers[swapChainImageIndex];
+    modelBufferInfo.offset = 0;
+    modelBufferInfo.range = m_modelUniformAlignment;
 
+    VkWriteDescriptorSet modelSetWrite = {};
+    modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    modelSetWrite.dstSet = m_descriptorSets[swapChainImageIndex];
+    modelSetWrite.dstBinding = 1;
+    modelSetWrite.dstArrayElement = 0;
+    modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    modelSetWrite.descriptorCount = 1;
+    modelSetWrite.pBufferInfo = &modelBufferInfo;
 
-        // Texture
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = m_textureImageView;
-        imageInfo.sampler = m_textureSampler;
+    // Texture
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
 
-        VkWriteDescriptorSet textureSetWrite = {};
-        textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        textureSetWrite.dstSet = m_descriptorSets[i];
-        textureSetWrite.dstBinding = 2;
-        textureSetWrite.dstArrayElement = 0;
-        textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        textureSetWrite.descriptorCount = 1;
-        textureSetWrite.pImageInfo = &imageInfo;
+    VkWriteDescriptorSet textureSetWrite = {};
+    textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    textureSetWrite.dstSet = m_descriptorSets[swapChainImageIndex];
+    textureSetWrite.dstBinding = 2;
+    textureSetWrite.dstArrayElement = 0;
+    textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    textureSetWrite.descriptorCount = 1;
+    textureSetWrite.pImageInfo = &imageInfo;
 
-        // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites = { descriptorWrite, modelSetWrite, textureSetWrite };
+    // List of Descriptor Set Writes
+    std::vector<VkWriteDescriptorSet> setWrites = {descriptorWrite, modelSetWrite, textureSetWrite};
 
-        // Update the descriptor sets with new buffer/binding info
-        vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
-            0, nullptr);
-    }
+    // Update the descriptor sets with new buffer/binding info
+    vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
+                           0, nullptr);
 }
 
 void VulkanRenderer::createDescriptorSetsSecondPass()
@@ -613,11 +614,18 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     * Therefore we need to specify if we want to bind descriptor sets to the graphics or compute pipeline
     */
     // Bind Descriptor Sets
-    vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[currentImage], 1, &dynamicOffset);
+    //vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[currentImage], 1, &dynamicOffset);
 
     /** no need to draw over vertices vkCmdDraw(m_cmdBufs[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); */
     // Execute pipeline
-    m_objModel.draw(m_cmdBufs[currentImage]);
+
+    auto descriptorUpdater = [this, currentImage, dynamicOffset](VkImageView imageView, VkSampler sampler)
+    {
+        updateDescriptorSet(currentImage, imageView, sampler);
+        vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[currentImage], 1, &dynamicOffset);
+    };
+    
+    m_objModel.draw(m_cmdBufs[currentImage], descriptorUpdater);
     /// For Each mesh end
 
     ///-----------------------------------------------------------------------------------///

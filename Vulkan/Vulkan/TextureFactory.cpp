@@ -16,6 +16,14 @@ TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice,
     assert(m_cmdBufPool);
     assert(m_queue);
 
+    mTextureDeleter = [this](TextureFactory::Texture *p) {
+        Utils::printLog(INFO_PARAM, "texture resources removal");
+        vkDestroyImageView(m_device, p->m_textureImageView, nullptr);
+        vkDestroyImage(m_device, p->m_textureImage, nullptr);
+        vkFreeMemory(m_device, p->m_textureImageMemory, nullptr);
+        delete p;
+    };
+
     vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
     Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", m_properties.limits.maxSamplerAnisotropy);
 }
@@ -29,26 +37,14 @@ TextureFactory::~TextureFactory()
     }
 }
 
-void TextureFactory::texture_deleter(TextureFactory::Texture *p)
-{
-    Utils::printLog(INFO_PARAM, "texture resources removal");
-    vkDestroyImageView(m_device, p->m_textureImageView, nullptr);
-    vkDestroyImage(m_device, p->m_textureImage, nullptr);
-    vkFreeMemory(m_device, p->m_textureImageMemory, nullptr);
-    delete p;
-}
-
 std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
 {
-    std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), [this](TextureFactory::Texture* p)
-        {
-            texture_deleter(p);
-        });
-
-    uint32_t mipLevels = 0u;
-
     if(m_textures.count(pTextureFileName.data()) == 0)
     {
+        std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
+
+        uint32_t mipLevels = 0u;
+
         std::string texturePath;
         Utils::formPath(TEXTURES_DIR, pTextureFileName, texturePath);
 
@@ -63,22 +59,22 @@ std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::st
 
         /// Note: creation of sampler in advance
         getTextureSampler(mipLevels);
-        m_textures[pTextureFileName.data()] = texture;
+        texture->mipLevels = mipLevels;
+        m_textures.try_emplace(pTextureFileName.data(), texture);
+
+        return texture;
     }
     else
     {
-        texture = m_textures[pTextureFileName.data()];
+        return m_textures[pTextureFileName.data()];
     }
-
-    return texture;
 }
 
 VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels)
 {
-    VkSampler sampler = nullptr;
-
     if (m_samplers.count(mipLevels) == 0)
     {
+        VkSampler sampler = nullptr;
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -102,12 +98,12 @@ VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels)
             Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
         }
 
-        m_samplers[mipLevels] = sampler;
+        m_samplers.try_emplace(mipLevels, sampler);
+        
+        return sampler;
     }
     else
     {
-        sampler = m_samplers[mipLevels];
+        return m_samplers[mipLevels];
     }
-
-    return sampler;
 }

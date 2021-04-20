@@ -66,8 +66,15 @@ void ObjModel::load(std::string_view path)
     }
 }
 
-void ObjModel::draw(VkCommandBuffer cmdBuf)
+void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(VkImageView imageView, VkSampler sampler)> descriptorUpdater)
 {
+    assert(descriptorUpdater);
+    assert(mp_textureFactory);
+    assert(m_vertexBuffer);
+    assert(m_indecesAmount);
+
+    descriptorUpdater(m_texture->m_textureImageView, mp_textureFactory->getTextureSampler(m_texture->mipLevels));
+
     VkBuffer vertexBuffers[] = { m_vertexBuffer };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
