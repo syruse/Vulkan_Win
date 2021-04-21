@@ -37,8 +37,14 @@ void ObjModel::load(std::string_view path)
     for (const auto &shape : shapes)
     {
         assert(shape.mesh.material_ids.size() && materials.size());
-        m_texture = mp_textureFactory->create2DTexture(materials[shape.mesh.material_ids[0]].diffuse_texname.c_str());
-        m_materialId = m_descriptorCreator(m_texture->m_textureImageView, mp_textureFactory->getTextureSampler(m_texture->mipLevels));
+        uint32_t materialId = shape.mesh.material_ids[0];
+
+        if(m_materials.count(materialId) == 0)
+        {
+            auto texture = mp_textureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
+            uint32_t realMaterialId = m_descriptorCreator(texture, mp_textureFactory->getTextureSampler(texture->mipLevels));
+            m_materials.try_emplace(materialId, realMaterialId);
+        }
 
         for (const auto &index : shape.mesh.indices)
         {
@@ -70,11 +76,10 @@ void ObjModel::load(std::string_view path)
 void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
 {
     assert(descriptorBinding);
-    assert(mp_textureFactory);
     assert(m_vertexBuffer);
     assert(m_indecesAmount);
 
-    descriptorBinding(m_materialId);
+    descriptorBinding(m_materials[0]);// to FIX
 
     VkBuffer vertexBuffers[] = { m_vertexBuffer };
     VkDeviceSize offsets[] = { 0 };

@@ -543,13 +543,13 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     /** no need to draw over vertices vkCmdDraw(m_cmdBufs[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); */
     // Execute pipeline
 
-    auto descriptorUpdater = [this, currentImage, dynamicOffset](uint16_t materialId)
+    auto descriptorBinding = [this, currentImage, dynamicOffset](uint16_t materialId)
     {
         vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, 
                                 &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
     };
     
-    m_objModel.draw(m_cmdBufs[currentImage], descriptorUpdater);
+    m_objModel.draw(m_cmdBufs[currentImage], descriptorBinding);
     /// For Each mesh end
 
     ///-----------------------------------------------------------------------------------///
@@ -600,11 +600,11 @@ void VulkanRenderer::createColourBufferImage()
 
 void VulkanRenderer::loadModels()
 {
-    m_descriptorCreator = [this](VkImageView imageView, VkSampler sampler) -> uint16_t 
+    m_descriptorCreator = [this](std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) -> uint16_t 
     {
         static uint32_t materialId = 0u;
+        ++materialId;
 
-        I3DModel::Material material;
         std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -612,17 +612,19 @@ void VulkanRenderer::loadModels()
         allocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
         allocInfo.pSetLayouts = layouts.data();
 
+        I3DModel::Material material;
+        material.sampler = sampler;
+        material.texture = texture;
         material.descriptorSets.resize(m_images.size());
+
         auto status = vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, material.descriptorSets.data());
-        if ( status != VK_SUCCESS)
+        if ( status != VK_SUCCESS && texture.expired())
         {
             Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
         }
         else
         {
-            material.id = materialId;
-            m_descriptorSets.push_back(material);
-            ++materialId;
+            m_descriptorSets.try_emplace(materialId, material);
         }
 
         // connect the descriptors with buffer when binding
@@ -666,7 +668,7 @@ void VulkanRenderer::loadModels()
             // Texture
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = imageView;
+            imageInfo.imageView = texture.lock()->m_textureImageView;
             imageInfo.sampler = sampler;
 
             VkWriteDescriptorSet textureSetWrite = {};
@@ -686,7 +688,7 @@ void VulkanRenderer::loadModels()
                                    0, nullptr);
         }
 
-        return material.id;
+        return materialId;
     };
 
     m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, m_descriptorCreator);

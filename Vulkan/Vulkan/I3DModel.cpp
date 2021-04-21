@@ -21,7 +21,7 @@ I3DModel::~I3DModel()
 }
 
 void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-                    std::function<uint16_t(VkImageView imageView, VkSampler sampler)> descriptorCreator)
+                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator)
 {
     assert(device);
     assert(physicalDevice);

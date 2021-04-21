@@ -15,7 +15,8 @@ public:
 
     struct Material
     {
-        uint16_t id = 0u;
+        std::weak_ptr<TextureFactory::Texture> texture;
+        VkSampler sampler;
         std::vector<VkDescriptorSet> descriptorSets{}; /// separate set for each swapchain image
     };
 
@@ -73,7 +74,7 @@ public:
     virtual ~I3DModel();
 
     virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
-                      std::function<uint16_t(VkImageView imageView, VkSampler sampler)> descriptorCreator) final;
+                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator) final;
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) = 0;
 
 private:
@@ -82,7 +83,7 @@ private:
     virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
 
 protected:
-    uint16_t m_materialId = -1;
+    std::unordered_map<uint32_t, uint32_t> m_materials{};
     std::size_t m_indecesAmount = 0u;
     std::vector<Vertex> m_vertices{};
     std::vector<uint32_t> m_indices{};
@@ -92,10 +93,9 @@ protected:
     VkDeviceMemory m_indexBufferMemory = nullptr;
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
-    std::shared_ptr<TextureFactory::Texture> m_texture = nullptr;
     DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
     TextureFactory* mp_textureFactory = nullptr;
-    std::function<uint16_t(VkImageView imageView, VkSampler sampler)> m_descriptorCreator = nullptr;
+    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
 };
 
 namespace std
