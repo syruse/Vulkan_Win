@@ -38,6 +38,7 @@ void ObjModel::load(std::string_view path)
     {
         assert(shape.mesh.material_ids.size() && materials.size());
         m_texture = mp_textureFactory->create2DTexture(materials[shape.mesh.material_ids[0]].diffuse_texname.c_str());
+        m_materialId = m_descriptorCreator(m_texture->m_textureImageView, mp_textureFactory->getTextureSampler(m_texture->mipLevels));
 
         for (const auto &index : shape.mesh.indices)
         {
@@ -66,14 +67,14 @@ void ObjModel::load(std::string_view path)
     }
 }
 
-void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(VkImageView imageView, VkSampler sampler)> descriptorUpdater)
+void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
 {
-    assert(descriptorUpdater);
+    assert(descriptorBinding);
     assert(mp_textureFactory);
     assert(m_vertexBuffer);
     assert(m_indecesAmount);
 
-    descriptorUpdater(m_texture->m_textureImageView, mp_textureFactory->getTextureSampler(m_texture->mipLevels));
+    descriptorBinding(m_materialId);
 
     VkBuffer vertexBuffers[] = { m_vertexBuffer };
     VkDeviceSize offsets[] = { 0 };

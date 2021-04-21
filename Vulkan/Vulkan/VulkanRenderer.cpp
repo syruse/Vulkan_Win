@@ -120,7 +120,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height)
         createDepthResources();
         createColourBufferImage();
         createDescriptorPool();
-        createDescriptorSets();
+        ///createDescriptorSets(); to fix
         createDescriptorSetsSecondPass();
         createRenderPass();
         createFramebuffer();
@@ -278,13 +278,13 @@ void VulkanRenderer::createDescriptorPool()
     texturePoolSize.descriptorCount = static_cast<uint32_t>(m_images.size());
 
     // List of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptorPoolSizes = { poolSize, modelPoolSize, texturePoolSize };
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes {poolSize, modelPoolSize, texturePoolSize};
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(descriptorPoolSizes.size());		// Amount of Pool Sizes being passed
-    poolInfo.pPoolSizes = descriptorPoolSizes.data();                               // Pool Sizes to create pool with
-    poolInfo.maxSets = static_cast<uint32_t>(m_images.size());					    // Maximum number of Descriptor Sets that can be created from pool
+    poolInfo.poolSizeCount = static_cast<uint32_t>(descriptorPoolSizes.size());
+    poolInfo.pPoolSizes = descriptorPoolSizes.data();
+    poolInfo.maxSets = static_cast<uint32_t>( MAX_FRAMES_IN_FLIGHT * MAX_OBJECTS * 10 ); // Maximum number of Descriptor Sets that can be created from pool
 
     if (vkCreateDescriptorPool(m_core.getDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor pool!");
@@ -314,82 +314,6 @@ void VulkanRenderer::createDescriptorPool()
     if (vkCreateDescriptorPool(m_core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPoolSecondPass) != VK_SUCCESS) {
     Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
     }
-}
-
-void VulkanRenderer::createDescriptorSets()
-{
-    std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
-    allocInfo.pSetLayouts = layouts.data();
-
-    m_descriptorSets.resize(m_images.size());
-    if (vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, m_descriptorSets.data()) != VK_SUCCESS) {
-        Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets!");
-    }
-}
-
-void VulkanRenderer::updateDescriptorSet(uint32_t swapChainImageIndex, VkImageView imageView, VkSampler sampler)
-{
-    // connect the descriptors with buffer when binding
-
-    // VIEW PROJECTION DESCRIPTOR
-    // Buffer info and data offset info
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = m_uniformBuffers[swapChainImageIndex];
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBufferObject);
-
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_descriptorSets[swapChainImageIndex];
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pBufferInfo = &bufferInfo;
-    descriptorWrite.pImageInfo = nullptr;       // Optional
-    descriptorWrite.pTexelBufferView = nullptr; // Optional
-
-    // MODEL DESCRIPTOR
-    // Model Buffer Binding Info
-    VkDescriptorBufferInfo modelBufferInfo = {};
-    modelBufferInfo.buffer = m_dynamicUniformBuffers[swapChainImageIndex];
-    modelBufferInfo.offset = 0;
-    modelBufferInfo.range = m_modelUniformAlignment;
-
-    VkWriteDescriptorSet modelSetWrite = {};
-    modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    modelSetWrite.dstSet = m_descriptorSets[swapChainImageIndex];
-    modelSetWrite.dstBinding = 1;
-    modelSetWrite.dstArrayElement = 0;
-    modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    modelSetWrite.descriptorCount = 1;
-    modelSetWrite.pBufferInfo = &modelBufferInfo;
-
-    // Texture
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = imageView;
-    imageInfo.sampler = sampler;
-
-    VkWriteDescriptorSet textureSetWrite = {};
-    textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    textureSetWrite.dstSet = m_descriptorSets[swapChainImageIndex];
-    textureSetWrite.dstBinding = 2;
-    textureSetWrite.dstArrayElement = 0;
-    textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    textureSetWrite.descriptorCount = 1;
-    textureSetWrite.pImageInfo = &imageInfo;
-
-    // List of Descriptor Set Writes
-    std::vector<VkWriteDescriptorSet> setWrites = {descriptorWrite, modelSetWrite, textureSetWrite};
-
-    // Update the descriptor sets with new buffer/binding info
-    vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
-                           0, nullptr);
 }
 
 void VulkanRenderer::createDescriptorSetsSecondPass()
@@ -619,10 +543,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     /** no need to draw over vertices vkCmdDraw(m_cmdBufs[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); */
     // Execute pipeline
 
-    auto descriptorUpdater = [this, currentImage, dynamicOffset](VkImageView imageView, VkSampler sampler)
+    auto descriptorUpdater = [this, currentImage, dynamicOffset](uint16_t materialId)
     {
-        updateDescriptorSet(currentImage, imageView, sampler);
-        vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[currentImage], 1, &dynamicOffset);
+        vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, 
+                                &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
     };
     
     m_objModel.draw(m_cmdBufs[currentImage], descriptorUpdater);
@@ -676,7 +600,96 @@ void VulkanRenderer::createColourBufferImage()
 
 void VulkanRenderer::loadModels()
 {
-    m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue);
+    m_descriptorCreator = [this](VkImageView imageView, VkSampler sampler) -> uint16_t 
+    {
+        static uint32_t materialId = 0u;
+
+        I3DModel::Material material;
+        std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
+        allocInfo.pSetLayouts = layouts.data();
+
+        material.descriptorSets.resize(m_images.size());
+        auto status = vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, material.descriptorSets.data());
+        if ( status != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
+        }
+        else
+        {
+            material.id = materialId;
+            m_descriptorSets.push_back(material);
+            ++materialId;
+        }
+
+        // connect the descriptors with buffer when binding
+
+        for (uint16_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            // VIEW PROJECTION DESCRIPTOR
+            // Buffer info and data offset info
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = m_uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = material.descriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+            descriptorWrite.pImageInfo = nullptr;       // Optional
+            descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+            // MODEL DESCRIPTOR
+            // Model Buffer Binding Info
+            VkDescriptorBufferInfo modelBufferInfo = {};
+            modelBufferInfo.buffer = m_dynamicUniformBuffers[i];
+            modelBufferInfo.offset = 0;
+            modelBufferInfo.range = m_modelUniformAlignment;
+
+            VkWriteDescriptorSet modelSetWrite = {};
+            modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            modelSetWrite.dstSet = material.descriptorSets[i];
+            modelSetWrite.dstBinding = 1;
+            modelSetWrite.dstArrayElement = 0;
+            modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            modelSetWrite.descriptorCount = 1;
+            modelSetWrite.pBufferInfo = &modelBufferInfo;
+
+            // Texture
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = imageView;
+            imageInfo.sampler = sampler;
+
+            VkWriteDescriptorSet textureSetWrite = {};
+            textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            textureSetWrite.dstSet = material.descriptorSets[i];
+            textureSetWrite.dstBinding = 2;
+            textureSetWrite.dstArrayElement = 0;
+            textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            textureSetWrite.descriptorCount = 1;
+            textureSetWrite.pImageInfo = &imageInfo;
+
+            // List of Descriptor Set Writes
+            std::vector<VkWriteDescriptorSet> setWrites = {descriptorWrite, modelSetWrite, textureSetWrite};
+
+            // Update the descriptor sets with new buffer/binding info
+            vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
+                                   0, nullptr);
+        }
+
+        return material.id;
+    };
+
+    m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, m_descriptorCreator);
 }
 
 bool VulkanRenderer::renderScene()
@@ -1138,13 +1151,12 @@ void VulkanRenderer::init()
     createCommandBuffer();
     createDepthResources();
     createColourBufferImage();
-    loadModels();
     createDescriptorSetLayout();
     createPushConstantRange();
     allocateDynamicBufferTransferSpace();
     createUniformBuffers();
     createDescriptorPool();
-    createDescriptorSets();
+    loadModels();
     createDescriptorSetsSecondPass();
     createRenderPass();
     createFramebuffer();

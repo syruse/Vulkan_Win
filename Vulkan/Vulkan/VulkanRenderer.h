@@ -17,9 +17,8 @@ public:
     /// In turn, reducing the performance of the application if rendering is slower than vsync.
     /// Consider setting minImageCount to 3 to use triple buffering to maximize performance in such cases.
     /// </summary>
-    static constexpr int16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
-    static constexpr int16_t MAX_OBJECTS = 1;
-    static constexpr std::string_view TEXTURE_FILE_NAME{"PzVl_Tiger_I.png"};
+    static constexpr uint16_t MAX_FRAMES_IN_FLIGHT = 3; /// tripple buffering is the best choice
+    static constexpr uint16_t MAX_OBJECTS = 1;
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
     struct UniformBufferObject
@@ -57,8 +56,6 @@ private:
     void createPushConstantRange();
     void allocateDynamicBufferTransferSpace();
     void createDescriptorPool();
-    void createDescriptorSets();
-    void updateDescriptorSet(uint32_t swapChainImageIndex, VkImageView imageView, VkSampler sampler);
     void createDescriptorSetsSecondPass();
     void createFramebuffer();
     void createShaders();
@@ -84,7 +81,8 @@ private:
     VkDescriptorSetLayout m_descriptorSetLayout;
     VkPushConstantRange m_pushConstantRange;
     VkDescriptorPool m_descriptorPool;
-    std::vector<VkDescriptorSet> m_descriptorSets;
+    std::vector<I3DModel::Material> m_descriptorSets;
+    std::function<uint16_t(VkImageView imageView, VkSampler sampler)> m_descriptorCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
     VkShaderModule m_vsModule;
     VkShaderModule m_fsModule;

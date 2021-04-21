@@ -7,7 +7,7 @@ class ObjModel : public I3DModel
 public:
     ObjModel() = default;
 
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(VkImageView imageView, VkSampler sampler)> descriptorUpdater) override;
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) override;
 
 private:
     virtual void load(std::string_view path) override;

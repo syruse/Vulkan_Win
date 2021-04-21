@@ -13,6 +13,12 @@ public:
 
     static std::string MODEL_DIR;
 
+    struct Material
+    {
+        uint16_t id = 0u;
+        std::vector<VkDescriptorSet> descriptorSets{}; /// separate set for each swapchain image
+    };
+
     struct DynamicUniformBufferObject
     {
         alignas(16) glm::mat4 model;
@@ -66,8 +72,9 @@ public:
 
     virtual ~I3DModel();
 
-    virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) final;
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(VkImageView imageView, VkSampler sampler)> descriptorUpdater) = 0;
+    virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
+                      std::function<uint16_t(VkImageView imageView, VkSampler sampler)> descriptorCreator) final;
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) = 0;
 
 private:
     virtual void load(std::string_view path) = 0; 
@@ -75,6 +82,7 @@ private:
     virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
 
 protected:
+    uint16_t m_materialId = -1;
     std::size_t m_indecesAmount = 0u;
     std::vector<Vertex> m_vertices{};
     std::vector<uint32_t> m_indices{};
@@ -87,6 +95,7 @@ protected:
     std::shared_ptr<TextureFactory::Texture> m_texture = nullptr;
     DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
     TextureFactory* mp_textureFactory = nullptr;
+    std::function<uint16_t(VkImageView imageView, VkSampler sampler)> m_descriptorCreator = nullptr;
 };
 
 namespace std

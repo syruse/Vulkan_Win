@@ -20,15 +20,18 @@ I3DModel::~I3DModel()
     vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
 }
 
-void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue)
+void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+                    std::function<uint16_t(VkImageView imageView, VkSampler sampler)> descriptorCreator)
 {
     assert(device);
     assert(physicalDevice);
     assert(cmdBufPool);
     assert(queue);
+    assert(descriptorCreator);
     
     mp_textureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
 
+    m_descriptorCreator = descriptorCreator;
     m_device = device;
     m_physicalDevice = physicalDevice;
     load(path);
