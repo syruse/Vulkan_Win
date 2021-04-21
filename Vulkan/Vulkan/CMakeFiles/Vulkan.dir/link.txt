@@ -1,1 +1,0 @@
-/usr/bin/c++    -rdynamic CMakeFiles/Vulkan.dir/Main.cpp.o CMakeFiles/Vulkan.dir/Utils.cpp.o CMakeFiles/Vulkan.dir/VulkanCore.cpp.o CMakeFiles/Vulkan.dir/VulkanRenderer.cpp.o CMakeFiles/Vulkan.dir/Win32Control.cpp.o CMakeFiles/Vulkan.dir/XCBControl.cpp.o  -o Vulkan 
