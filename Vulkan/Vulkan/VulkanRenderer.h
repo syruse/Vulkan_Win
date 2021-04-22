@@ -65,6 +65,7 @@ private:
     void createDepthResources();
     void createColourBufferImage();
     void loadModels();
+    void recreateDescriptorSets();
 
     size_t m_currentFrame = 0;
 
@@ -81,6 +82,7 @@ private:
     VkDescriptorSetLayout m_descriptorSetLayout;
     VkPushConstantRange m_pushConstantRange;
     VkDescriptorPool m_descriptorPool;
+    uint16_t m_materialId = 0u;
     std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;

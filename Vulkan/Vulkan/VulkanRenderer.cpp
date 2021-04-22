@@ -120,11 +120,23 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height)
         createDepthResources();
         createColourBufferImage();
         createDescriptorPool();
-        ///createDescriptorSets(); to fix
+        recreateDescriptorSets();
         createDescriptorSetsSecondPass();
         createRenderPass();
         createFramebuffer();
         createPipeline();
+    }
+}
+
+void VulkanRenderer::recreateDescriptorSets()
+{
+    ///reset
+    m_materialId = 0u;
+    std::unordered_map<uint16_t, I3DModel::Material> descriptorSets(m_descriptorSets);
+    m_descriptorSets.clear();
+    for (auto& material : descriptorSets)
+    {
+        m_descriptorCreator(material.second.texture, material.second.sampler);
     }
 }
 
@@ -602,8 +614,7 @@ void VulkanRenderer::loadModels()
 {
     m_descriptorCreator = [this](std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) -> uint16_t 
     {
-        static uint16_t materialId = 0u;
-        ++materialId;
+        ++m_materialId;
 
         std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo{};
@@ -624,7 +635,7 @@ void VulkanRenderer::loadModels()
         }
         else
         {
-            m_descriptorSets.try_emplace(materialId, material);
+            m_descriptorSets.try_emplace(m_materialId, material);
         }
 
         // connect the descriptors with buffer when binding
@@ -688,7 +699,7 @@ void VulkanRenderer::loadModels()
                                    0, nullptr);
         }
 
-        return materialId;
+        return m_materialId;
     };
 
     m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, m_descriptorCreator);
