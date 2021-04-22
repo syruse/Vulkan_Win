@@ -81,7 +81,7 @@ private:
     VkDescriptorSetLayout m_descriptorSetLayout;
     VkPushConstantRange m_pushConstantRange;
     VkDescriptorPool m_descriptorPool;
-    std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets;
+    std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
     VkShaderModule m_vsModule;

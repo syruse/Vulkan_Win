@@ -5,9 +5,17 @@
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
-void ObjModel::load(std::string_view path)
+void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory, 
+                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
+                    std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
-    assert(mp_textureFactory);
+    assert(pTextureFactory);
+    vertices.clear();
+    indices.clear();
+
+    std::unordered_map<uint16_t, uint16_t> materialsMap{}; /// pair: local materialID: real materialID
+    std::multimap<uint16_t, SubObject> subOjectsMap{}; /// pair: local materialID: SubObject
+
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -24,26 +32,34 @@ void ObjModel::load(std::string_view path)
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
     Vertex vertex{};
 
-    m_indecesAmount = 0u;
+    std::size_t indexAmount = 0u;
     for (const auto &shape : shapes)
     {
-        m_indecesAmount += shape.mesh.indices.size();
+        indexAmount += shape.mesh.indices.size();
     }
 
-    uniqueVertices.reserve(m_indecesAmount);
-    m_vertices.reserve(m_indecesAmount);
-    m_indices.reserve(m_indecesAmount);
+    materialsMap.reserve(shapes.size());
+    uniqueVertices.reserve(indexAmount);
+    vertices.reserve(indexAmount);
+    indices.reserve(indexAmount);
+
+    std::size_t indecesOffset = 0u;
 
     for (const auto &shape : shapes)
     {
         assert(shape.mesh.material_ids.size() && materials.size());
-        uint32_t materialId = shape.mesh.material_ids[0];
+        uint16_t materialId = shape.mesh.material_ids[0];
+        uint16_t realMaterialId = 0u;
 
-        if(m_materials.count(materialId) == 0)
+        if(materialsMap.count(materialId) == 0)
         {
-            auto texture = mp_textureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
-            uint32_t realMaterialId = m_descriptorCreator(texture, mp_textureFactory->getTextureSampler(texture->mipLevels));
-            m_materials.try_emplace(materialId, realMaterialId);
+            auto texture = pTextureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
+            realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture->mipLevels));
+            materialsMap.try_emplace(materialId, realMaterialId);
+        }
+        else
+        {
+            realMaterialId = materialsMap[materialId];
         }
 
         for (const auto &index : shape.mesh.indices)
@@ -64,12 +80,28 @@ void ObjModel::load(std::string_view path)
 
             if (uniqueVertices.count(vertex) == 0)
             {
-                uniqueVertices[vertex] = static_cast<uint32_t>(m_vertices.size());
-                m_vertices.push_back(vertex);
+                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(vertex);
             }
 
-            m_indices.push_back(uniqueVertices[vertex]);
+            indices.push_back(uniqueVertices[vertex]);
         }
+        subOjectsMap.emplace(materialId, SubObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset)});
+        indecesOffset = indices.size();
+    }
+
+    m_SubObjects.clear();
+    m_SubObjects.reserve(materialsMap.size());
+    for (auto& materialID: materialsMap)
+    { 
+        auto ret = subOjectsMap.equal_range(materialID.first);
+        std::vector<SubObject> vec;
+        vec.reserve(std::distance(ret.first, ret.second));
+        for (auto it=ret.first; it != ret.second; ++it)
+        {
+            vec.emplace_back(it->second);
+        }
+        m_SubObjects.emplace_back(vec);
     }
 }
 
@@ -77,13 +109,21 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t material
 {
     assert(descriptorBinding);
     assert(m_vertexBuffer);
-    assert(m_indecesAmount);
-
-    descriptorBinding(m_materials[0]);// to FIX
 
     VkBuffer vertexBuffers[] = { m_vertexBuffer };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(m_indecesAmount), 1, 0, 0, 0);
+
+    for (const auto& subObjects: m_SubObjects)
+    {
+        if (subObjects.size())
+        {
+            descriptorBinding(subObjects[0].realMaterialId);
+            for (const auto &subObject : subObjects)
+            {
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1, static_cast<uint32_t>(subObject.indexOffset), 0, 0);
+            }
+        }
+    }
 }

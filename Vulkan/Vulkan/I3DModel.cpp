@@ -29,21 +29,20 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
     assert(queue);
     assert(descriptorCreator);
     
-    mp_textureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
+    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
+    std::vector<Vertex> vertices{};
+    std::vector<uint32_t> indices{};
 
-    m_descriptorCreator = descriptorCreator;
     m_device = device;
     m_physicalDevice = physicalDevice;
-    load(path);
-    createVertexBuffer(cmdBufPool, queue);
-    createIndexBuffer(cmdBufPool, queue);
-    m_vertices.clear();
-    m_indices.clear();
+    load(path, pTextureFactory, descriptorCreator, vertices, indices);
+    createVertexBuffer(cmdBufPool, queue, vertices);
+    createIndexBuffer(cmdBufPool, queue, indices);
 }
 
-void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue)
+void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<Vertex> &vertices)
 {
-    VkDeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
+    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -51,7 +50,7 @@ void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue)
 
     void* data;
     vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, m_vertices.data(), (size_t)bufferSize);
+    memcpy(data, vertices.data(), (size_t)bufferSize);
     vkUnmapMemory(m_device, stagingBufferMemory);
 
     Utils::VulkanCreateBuffer(m_device, m_physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
@@ -62,9 +61,9 @@ void I3DModel::createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue)
     vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 }
 
-void I3DModel::createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) 
+void I3DModel::createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t> &indices) 
 {
-    VkDeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
+    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -72,7 +71,7 @@ void I3DModel::createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue)
 
     void* data;
     vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, m_indices.data(), (size_t)bufferSize);
+    memcpy(data, indices.data(), (size_t)bufferSize);
     vkUnmapMemory(m_device, stagingBufferMemory);
 
     Utils::VulkanCreateBuffer(m_device, m_physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);

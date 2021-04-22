@@ -6,6 +6,7 @@
 #include "vulkan/vulkan.h"
 #include "glm/gtx/hash.hpp"
 #include "TextureFactory.h"
+#include <map>
 
 class I3DModel
 {
@@ -78,15 +79,22 @@ public:
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) = 0;
 
 private:
-    virtual void load(std::string_view path) = 0; 
-    virtual void createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
-    virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue) final;
+    virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
+                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
+                      std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) = 0; 
+    virtual void createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<Vertex> &vertices) final;
+    virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t> &indices) final;
 
 protected:
-    std::unordered_map<uint32_t, uint32_t> m_materials{};
-    std::size_t m_indecesAmount = 0u;
-    std::vector<Vertex> m_vertices{};
-    std::vector<uint32_t> m_indices{};
+    struct SubObject
+    {
+        std::uint32_t realMaterialId;
+        std::size_t   indexOffset;
+        std::size_t   indexAmount;
+    };
+
+protected:
+    std::vector<std::vector<SubObject>> m_SubObjects{};
     VkBuffer m_vertexBuffer = nullptr;
     VkDeviceMemory m_vertexBufferMemory = nullptr;
     VkBuffer m_indexBuffer = nullptr;
@@ -94,8 +102,6 @@ protected:
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
     DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
-    TextureFactory* mp_textureFactory = nullptr;
-    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
 };
 
 namespace std

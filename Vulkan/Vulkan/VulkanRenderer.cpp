@@ -602,7 +602,7 @@ void VulkanRenderer::loadModels()
 {
     m_descriptorCreator = [this](std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) -> uint16_t 
     {
-        static uint32_t materialId = 0u;
+        static uint16_t materialId = 0u;
         ++materialId;
 
         std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
