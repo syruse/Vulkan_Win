@@ -64,6 +64,7 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
 
         for (const auto &index : shape.mesh.indices)
         {
+            //std::cout << "LOG: " << index.
             vertex.pos = {
                 attrib.vertices[3 * index.vertex_index + 0],
                 attrib.vertices[3 * index.vertex_index + 1],
@@ -74,9 +75,9 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
                 attrib.texcoords[2 * index.texcoord_index + 1]};
 
             vertex.normal = {
-                attrib.normals[3 * index.vertex_index + 0],
-                attrib.normals[3 * index.vertex_index + 1],
-                attrib.normals[3 * index.vertex_index + 2]};
+                attrib.normals[3 * index.normal_index + 0],
+                attrib.normals[3 * index.normal_index + 1],
+                attrib.normals[3 * index.normal_index + 2]};
 
             if (uniqueVertices.count(vertex) == 0)
             {

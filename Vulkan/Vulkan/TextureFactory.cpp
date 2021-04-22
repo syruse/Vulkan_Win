@@ -30,6 +30,8 @@ TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice,
 
 TextureFactory::~TextureFactory()
 {
+    // Wait until no actions being run on device before destroying
+    vkDeviceWaitIdle(m_device);
     for( const auto& [key, value] : m_samplers ) 
     {
         Utils::printLog(INFO_PARAM, "sampler removal with miplevels: ", key);

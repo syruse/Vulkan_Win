@@ -14,6 +14,7 @@ std::string I3DModel::MODEL_DIR = "models";
 
 I3DModel::~I3DModel()
 {
+    vkDeviceWaitIdle(m_device);
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
     vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
