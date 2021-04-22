@@ -132,8 +132,7 @@ void VulkanRenderer::recreateDescriptorSets()
 {
     ///reset
     m_materialId = 0u;
-    std::unordered_map<uint16_t, I3DModel::Material> descriptorSets(m_descriptorSets);
-    m_descriptorSets.clear();
+    std::unordered_map<uint16_t, I3DModel::Material> descriptorSets(std::move(m_descriptorSets));
     for (auto& material : descriptorSets)
     {
         m_descriptorCreator(material.second.texture, material.second.sampler);
