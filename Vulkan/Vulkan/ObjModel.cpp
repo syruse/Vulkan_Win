@@ -109,12 +109,12 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
 void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
 {
     assert(descriptorBinding);
-    assert(m_vertexBuffer);
+    assert(m_generalBuffer);
 
-    VkBuffer vertexBuffers[] = { m_vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
+    VkBuffer vertexBuffers[] = { m_generalBuffer };
+    VkDeviceSize offsets[] = { m_verticesBufferOffset };
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(cmdBuf, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     for (const auto& subObjects: m_SubObjects)
     {

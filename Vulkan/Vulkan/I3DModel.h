@@ -82,8 +82,7 @@ private:
     virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
                       std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
                       std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) = 0; 
-    virtual void createVertexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<Vertex> &vertices) final;
-    virtual void createIndexBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t> &indices) final;
+    virtual void createGeneralBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t>& indices, std::vector<Vertex>& vertices) final;
 
 protected:
     struct SubObject
@@ -95,13 +94,12 @@ protected:
 
 protected:
     std::vector<std::vector<SubObject>> m_SubObjects{};
-    VkBuffer m_vertexBuffer = nullptr;
-    VkDeviceMemory m_vertexBufferMemory = nullptr;
-    VkBuffer m_indexBuffer = nullptr;
-    VkDeviceMemory m_indexBufferMemory = nullptr;
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
     DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
+    VkDeviceSize m_verticesBufferOffset = 0;
+    VkBuffer m_generalBuffer = nullptr;
+    VkDeviceMemory m_generalBufferMemory = nullptr;
 };
 
 namespace std
