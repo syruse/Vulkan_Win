@@ -39,6 +39,39 @@ TextureFactory::~TextureFactory()
     }
 }
 
+std::shared_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically = true)
+{
+    if (m_textures.count(textureFileNames[0].data()) == 0)
+    {
+        std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
+
+        std::array<std::string_view, 6> textureFileNames;
+
+        std::string texturePath;
+        Utils::formPath(TEXTURES_DIR, textureFileNames[0], texturePath);
+
+        if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
+        }
+        if (Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, 1U, VK_IMAGE_VIEW_TYPE_CUBE, 6U) != VK_SUCCESS)
+        {
+            Utils::printLog(ERROR_PARAM, "failed to create cubic texture imageView ");
+        }
+
+        /// Note: creation of sampler in advance
+        //getTextureSampler(mipLevels);
+        //texture->mipLevels = mipLevels;
+        m_textures.try_emplace(textureFileNames[0].data(), texture);
+
+        return texture;
+    }
+    else
+    {
+        return m_textures[textureFileNames[0].data()];
+    }
+}
+
 std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
 {
     if(m_textures.count(pTextureFileName.data()) == 0)

@@ -83,7 +83,8 @@ namespace Utils {
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);
 
-    VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, uint32_t mipLevels = 1U);
+    VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, 
+        uint32_t mipLevels = 1U, VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D, uint32_t layersCount = 1U);
 
     bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates,
         VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format);
