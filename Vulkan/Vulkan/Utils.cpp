@@ -303,7 +303,7 @@ namespace Utils {
     }
 
     VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-        VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels)
+        VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels, uint32_t arrayLayers)
     {
         VkResult res;
 
@@ -314,7 +314,7 @@ namespace Utils {
         imageInfo.extent.height = height;
         imageInfo.extent.depth = 1;
         imageInfo.mipLevels = mipLevels;
-        imageInfo.arrayLayers = 1;
+        imageInfo.arrayLayers = arrayLayers;
         imageInfo.format = format;
         imageInfo.tiling = tiling;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -500,6 +500,64 @@ namespace Utils {
             1, &barrier);
 
         VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
+    }
+
+    VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+        const std::array<std::string_view, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically)
+    {
+        VkResult res;
+
+        stbi_set_flip_vertically_on_load(is_flippingVertically);
+
+        int texWidth, texHeight, texChannels;
+        const VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
+        VkDeviceSize imageSizeTotal = 0u;
+        std::vector<stbi_uc*> textureData;
+        textureData.reserve(6);
+
+        for (auto pStr : textureFileNames)
+        {
+            assert(pStr.data());
+            /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
+            stbi_uc *pixels = stbi_load(pStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            assert(pixels);
+            textureData.emplace_back(pixels);
+            imageSizeTotal += static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
+        }
+
+        const VkDeviceSize layerSize = imageSizeTotal / 6; //This is just the size of each layer.
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
+        for (std::size_t i = 0; i < 6u; ++i)
+        {
+            memcpy((char*)data + (layerSize * i), textureData[i], static_cast<size_t>(layerSize));
+        }
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        for (std::size_t i = 0; i < 6u; ++i)
+        {
+            stbi_image_free(textureData[i]);
+        }
+
+        res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, 0);
+
+        VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 0);
+        VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+
+        VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        return res;
     }
 
     VkResult VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,

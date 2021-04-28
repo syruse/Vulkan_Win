@@ -52,7 +52,7 @@ void I3DModel::createGeneralBuffer(VkCommandPool cmdBufPool, VkQueue queue, std:
     void* data;
     vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, indices.data(), (size_t)indicesSize);
-    memcpy((byte*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
+    memcpy((char*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
     vkUnmapMemory(m_device, stagingBufferMemory);
 
     Utils::VulkanCreateBuffer(m_device, m_physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_generalBuffer, m_generalBufferMemory);

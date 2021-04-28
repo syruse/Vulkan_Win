@@ -3,6 +3,7 @@
 #include "vulkan/vulkan.h"
 #include <iostream>
 #include <vector>
+#include <array>
 #include <string>
 #include <sstream>
 
@@ -66,7 +67,7 @@ namespace Utils {
     VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName);
 
     VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-        VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U);
+        VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U, uint32_t arrayLayers = 1U);
 
     /// <summary>
     /// VulkanCreateTextureImage function
@@ -75,6 +76,9 @@ namespace Utils {
     VkResult VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
         std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory, std::uint32_t& mipLevels, 
         bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
+
+    VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+        const std::array<std::string_view, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);
