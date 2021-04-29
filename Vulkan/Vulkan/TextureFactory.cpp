@@ -39,16 +39,24 @@ TextureFactory::~TextureFactory()
     }
 }
 
-std::shared_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically = true)
+std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically)
 {
-    if (m_textures.count(textureFileNames[0].data()) == 0)
+    auto id = textureFileNames[0].data();
+    uint32_t mipLevels = 1U;
+
+    if (m_textures.count(id) == 0)
     {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
-        std::array<std::string_view, 6> textureFileNames;
-
-        std::string texturePath;
-        Utils::formPath(TEXTURES_DIR, textureFileNames[0], texturePath);
+        std::array<std::string, 6> textureFileNames
+        {
+            Utils::formPath(TEXTURES_DIR, textureFileNames[0]),
+            Utils::formPath(TEXTURES_DIR, textureFileNames[1]),
+            Utils::formPath(TEXTURES_DIR, textureFileNames[2]),
+            Utils::formPath(TEXTURES_DIR, textureFileNames[3]),
+            Utils::formPath(TEXTURES_DIR, textureFileNames[4]),
+            Utils::formPath(TEXTURES_DIR, textureFileNames[5])
+        };
 
         if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
         {
@@ -60,25 +68,25 @@ std::shared_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const
         }
 
         /// Note: creation of sampler in advance
-        //getTextureSampler(mipLevels);
-        //texture->mipLevels = mipLevels;
-        m_textures.try_emplace(textureFileNames[0].data(), texture);
+        getTextureSampler(mipLevels);
+        texture->mipLevels = mipLevels;
+        m_textures.try_emplace(id, texture);
 
         return texture;
     }
     else
     {
-        return m_textures[textureFileNames[0].data()];
+        return m_textures[id];
     }
 }
 
-std::shared_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
+std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
 {
     if(m_textures.count(pTextureFileName.data()) == 0)
     {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
-        uint32_t mipLevels = 0u;
+        uint32_t mipLevels = 0U;
 
         std::string texturePath;
         Utils::formPath(TEXTURES_DIR, pTextureFileName, texturePath);

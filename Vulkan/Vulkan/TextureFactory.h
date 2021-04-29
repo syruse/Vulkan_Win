@@ -28,8 +28,8 @@ public:
 
     ~TextureFactory();
 
-    std::shared_ptr<Texture> createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically = true);
-    std::shared_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
+    std::weak_ptr<Texture> createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically = true);
+    std::weak_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
     VkSampler getTextureSampler(uint32_t mipLevels);
 
 private:

@@ -1,11 +1,11 @@
 
-#include "ObjModel.h"
+#include "CubeModel.h"
 #include "Utils.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
-void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory, 
+void CubeModel::load(std::string_view path, TextureFactory* pTextureFactory, 
                     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
                     std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
@@ -112,7 +112,7 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
     }
 }
 
-void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
+void CubeModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
 {
     assert(descriptorBinding);
     assert(m_generalBuffer);

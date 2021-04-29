@@ -50,6 +50,7 @@ namespace Utils {
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
 
     void formPath(std::string_view dir, std::string_view fileName, std::string& resultPath);
+    std::string formPath(std::string_view dir, std::string_view fileName);
 
     void VulkanCheckValidationLayerSupport();
 
@@ -78,7 +79,7 @@ namespace Utils {
         bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
 
     VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-        const std::array<std::string_view, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
+        const std::array<std::string, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);
