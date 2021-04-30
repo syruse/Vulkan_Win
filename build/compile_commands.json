@@ -1,6 +1,11 @@
 [
 {
   "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/CubeModel.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/CubeModel.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/CubeModel.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
   "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/I3DModel.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/I3DModel.cpp",
   "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/I3DModel.cpp"
 },

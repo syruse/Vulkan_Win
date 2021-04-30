@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <fstream>
+#include <memory>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -527,7 +528,8 @@ namespace Utils {
         int texWidth, texHeight, texChannels;
         const VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
         VkDeviceSize imageSizeTotal = 0u;
-        std::vector<stbi_uc*> textureData;
+        using datat_ptr = std::unique_ptr<stbi_uc, decltype(&stbi_image_free)>;
+        std::vector< datat_ptr > textureData;
         textureData.reserve(6);
 
         for (auto pStr : textureFileNames)
@@ -536,7 +538,7 @@ namespace Utils {
             /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
             stbi_uc *pixels = stbi_load(pStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
             assert(pixels);
-            textureData.emplace_back(pixels);
+            textureData.emplace_back(pixels, stbi_image_free);
             imageSizeTotal += static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
         }
 
@@ -551,14 +553,9 @@ namespace Utils {
         vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
         for (std::size_t i = 0; i < 6u; ++i)
         {
-            memcpy((char*)data + (layerSize * i), textureData[i], static_cast<size_t>(layerSize));
+            memcpy((char*)data + (layerSize * i), textureData[i].get(), static_cast<size_t>(layerSize));
         }
         vkUnmapMemory(device, stagingBufferMemory);
-
-        for (std::size_t i = 0; i < 6u; ++i)
-        {
-            stbi_image_free(textureData[i]);
-        }
 
         res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, 1, 6);

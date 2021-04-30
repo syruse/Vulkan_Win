@@ -27,7 +27,7 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
     assert(cmdBufPool);
     assert(queue);
     assert(descriptorCreator);
-    
+
     TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
@@ -40,6 +40,8 @@ void I3DModel::init(std::string_view path, VkDevice device, VkPhysicalDevice phy
 
 void I3DModel::createGeneralBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t>& indices, std::vector<Vertex>& vertices)
 {
+    ///Note: general buffer keeping both geometry data, 
+    ///      index buffer is placed first and next to index buffer the vertex buffer placed
     const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
     m_verticesBufferOffset = indicesSize;
     const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();

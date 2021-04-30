@@ -1,11 +1,13 @@
 #pragma once
 
-#include "I3DModel.h"
+#include "CubeModel.h"
 
-class CubeModel : public I3DModel
+class Skybox: public CubeModel
 {
 public:
-    CubeModel() = default;
+    Skybox() = default;
+
+    void init();
 
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) override;
 

@@ -14,7 +14,7 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
     indices.clear();
 
     std::unordered_map<uint16_t, uint16_t> materialsMap{}; /// pair: local materialID: real materialID
-    std::multimap<uint16_t, SubObject> subOjectsMap{}; /// pair: local materialID: SubObject
+    std::multimap<uint16_t, SubObject> subOjectsMap{}; /// For Sorting by material, keeps pair: local materialID: SubObject
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -85,6 +85,7 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
                 attrib.normals[3 * index.normal_index + 1],
                 attrib.normals[3 * index.normal_index + 2]};
 
+            /// Note: Obj format doesn't care about vertices reusing, let's take it on ourself
             if (uniqueVertices.count(vertex) == 0)
             {
                 uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
@@ -93,10 +94,12 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
 
             indices.push_back(uniqueVertices[vertex]);
         }
+        /// Note: each subobject keeps index offset
         subOjectsMap.emplace(materialId, SubObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset)});
         indecesOffset = indices.size();
     }
 
+    /// Note: sorting by material executed
     m_SubObjects.clear();
     m_SubObjects.reserve(materialsMap.size());
     for (auto& materialID: materialsMap)
