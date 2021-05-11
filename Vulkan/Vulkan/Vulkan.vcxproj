@@ -149,9 +149,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CubeModel.cpp" />
     <ClCompile Include="I3DModel.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="ObjModel.cpp" />
+    <ClCompile Include="Pipeliner.cpp" />
+    <ClCompile Include="Skybox.cpp" />
     <ClCompile Include="TextureFactory.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="VulkanCore.cpp" />
@@ -160,9 +163,12 @@
     <ClCompile Include="XCBControl.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CubeModel.h" />
     <ClInclude Include="I3DModel.h" />
     <ClInclude Include="IControl.h" />
     <ClInclude Include="ObjModel.h" />
+    <ClInclude Include="Pipeliner.h" />
+    <ClInclude Include="Skybox.h" />
     <ClInclude Include="TextureFactory.h" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="VulkanCore.h" />
