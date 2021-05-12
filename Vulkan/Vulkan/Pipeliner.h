@@ -1,6 +1,8 @@
 #pragma once
 #include "vulkan/vulkan.h"
 #include <string>
+#include <memory>
+#include <functional>
 
 class Pipeliner
 {
@@ -12,13 +14,26 @@ class Pipeliner
         VkPipelineLayout pipelineLayout = nullptr;
     };
 
-public:
+    using pipeline_ptr = std::unique_ptr<PipeLine, void(PipeLine *p)>;
+
+    ///private ctor
     Pipeliner();
 
-    void init(std::string_view vertShader, std::string_view fragShader, 
+    friend void deletePipeLine(PipeLine *p);
+
+public:
+    static Pipeliner& getInstance()
+    {
+        static Pipeliner pipeliner;
+        return pipeliner;
+    }
+
+    std::unique_ptr<Pipeliner::PipeLine, void(*)(PipeLine *p)> getPipeLine(std::string_view vertShader, std::string_view fragShader, 
         uint32_t width, uint32_t height, VkRenderPass renderPass, VkDevice device);
 
 private:
+    VkDevice m_device = nullptr;
+
     VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2] = {};
     VkPipelineVertexInputStateCreateInfo m_vertexInputInfo = {};
     VkPipelineInputAssemblyStateCreateInfo m_pipelineIACreateInfo = {};

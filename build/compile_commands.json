@@ -21,6 +21,16 @@
 },
 {
   "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Pipeliner.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Pipeliner.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Pipeliner.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Skybox.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Skybox.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Skybox.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
   "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/TextureFactory.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/TextureFactory.cpp",
   "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/TextureFactory.cpp"
 },

@@ -3,6 +3,18 @@
 #include "Utils.h"
 #include "I3DModel.h"
 
+void deletePipeLine(Pipeliner::PipeLine *p)
+{
+    auto device = Pipeliner::getInstance().m_device;
+    Utils::printLog(INFO_PARAM, "pipeline removal");
+    assert(p);
+    vkDestroyPipeline(device, p->pipeline, nullptr);
+    vkDestroyPipelineLayout(device, p->pipelineLayout, nullptr);
+    vkDestroyShaderModule(device, p->vsModule, nullptr);
+    vkDestroyShaderModule(device, p->fsModule, nullptr);
+    delete p;
+}
+
 Pipeliner::Pipeliner()
 {
     m_shaderStageCreateInfo[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -68,13 +80,17 @@ Pipeliner::Pipeliner()
     m_depthStencil.back = {}; // Optional
 }
 
-void Pipeliner::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, VkRenderPass renderPass, VkDevice device)
+std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine *p)> Pipeliner::getPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
+                                VkRenderPass renderPass, VkDevice device)
 {
-    PipeLine pipeline;
-    pipeline.vsModule = Utils::VulkanCreateShaderModule(device, "vert.spv");
-    assert(pipeline.vsModule);
-    pipeline.fsModule = Utils::VulkanCreateShaderModule(device, "frag.spv");
-    assert(pipeline.vsModule);
+    m_device = device;
+    assert(m_device);
+    
+    std::unique_ptr<PipeLine, decltype(&deletePipeLine)> pipeline(new Pipeliner::PipeLine(), deletePipeLine);
+    pipeline->vsModule = Utils::VulkanCreateShaderModule(device, vertShader);
+    assert(pipeline->vsModule);
+    pipeline->fsModule = Utils::VulkanCreateShaderModule(device, fragShader);
+    assert(pipeline->vsModule);
 
     m_vp.width = (float)width;
     m_vp.height = (float)height;
@@ -89,7 +105,7 @@ void Pipeliner::init(std::string_view vertShader, std::string_view fragShader, u
     layoutInfo.pushConstantRangeCount = 1;
     //layoutInfo.pPushConstantRanges = &m_pushConstantRange;
 
-    VkResult res = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipeline.pipelineLayout);
+    VkResult res = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipeline->pipelineLayout);
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout error %d\n", res);
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -102,12 +118,14 @@ void Pipeliner::init(std::string_view vertShader, std::string_view fragShader, u
     pipelineInfo.pRasterizationState = &m_rastCreateInfo;
     pipelineInfo.pMultisampleState = &m_pipelineMSCreateInfo;
     pipelineInfo.pColorBlendState = &m_blendCreateInfo;
-    pipelineInfo.layout = pipeline.pipelineLayout;
+    pipelineInfo.layout = pipeline->pipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.basePipelineIndex = -1;
     pipelineInfo.pDepthStencilState = &m_depthStencil;
 
-    res = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline.pipeline);
+    res = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
+
+    return pipeline;
 }
 
