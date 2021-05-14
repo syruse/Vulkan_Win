@@ -6,6 +6,7 @@
 
 class Pipeliner
 {
+public:
     struct PipeLine
     {
         VkShaderModule vsModule = nullptr;
@@ -14,12 +15,13 @@ class Pipeliner
         VkPipelineLayout pipelineLayout = nullptr;
     };
 
-    using pipeline_ptr = std::unique_ptr<PipeLine, void(PipeLine *p)>;
+    using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine* p)>;
 
+private:
     ///private ctor
     Pipeliner();
 
-    friend void deletePipeLine(PipeLine *p);
+    friend void deletePipeLine(PipeLine* p);
 
 public:
     static Pipeliner& getInstance()
@@ -28,10 +30,45 @@ public:
         return pipeliner;
     }
 
-    std::unique_ptr<Pipeliner::PipeLine, void(*)(PipeLine *p)> getPipeLine(std::string_view vertShader, std::string_view fragShader, 
-        uint32_t width, uint32_t height, VkRenderPass renderPass, VkDevice device);
+    /// you can customize states of pipeline by get desired and change before invoking createPipeLine
+    pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader,
+        uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, 
+        VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
+
+    /// get and customize states your way (just before invoking createPipeLine)
+
+    inline VkPipelineVertexInputStateCreateInfo& getVertexInputInfo() 
+    {
+        return m_vertexInputInfo;
+    };
+
+    inline VkPipelineInputAssemblyStateCreateInfo& getInputAssemblyInfo()
+    {
+        return m_pipelineIACreateInfo;
+    };
+
+    inline VkPipelineRasterizationStateCreateInfo& getRasterizationInfo()
+    {
+        return m_rastCreateInfo;
+    };
+
+    inline VkPipelineMultisampleStateCreateInfo& getMultisampleInfo()
+    {
+        return m_pipelineMSCreateInfo;
+    };
+
+    inline VkPipelineDepthStencilStateCreateInfo& getDepthStencilInfo()
+    {
+        return m_depthStencil;
+    };
+
+    inline VkPipelineColorBlendStateCreateInfo& getColorBlendInfo()
+    {
+        return m_blendCreateInfo;
+    };
 
 private:
+
     VkDevice m_device = nullptr;
 
     VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2] = {};
@@ -44,4 +81,12 @@ private:
     VkPipelineMultisampleStateCreateInfo m_pipelineMSCreateInfo = {};
     VkPipelineColorBlendStateCreateInfo m_blendCreateInfo = {};
     VkPipelineDepthStencilStateCreateInfo m_depthStencil{};
+
+    ///persistent default configuration
+    static VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
+    static VkPipelineInputAssemblyStateCreateInfo _pipelineIACreateInfo;
+    static VkPipelineRasterizationStateCreateInfo _rastCreateInfo;
+    static VkPipelineMultisampleStateCreateInfo _pipelineMSCreateInfo;
+    static VkPipelineColorBlendStateCreateInfo _blendCreateInfo;
+    static VkPipelineDepthStencilStateCreateInfo _depthStencil;
 };

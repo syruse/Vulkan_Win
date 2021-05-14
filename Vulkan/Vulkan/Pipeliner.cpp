@@ -3,6 +3,14 @@
 #include "Utils.h"
 #include "I3DModel.h"
 
+///persistent default configuration
+VkPipelineVertexInputStateCreateInfo Pipeliner::_vertexInputInfo = {};
+VkPipelineInputAssemblyStateCreateInfo Pipeliner::_pipelineIACreateInfo = {};
+VkPipelineRasterizationStateCreateInfo Pipeliner::_rastCreateInfo = {};
+VkPipelineMultisampleStateCreateInfo Pipeliner::_pipelineMSCreateInfo = {};
+VkPipelineColorBlendStateCreateInfo Pipeliner::_blendCreateInfo = {};
+VkPipelineDepthStencilStateCreateInfo Pipeliner::_depthStencil{};
+
 void deletePipeLine(Pipeliner::PipeLine *p)
 {
     auto device = Pipeliner::getInstance().m_device;
@@ -26,16 +34,16 @@ Pipeliner::Pipeliner()
     m_shaderStageCreateInfo[1].module = nullptr;
     m_shaderStageCreateInfo[1].pName = "main";
 
-    m_vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    auto bindingDescription = I3DModel::Vertex::getBindingDescription();
-    auto attributeDescriptions = I3DModel::Vertex::getAttributeDescriptions();
-    m_vertexInputInfo.vertexBindingDescriptionCount = 1;
-    m_vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    m_vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    m_vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+    _vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    static auto bindingDescription = I3DModel::Vertex::getBindingDescription();
+    static auto attributeDescriptions = I3DModel::Vertex::getAttributeDescriptions();
+    _vertexInputInfo.vertexBindingDescriptionCount = 1;
+    _vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    _vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    _vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-    m_pipelineIACreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    m_pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    _pipelineIACreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    _pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     m_vp.x = 0.0f;
     m_vp.y = 0.0f;
@@ -51,46 +59,58 @@ Pipeliner::Pipeliner()
     m_vpCreateInfo.scissorCount = 1;
     m_vpCreateInfo.pScissors = &m_scissor;
 
-    m_rastCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    m_rastCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-    m_rastCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-    m_rastCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    m_rastCreateInfo.lineWidth = 1.0f;
+    _rastCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    _rastCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+    _rastCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+    _rastCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    _rastCreateInfo.lineWidth = 1.0f;
 
-    m_pipelineMSCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    m_pipelineMSCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    _pipelineMSCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    _pipelineMSCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState blendAttachState = {};
+    static VkPipelineColorBlendAttachmentState blendAttachState = {};
     blendAttachState.colorWriteMask = 0xf;
 
-    m_blendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    m_blendCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-    m_blendCreateInfo.attachmentCount = 1;
-    m_blendCreateInfo.pAttachments = &blendAttachState;
+    _blendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    _blendCreateInfo.logicOp = VK_LOGIC_OP_COPY;
+    _blendCreateInfo.attachmentCount = 1;
+    _blendCreateInfo.pAttachments = &blendAttachState;
 
-    m_depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    m_depthStencil.depthTestEnable = VK_TRUE;
-    m_depthStencil.depthWriteEnable = VK_TRUE;
-    m_depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    m_depthStencil.depthBoundsTestEnable = VK_FALSE;
-    m_depthStencil.minDepthBounds = 0.0f; // Optional
-    m_depthStencil.maxDepthBounds = 1.0f; // Optional
-    m_depthStencil.stencilTestEnable = VK_FALSE;
-    m_depthStencil.front = {}; // Optional
-    m_depthStencil.back = {}; // Optional
+    _depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    _depthStencil.depthTestEnable = VK_TRUE;
+    _depthStencil.depthWriteEnable = VK_TRUE;
+    _depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    _depthStencil.depthBoundsTestEnable = VK_FALSE;
+    _depthStencil.minDepthBounds = 0.0f; // Optional
+    _depthStencil.maxDepthBounds = 1.0f; // Optional
+    _depthStencil.stencilTestEnable = VK_FALSE;
+    _depthStencil.front = {}; // Optional
+    _depthStencil.back = {}; // Optional
+
+    //set default configuration
+    m_vertexInputInfo = _vertexInputInfo;
+    m_pipelineIACreateInfo = _pipelineIACreateInfo;
+    m_rastCreateInfo = _rastCreateInfo;
+    m_pipelineMSCreateInfo = _pipelineMSCreateInfo;
+    m_blendCreateInfo = _blendCreateInfo;
+    m_depthStencil = _depthStencil;
 }
 
-std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine *p)> Pipeliner::getPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
-                                VkRenderPass renderPass, VkDevice device)
+Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
+                                                VkDescriptorSetLayout descriptorSetLayout,
+                                                VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange)
 {
     m_device = device;
     assert(m_device);
+    assert(descriptorSetLayout);
     
     std::unique_ptr<PipeLine, decltype(&deletePipeLine)> pipeline(new Pipeliner::PipeLine(), deletePipeLine);
     pipeline->vsModule = Utils::VulkanCreateShaderModule(device, vertShader);
     assert(pipeline->vsModule);
     pipeline->fsModule = Utils::VulkanCreateShaderModule(device, fragShader);
-    assert(pipeline->vsModule);
+    assert(pipeline->fsModule);
+    m_shaderStageCreateInfo[0].module = pipeline->vsModule;
+    m_shaderStageCreateInfo[1].module = pipeline->fsModule;
 
     m_vp.width = (float)width;
     m_vp.height = (float)height;
@@ -101,9 +121,17 @@ std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine *p)> Pipeliner:
     VkPipelineLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
-    //layoutInfo.pSetLayouts = &m_descriptorSetLayout;
-    layoutInfo.pushConstantRangeCount = 1;
-    //layoutInfo.pPushConstantRanges = &m_pushConstantRange;
+    layoutInfo.pSetLayouts = &descriptorSetLayout;
+    if (pushConstantRange.size != 0u)
+    {
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pushConstantRange;
+    }
+    else
+    {
+        layoutInfo.pushConstantRangeCount = 0;
+        layoutInfo.pPushConstantRanges = nullptr;
+    }
 
     VkResult res = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipeline->pipelineLayout);
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout error %d\n", res);
@@ -125,6 +153,14 @@ std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine *p)> Pipeliner:
 
     res = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
+
+    ///restore default configuration
+    m_vertexInputInfo = _vertexInputInfo;
+    m_pipelineIACreateInfo = _pipelineIACreateInfo;
+    m_rastCreateInfo = _rastCreateInfo;
+    m_pipelineMSCreateInfo = _pipelineMSCreateInfo;
+    m_blendCreateInfo = _blendCreateInfo;
+    m_depthStencil = _depthStencil;
 
     return pipeline;
 }

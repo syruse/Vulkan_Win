@@ -8,6 +8,7 @@
 
 #include "VulkanCore.h"
 #include "ObjModel.h"
+#include "Pipeliner.h"
 
 class VulkanRenderer
 {
@@ -58,7 +59,6 @@ private:
     void createDescriptorPool();
     void createDescriptorSetsSecondPass();
     void createFramebuffer();
-    void createShaders();
     void createPipeline();
     void recordCommandBuffers(uint32_t currentImage);
     void createSemaphores();
@@ -86,10 +86,8 @@ private:
     std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
-    VkShaderModule m_vsModule;
-    VkShaderModule m_fsModule;
-    VkPipeline m_pipeline;
-    VkPipelineLayout m_pipelineLayout;
+    Pipeliner::pipeline_ptr m_pipeLine = { nullptr, nullptr };
+    Pipeliner::pipeline_ptr m_pipeLineSecondPass = { nullptr, nullptr };
 
     std::vector<VkSemaphore> m_presentCompleteSem;
     std::vector<VkSemaphore> m_renderCompleteSem;
@@ -115,8 +113,4 @@ private:
     std::vector<VkImage> m_colourBufferImage;
     std::vector<VkDeviceMemory> m_colourBufferImageMemory;
     std::vector<VkImageView> m_colourBufferImageView;
-    VkShaderModule m_vsModuleSecondPass;
-    VkShaderModule m_fsModuleSecondPass;
-    VkPipeline m_pipelineSecondPass;
-    VkPipelineLayout m_pipelineLayoutSecondPass;
 };
