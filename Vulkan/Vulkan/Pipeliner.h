@@ -33,7 +33,7 @@ public:
     /// you can customize states of pipeline by get desired and change before invoking createPipeLine
     pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader,
         uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, 
-        VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
+        VkRenderPass renderPass, VkDevice device, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
 
     /// get and customize states your way (just before invoking createPipeLine)
 

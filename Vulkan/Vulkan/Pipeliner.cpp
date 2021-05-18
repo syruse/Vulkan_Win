@@ -98,7 +98,7 @@ Pipeliner::Pipeliner()
 
 Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
                                                 VkDescriptorSetLayout descriptorSetLayout,
-                                                VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange)
+                                                VkRenderPass renderPass, VkDevice device, uint32_t subpass, VkPushConstantRange pushConstantRange)
 {
     m_device = device;
     assert(m_device);
@@ -150,6 +150,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.basePipelineIndex = -1;
     pipelineInfo.pDepthStencilState = &m_depthStencil;
+    pipelineInfo.subpass = subpass;
 
     res = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);

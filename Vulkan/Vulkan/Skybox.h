@@ -1,18 +1,16 @@
 #pragma once
 
-#include "CubeModel.h"
+#include "Pipeliner.h"
 
-class Skybox: public CubeModel
+class Skybox
 {
 public:
     Skybox() = default;
 
-    void init();
-
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) override;
+    void init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
+    VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device);
 
 private:
-    virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
-                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
-                      std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) override;
+
+    Pipeliner::pipeline_ptr m_pipeLine = { nullptr, nullptr };
 };

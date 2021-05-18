@@ -959,7 +959,7 @@ void VulkanRenderer::createSemaphores()
 void VulkanRenderer::createPipeline()
 {
     m_pipeLine = Pipeliner::getInstance().createPipeLine("vert.spv", "frag.spv", m_width, m_height,
-        m_descriptorSetLayout, m_renderPass, m_core.getDevice(), m_pushConstantRange);
+        m_descriptorSetLayout, m_renderPass, m_core.getDevice(), 0u, m_pushConstantRange);
     assert(m_pipeLine);
 
     ///-----------------------------------------------------------------------------///
@@ -980,7 +980,7 @@ void VulkanRenderer::createPipeline()
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // as a simple set with two triangles for quad drawing
 
     m_pipeLineSecondPass = Pipeliner::getInstance().createPipeLine("vert_secondPass.spv", "frag_secondPass.spv",
-        m_width, m_height, m_descriptorSetLayoutSecondPass, m_renderPass, m_core.getDevice());
+        m_width, m_height, m_descriptorSetLayoutSecondPass, m_renderPass, m_core.getDevice(), 1u);
 
     assert(m_pipeLineSecondPass);
 }
