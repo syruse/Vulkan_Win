@@ -41,14 +41,39 @@ const std::vector<uint16_t> _indices =
     6, 7, 3
 };
 
+struct Vertex
+{
+    glm::vec3 pos;
+
+    static constexpr VkVertexInputBindingDescription getBindingDescription()
+    {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        return bindingDescription;
+    }
+    static constexpr VkVertexInputAttributeDescription getAttributeDescription()
+    {
+        VkVertexInputAttributeDescription attributeDescription{};
+        attributeDescription.binding = 0;
+        attributeDescription.location = 0;
+        attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescription.offset = offsetof(Vertex, pos);
+        return attributeDescription;
+    }
+};
+
 void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
                   VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device)
 {
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    constexpr auto bindingDescription = Vertex::getBindingDescription();
+    constexpr auto attributeDescriptions = Vertex::getAttributeDescription();
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions;
 
     // Don't want to write to depth buffer
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();

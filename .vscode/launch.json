@@ -9,7 +9,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}",
+            "program": "${workspaceFolder}/build/VulkanApp",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
