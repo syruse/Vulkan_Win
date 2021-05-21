@@ -82,7 +82,6 @@ private:
     virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
                       std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
                       std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) = 0; 
-    virtual void createGeneralBuffer(VkCommandPool cmdBufPool, VkQueue queue, std::vector<uint32_t>& indices, std::vector<Vertex>& vertices) final;
 
 protected:
     struct SubObject

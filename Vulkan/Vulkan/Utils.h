@@ -89,6 +89,12 @@ namespace Utils {
 
     bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates,
         VkImageTiling tiling, VkFormatFeatureFlags features, VkFormat& ret_format);
+
+    template <class T> void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
+        VkCommandPool cmdBufPool, VkQueue queue,
+        const std::vector<uint32_t>& indices, const std::vector<T>& vertices,
+        VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
+        VkDeviceMemory& generalBufferMemory);
 }
 
 #ifdef _WIN32

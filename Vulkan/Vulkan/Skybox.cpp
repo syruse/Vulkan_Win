@@ -5,7 +5,7 @@
 #include <assert.h>
 
 ///Note: designed for VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-const std::vector<I3DModel::Vertex> _vertices = 
+const std::vector<Skybox::Vertex> _vertices =
 {
     // front
     {{-1.0, -1.0, 1.0}},
@@ -19,7 +19,7 @@ const std::vector<I3DModel::Vertex> _vertices =
     {{-1.0, 1.0, -1.0}}
 };
 
-const std::vector<uint16_t> _indices = 
+const std::vector<uint32_t> _indices =
 {
     // front
     0, 1, 2,
@@ -39,29 +39,6 @@ const std::vector<uint16_t> _indices =
     // top
     3, 2, 6,
     6, 7, 3
-};
-
-struct Vertex
-{
-    glm::vec3 pos;
-
-    static constexpr VkVertexInputBindingDescription getBindingDescription()
-    {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        return bindingDescription;
-    }
-    static constexpr VkVertexInputAttributeDescription getAttributeDescription()
-    {
-        VkVertexInputAttributeDescription attributeDescription{};
-        attributeDescription.binding = 0;
-        attributeDescription.location = 0;
-        attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescription.offset = offsetof(Vertex, pos);
-        return attributeDescription;
-    }
 };
 
 void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
@@ -100,5 +77,6 @@ void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint
         m_realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels));
     }
 
-    createGeneralBuffer(cmdBufPool, queue, _indices, _vertices);
+    Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, _indices, _vertices,
+        m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }

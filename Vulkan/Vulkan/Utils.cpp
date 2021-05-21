@@ -5,6 +5,10 @@
 #include <fstream>
 #include <memory>
 
+/// declaration for template instatiation
+#include "I3DModel.h"
+#include "Skybox.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -685,5 +689,48 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
 
         return status;
     }
+
+    template <class T> void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, 
+                             VkCommandPool cmdBufPool, VkQueue queue,
+                             const std::vector<uint32_t>& indices, const std::vector<T>& vertices,
+                             VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer, 
+                             VkDeviceMemory& generalBufferMemory)
+    {
+        ///Note: general buffer keeping both geometry data, 
+        ///      index buffer is placed first and next to index buffer the vertex buffer placed
+        const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
+        verticesBufferOffset = indicesSize;
+        const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();
+        const VkDeviceSize bufferSize = indicesSize + verticesSize;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        Utils::VulkanCreateBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, indices.data(), (size_t)indicesSize);
+        memcpy((char*)data + verticesBufferOffset, vertices.data(), verticesSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        Utils::VulkanCreateBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, generalBuffer, generalBufferMemory);
+
+        Utils::VulkanCopyBuffer(device, queue, cmdBufPool, stagingBuffer, generalBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    // Explicit template instantiation
+    template void createGeneralBuffer< I3DModel::Vertex >(VkDevice device, VkPhysicalDevice physicalDevice,
+            VkCommandPool cmdBufPool, VkQueue queue,
+            const std::vector<uint32_t>&indices, const std::vector<I3DModel::Vertex>&vertices,
+            VkDeviceSize & verticesBufferOffset, VkBuffer & generalBuffer,
+            VkDeviceMemory & generalBufferMemory);
+    template void createGeneralBuffer< Skybox::Vertex >(VkDevice device, VkPhysicalDevice physicalDevice,
+            VkCommandPool cmdBufPool, VkQueue queue,
+            const std::vector<uint32_t>& indices, const std::vector<Skybox::Vertex>& vertices,
+            VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
+            VkDeviceMemory& generalBufferMemory);
 
 }
