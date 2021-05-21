@@ -10,6 +10,7 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
                     std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
     assert(pTextureFactory);
+    assert(descriptorCreator);
     vertices.clear();
     indices.clear();
 

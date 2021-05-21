@@ -65,8 +65,13 @@ struct Vertex
 };
 
 void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
-                  VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device)
+                  VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
+                  VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+                  const std::array<std::string_view, 6>& textureFileNames,
+                  std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator)
 {
+    assert(descriptorCreator);
+    
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     constexpr auto bindingDescription = Vertex::getBindingDescription();
     constexpr auto attributeDescriptions = Vertex::getAttributeDescription();
@@ -85,4 +90,15 @@ void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint
     m_pipeLine = Pipeliner::getInstance().createPipeLine(vertShader, fragShader, width, height,
         descriptorSetLayout, renderPass, device);
     assert(m_pipeLine);
+
+    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
+    assert(pTextureFactory);
+
+    auto texture = pTextureFactory->createCubeTexture(textureFileNames);
+    if (!texture.expired())
+    {
+        m_realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels));
+    }
+
+    createGeneralBuffer(cmdBufPool, queue, _indices, _vertices);
 }
