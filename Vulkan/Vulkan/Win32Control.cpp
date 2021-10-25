@@ -80,7 +80,7 @@ VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const
     VkSurfaceKHR surface;
 
     VkResult res = vkCreateWin32SurfaceKHR(inst, &surfaceCreateInfo, NULL, &surface);
-    CHECK_VULKAN_ERROR("vkCreateXcbSurfaceKHR error %d\n", res);
+    CHECK_VULKAN_ERROR("vkCreateWin32SurfaceKHR error %d\n", res);
 
     return surface;
 }

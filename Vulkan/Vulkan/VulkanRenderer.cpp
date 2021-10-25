@@ -150,7 +150,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.view = glm::lookAt(glm::vec3(10.0f, 10.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(glm::vec3(100.0f, 3.0f, 100.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(65.0f), m_width / (float)m_height, 0.01f, 1000.0f);
 
     /**
@@ -519,16 +519,25 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     vkCmdBeginRenderPass(m_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipeline);
-
-
-    /// For Each mesh start
-
-
     // Dynamic Offset Amount
     size_t meshIndex = 0;
     const uint32_t dynamicOffset = static_cast<uint32_t>(m_modelUniformAlignment) * meshIndex;
 
+    ///  SkyBox
+
+    auto descriptorBinding2 = [this, currentImage, dynamicOffset](uint16_t materialId, VkPipelineLayout pipelineLayout)
+    {
+        vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+            &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
+    };
+
+    m_skyBox.draw(m_cmdBufs[currentImage], descriptorBinding2);
+
+
+    /// For Each mesh start
+
+    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipeline);
+    
     vkCmdPushConstants(
         m_cmdBufs[currentImage],
         m_pipeLine->pipelineLayout,
@@ -536,7 +545,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
         0,								// Offset of push constants to update
         sizeof(PushConstant),		    // Size of data being pushed
         &_pushConstant);		        // Actual data being pushed (can be array)
-
+    
     /**
     * Unlike vertex and index buffers, descriptor sets are not unique to graphics pipelines.
     * Therefore we need to specify if we want to bind descriptor sets to the graphics or compute pipeline
@@ -694,6 +703,18 @@ void VulkanRenderer::loadModels()
         return m_materialId;
     };
 
+    const std::array<std::string_view, 6> skyBoxTextures
+    {
+    "dark_ft.png",
+    "dark_bk.png",
+    "dark_dn.png",
+    "dark_up.png",
+    "dark_lt.png",
+    "dark_rt.png"
+    };
+    m_skyBox.init("vert_skybox.spv", "frag_skybox.spv", m_width, m_height, m_descriptorSetLayout, m_renderPass,
+        m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, skyBoxTextures, m_descriptorCreator);
+    
     m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, m_descriptorCreator);
 }
 
@@ -1026,9 +1047,9 @@ void VulkanRenderer::init()
     allocateDynamicBufferTransferSpace();
     createUniformBuffers();
     createDescriptorPool();
+    createRenderPass();
     loadModels();
     createDescriptorSetsSecondPass();
-    createRenderPass();
     createFramebuffer();
     createPipeline();
     createSemaphores();

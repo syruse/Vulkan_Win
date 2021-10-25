@@ -8,13 +8,13 @@
 const std::vector<Skybox::Vertex> _vertices =
 {
     // front
-    {{-1.0, -1.0, 1.0}},
-    {{1.0, -1.0, 1.0}},
+    {{-1.0, 0.0, 1.0}},
+    {{1.0, 0.0, 1.0}},
     {{1.0, 1.0, 1.0}},
     {{-1.0, 1.0, 1.0}},
     // back
-    {{-1.0, -1.0, -1.0}},
-    {{1.0, -1.0, -1.0}},
+    {{-1.0, 0.0, -1.0}},
+    {{1.0, 0.0, -1.0}},
     {{1.0, 1.0, -1.0}},
     {{-1.0, 1.0, -1.0}}
 };
@@ -28,17 +28,17 @@ const std::vector<uint32_t> _indices =
     1, 5, 6,
     6, 2, 1,
     // back
-    7, 6, 5,
-    5, 4, 7,
+    6, 5, 4,
+    4, 7, 6,
     // left
     4, 0, 3,
     3, 7, 4,
     // bottom
-    4, 5, 1,
-    1, 0, 4,
-    // top
+    6, 7, 3,
     3, 2, 6,
-    6, 7, 3
+    // top
+    5, 4, 0,
+    0, 1, 5
 };
 
 void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
@@ -57,8 +57,12 @@ void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint
     vertexInputInfo.vertexAttributeDescriptionCount = 1;
     vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions;
 
+    auto& raster = Pipeliner::getInstance().getRasterizationInfo();
+    raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
     // Don't want to write to depth buffer
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
+    depthStencil.depthTestEnable = VK_FALSE;
     depthStencil.depthWriteEnable = VK_FALSE;
 
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
@@ -79,4 +83,21 @@ void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint
 
     Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, _indices, _vertices,
         m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+}
+
+void Skybox::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId,
+    VkPipelineLayout pipelineLayout)> descriptorBinding)
+{
+    assert(descriptorBinding);
+    assert(m_generalBuffer);
+
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipeline);
+
+    VkBuffer vertexBuffers[] = { m_generalBuffer };
+    VkDeviceSize offsets[] = { m_verticesBufferOffset };
+    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    descriptorBinding(m_realMaterialId, m_pipeLine->pipelineLayout);
+    vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(_indices.size()), 1U, 0U, 0, 0U);
 }

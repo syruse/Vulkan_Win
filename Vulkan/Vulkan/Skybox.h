@@ -39,6 +39,9 @@ public:
         const std::array<std::string_view, 6>& textureFileNames,
         std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator);
 
+    void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId,
+        VkPipelineLayout pipelineLayout)> descriptorBinding);
+
 private:
 
     Pipeliner::pipeline_ptr m_pipeLine = { nullptr, nullptr };

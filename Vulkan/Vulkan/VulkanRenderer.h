@@ -9,6 +9,7 @@
 #include "VulkanCore.h"
 #include "ObjModel.h"
 #include "Pipeliner.h"
+#include <Vulkan/Skybox.h>
 
 class VulkanRenderer
 {
@@ -92,6 +93,8 @@ private:
     std::vector<VkSemaphore> m_presentCompleteSem;
     std::vector<VkSemaphore> m_renderCompleteSem;
     std::vector<VkFence> m_drawFences;
+
+    Skybox m_skyBox;
 
     ObjModel m_objModel;
     std::vector<VkBuffer> m_uniformBuffers;

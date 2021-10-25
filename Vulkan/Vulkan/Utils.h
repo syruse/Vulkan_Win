@@ -82,7 +82,7 @@ namespace Utils {
         const std::array<std::string, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
-        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U);
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U, uint32_t layersCount = 1U);
 
     VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask, VkImageView& imageView, 
         uint32_t mipLevels = 1U, VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D, uint32_t layersCount = 1U);

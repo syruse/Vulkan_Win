@@ -48,7 +48,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
     {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
-        std::array<std::string, 6> textureFileNames
+        std::array<std::string, 6> _textureFileNames
         {
             Utils::formPath(TEXTURES_DIR, textureFileNames[0]),
             Utils::formPath(TEXTURES_DIR, textureFileNames[1]),
@@ -58,7 +58,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
             Utils::formPath(TEXTURES_DIR, textureFileNames[5])
         };
 
-        if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
+        if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, _textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
         {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
