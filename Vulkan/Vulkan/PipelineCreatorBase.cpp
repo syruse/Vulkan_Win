@@ -2,11 +2,15 @@
 #include "Utils.h"
 
 
-Pipeliner::pipeline_ptr PipelineCreatorBase::createPipeline(uint32_t width, uint32_t height, 
-    VkRenderPass renderPass, VkDevice device, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+Pipeliner::pipeline_ptr PipelineCreatorBase::init(uint32_t width, uint32_t height, 
+    VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange)
 {
-    createDescriptorSetLayout();
-    createPipeline();
+    if(!m_descriptorSetLayout)
+       createDescriptorSetLayout(device);
+
+    ///make a reset if exists
+    m_pipeline.reset();
+    createPipeline(width, height, renderPass, device, pushConstantRange);
 }
 
 // default textured layout

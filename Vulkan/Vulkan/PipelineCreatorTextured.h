@@ -12,7 +12,8 @@ public:
 
 private:
 
-    virtual void createPipeline() override;
+    virtual void createPipeline(uint32_t width, uint32_t height, 
+        VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange) override;
 
 
 };

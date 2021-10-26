@@ -1,11 +1,17 @@
 
 #include "PipelineCreatorTextured.h"
+#include <assert.h>
 
-void PipelineCreatorTextured::createPipeline()
+void PipelineCreatorTextured::createPipeline(uint32_t width, uint32_t height, 
+        VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange)
 {
-    m_pipeLine = Pipeliner::getInstance().createPipeLine("vert.spv", "frag.spv", m_width, m_height,
-    m_descriptorSetLayout, m_renderPass, m_core.getDevice(), 0u, m_pushConstantRange);
-    assert(m_pipeLine);
+    assert(m_descriptorSetLayout);
+    assert(renderPass);
+    assert(device);
+
+    auto pipeLine = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, width, height,
+    m_descriptorSetLayout, renderPass, device, m_subpassAmount, pushConstantRange);
+    assert(pipeLine);
 }
 
 
