@@ -89,4 +89,5 @@ private:
     static VkPipelineMultisampleStateCreateInfo _pipelineMSCreateInfo;
     static VkPipelineColorBlendStateCreateInfo _blendCreateInfo;
     static VkPipelineDepthStencilStateCreateInfo _depthStencil;
+
 };
