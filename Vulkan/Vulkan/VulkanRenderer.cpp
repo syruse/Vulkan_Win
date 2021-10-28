@@ -21,6 +21,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "PipelineCreatorTextured.h"
+#include "PipelineCreatorSkyBox.h"
+#include "PipelineCreatorQuad.h""
+
 VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
     : m_width(width)
     , m_height(height)
@@ -33,6 +37,19 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
     ///TO DO
 #endif 
 {
+    // Define push constant values (no 'create' needed!)
+    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;	// Shader stage push constant will go to
+    m_pushConstantRange.offset = 0;								    // Offset into given data to pass to push constant
+    m_pushConstantRange.size = sizeof(PushConstant);				// Size of data being passed
+
+    m_pipelineCreators.reserve(3);
+    m_pipelineCreators.emplace_back(new PipelineCreatorTextured("vert.spv", "frag.spv", 0u, m_pushConstantRange));
+
+
+    m_pipelineCreators.emplace_back(new PipelineCreatorSkyBox("vert_skybox.spv", "frag_skybox.spv"));
+
+
+    m_pipelineCreators.emplace_back(new PipelineCreatorQuad("vert_secondPass.spv", "frag_secondPass.spv", 1u));
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -130,14 +147,6 @@ void VulkanRenderer::recreateDescriptorSets()
     {
         m_descriptorCreator(material.second.texture, material.second.sampler);
     }
-}
-
-void VulkanRenderer::createPushConstantRange()
-{
-    // Define push constant values (no 'create' needed!)
-    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;	// Shader stage push constant will go to
-    m_pushConstantRange.offset = 0;								// Offset into given data to pass to push constant
-    m_pushConstantRange.size = sizeof(PushConstant);						// Size of data being passed
 }
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {

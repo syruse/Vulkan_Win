@@ -1,11 +1,11 @@
 #pragma once
 #include "PipelineCreatorBase.h"
 
-class PipelineCreatorTextured: public PipelineCreatorBase
+class PipelineCreatorSkyBox: public PipelineCreatorBase
 {
 public:
 
-    constexpr PipelineCreatorTextured(std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+    constexpr PipelineCreatorSkyBox(std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
     :PipelineCreatorBase(vertShader, fragShader, subpass, pushConstantRange)
     {}
 

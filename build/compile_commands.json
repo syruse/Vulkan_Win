@@ -21,6 +21,26 @@
 },
 {
   "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/PipelineCreatorBase.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorBase.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorBase.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/PipelineCreatorQuad.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorQuad.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorQuad.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/PipelineCreatorSkyBox.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorSkyBox.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorSkyBox.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/PipelineCreatorTextured.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorTextured.cpp",
+  "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/PipelineCreatorTextured.cpp"
+},
+{
+  "directory": "/home/ymalafeiev/Develop/Vulkan_Win/build",
   "command": "/usr/bin/x86_64-linux-gnu-g++-7   -I/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/..  -g -D_DEBUG   -std=gnu++1z -o CMakeFiles/VulkanApp.dir/Pipeliner.cpp.o -c /home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Pipeliner.cpp",
   "file": "/home/ymalafeiev/Develop/Vulkan_Win/Vulkan/Vulkan/Pipeliner.cpp"
 },

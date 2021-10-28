@@ -49,28 +49,7 @@ void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint
 {
     assert(descriptorCreator);
     
-    auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    constexpr auto bindingDescription = Vertex::getBindingDescription();
-    constexpr auto attributeDescriptions = Vertex::getAttributeDescription();
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = 1;
-    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions;
 
-    auto& raster = Pipeliner::getInstance().getRasterizationInfo();
-    raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-    // Don't want to write to depth buffer
-    auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
-    depthStencil.depthTestEnable = VK_FALSE;
-    depthStencil.depthWriteEnable = VK_FALSE;
-
-    auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
-    pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    
-    m_pipeLine = Pipeliner::getInstance().createPipeLine(vertShader, fragShader, width, height,
-        descriptorSetLayout, renderPass, device);
-    assert(m_pipeLine);
 
     TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
     assert(pTextureFactory);

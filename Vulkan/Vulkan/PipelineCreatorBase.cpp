@@ -1,16 +1,15 @@
 #include "PipelineCreatorBase.h"
 #include "Utils.h"
 
-
-Pipeliner::pipeline_ptr PipelineCreatorBase::init(uint32_t width, uint32_t height, 
-    VkRenderPass renderPass, VkDevice device, VkPushConstantRange pushConstantRange)
+Pipeliner::pipeline_ptr PipelineCreatorBase::recreate(uint32_t width, uint32_t height, 
+    VkRenderPass renderPass, VkDevice device)
 {
     if(!m_descriptorSetLayout)
        createDescriptorSetLayout(device);
 
     ///make a reset if exists
     m_pipeline.reset();
-    createPipeline(width, height, renderPass, device, pushConstantRange);
+    createPipeline(width, height, renderPass, device);
 }
 
 // default textured layout
@@ -47,10 +46,16 @@ void PipelineCreatorBase::createDescriptorSetLayout(VkDevice device)
     layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());;
     layoutCreateInfo.pBindings = layoutBindings.data();
 
-    if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
+    VkDescriptorSetLayout descriptorSetLayout;
+    if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout!");
     }
 
+    m_descriptorSetLayout.reset(&descriptorSetLayout);
+    m_descriptorSetLayout.get_deleter() = [device](VkDescriptorSetLayout* p)
+    {
+        vkDestroyDescriptorSetLayout(device, *p, nullptr);
+    };
 }
 
 

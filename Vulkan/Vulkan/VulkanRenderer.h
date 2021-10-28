@@ -8,8 +8,8 @@
 
 #include "VulkanCore.h"
 #include "ObjModel.h"
-#include "Pipeliner.h"
 #include <Vulkan/Skybox.h>
+#include "PipelineCreatorBase.h"
 
 class VulkanRenderer
 {
@@ -80,15 +80,14 @@ private:
     VkCommandPool m_cmdBufPool;
     std::vector<VkImageView> m_views;
     VkRenderPass m_renderPass;
-    VkDescriptorSetLayout m_descriptorSetLayout;
     VkPushConstantRange m_pushConstantRange;
     VkDescriptorPool m_descriptorPool;
     uint16_t m_materialId = 0u;
     std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> m_descriptorCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
-    Pipeliner::pipeline_ptr m_pipeLine = { nullptr, nullptr };
-    Pipeliner::pipeline_ptr m_pipeLineSecondPass = { nullptr, nullptr };
+
+    std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators;
 
     std::vector<VkSemaphore> m_presentCompleteSem;
     std::vector<VkSemaphore> m_renderCompleteSem;
@@ -110,7 +109,6 @@ private:
     VkImageView m_depthImageView;
 
     VkFormat m_colourFormat = VK_FORMAT_UNDEFINED;
-    VkDescriptorSetLayout m_descriptorSetLayoutSecondPass;
     std::vector<VkDescriptorSet> m_descriptorSetsSecondPass;
     VkDescriptorPool m_descriptorPoolSecondPass;
     std::vector<VkImage> m_colourBufferImage;
