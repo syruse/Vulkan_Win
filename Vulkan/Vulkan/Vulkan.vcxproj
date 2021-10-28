@@ -153,6 +153,10 @@
     <ClCompile Include="I3DModel.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="ObjModel.cpp" />
+    <ClCompile Include="PipelineCreatorBase.cpp" />
+    <ClCompile Include="PipelineCreatorQuad.cpp" />
+    <ClCompile Include="PipelineCreatorSkyBox.cpp" />
+    <ClCompile Include="PipelineCreatorTextured.cpp" />
     <ClCompile Include="Pipeliner.cpp" />
     <ClCompile Include="Skybox.cpp" />
     <ClCompile Include="TextureFactory.cpp" />
@@ -167,6 +171,10 @@
     <ClInclude Include="I3DModel.h" />
     <ClInclude Include="IControl.h" />
     <ClInclude Include="ObjModel.h" />
+    <ClInclude Include="PipelineCreatorBase.h" />
+    <ClInclude Include="PipelineCreatorQuad.h" />
+    <ClInclude Include="PipelineCreatorSkyBox.h" />
+    <ClInclude Include="PipelineCreatorTextured.h" />
     <ClInclude Include="Pipeliner.h" />
     <ClInclude Include="Skybox.h" />
     <ClInclude Include="TextureFactory.h" />

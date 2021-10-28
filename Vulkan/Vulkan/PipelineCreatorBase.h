@@ -9,7 +9,7 @@ class PipelineCreatorBase
 {
 public:
 
-    using descriptor_set_layout_ptr = std::unique_ptr<VkDescriptorSetLayout, void(*)(VkDescriptorSetLayout* p)>;
+    using descriptor_set_layout_ptr = std::unique_ptr<VkDescriptorSetLayout, std::function<void(VkDescriptorSetLayout* p)>>;
 
     constexpr PipelineCreatorBase(std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u}):
     m_vertShader(vertShader),

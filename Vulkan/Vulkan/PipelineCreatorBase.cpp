@@ -1,5 +1,6 @@
 #include "PipelineCreatorBase.h"
 #include "Utils.h"
+#include <assert.h>
 
 Pipeliner::pipeline_ptr PipelineCreatorBase::recreate(uint32_t width, uint32_t height, 
     VkRenderPass renderPass, VkDevice device)
@@ -52,10 +53,12 @@ void PipelineCreatorBase::createDescriptorSetLayout(VkDevice device)
     }
 
     m_descriptorSetLayout.reset(&descriptorSetLayout);
-    m_descriptorSetLayout.get_deleter() = [device](VkDescriptorSetLayout* p)
+    auto deleter = [device](VkDescriptorSetLayout* p)
     {
+        assert(device);
         vkDestroyDescriptorSetLayout(device, *p, nullptr);
     };
+    m_descriptorSetLayout.get_deleter() = deleter;
 }
 
 
