@@ -72,6 +72,12 @@ public:
         }
     };
 
+    class PipelineCreatorBase;
+    constexpr I3DModel(PipelineCreatorBase* pipelineCreatorBase):
+        m_pipelineCreatorBase(pipelineCreatorBase)
+    {
+    }
+
     virtual ~I3DModel();
 
     virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
@@ -92,6 +98,7 @@ protected:
     };
 
 protected:
+    PipelineCreatorBase* m_pipelineCreatorBase = nullptr;
     std::vector<std::vector<SubObject>> m_SubObjects{};
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;

@@ -42,6 +42,101 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
     m_pushConstantRange.offset = 0;								    // Offset into given data to pass to push constant
     m_pushConstantRange.size = sizeof(PushConstant);				// Size of data being passed
 
+    m_descriptorCreator = [this](std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+        VkDescriptorSetLayout descriptorSetLayout) -> uint16_t
+    {
+        assert(descriptorSetLayout);
+        assert(!texture.expired());
+
+        ++m_materialId;
+
+        std::vector<VkDescriptorSetLayout> layouts(m_images.size(), descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
+        allocInfo.pSetLayouts = layouts.data();
+
+        I3DModel::Material material;
+        material.sampler = sampler;
+        material.texture = texture;
+        material.descriptorSets.resize(m_images.size());
+
+        auto status = vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, material.descriptorSets.data());
+        if (status != VK_SUCCESS && texture.expired())
+        {
+            Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
+        }
+        else
+        {
+            m_descriptorSets.try_emplace(m_materialId, material);
+        }
+
+        // connect the descriptors with buffer when binding
+
+        for (uint16_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            // VIEW PROJECTION DESCRIPTOR
+            // Buffer info and data offset info
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = m_uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = material.descriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+            descriptorWrite.pImageInfo = nullptr;       // Optional
+            descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+            // MODEL DESCRIPTOR
+            // Model Buffer Binding Info
+            VkDescriptorBufferInfo modelBufferInfo = {};
+            modelBufferInfo.buffer = m_dynamicUniformBuffers[i];
+            modelBufferInfo.offset = 0;
+            modelBufferInfo.range = m_modelUniformAlignment;
+
+            VkWriteDescriptorSet modelSetWrite = {};
+            modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            modelSetWrite.dstSet = material.descriptorSets[i];
+            modelSetWrite.dstBinding = 1;
+            modelSetWrite.dstArrayElement = 0;
+            modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            modelSetWrite.descriptorCount = 1;
+            modelSetWrite.pBufferInfo = &modelBufferInfo;
+
+            // Texture
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = texture.lock()->m_textureImageView;
+            imageInfo.sampler = sampler;
+
+            VkWriteDescriptorSet textureSetWrite = {};
+            textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            textureSetWrite.dstSet = material.descriptorSets[i];
+            textureSetWrite.dstBinding = 2;
+            textureSetWrite.dstArrayElement = 0;
+            textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            textureSetWrite.descriptorCount = 1;
+            textureSetWrite.pImageInfo = &imageInfo;
+
+            // List of Descriptor Set Writes
+            std::vector<VkWriteDescriptorSet> setWrites = { descriptorWrite, modelSetWrite, textureSetWrite };
+
+            // Update the descriptor sets with new buffer/binding info
+            vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
+                0, nullptr);
+        }
+
+        return m_materialId;
+    };
+
+
     m_pipelineCreators.reserve(3);
     m_pipelineCreators.emplace_back(new PipelineCreatorTextured("vert.spv", "frag.spv", 0u, m_pushConstantRange));
 
@@ -588,95 +683,6 @@ void VulkanRenderer::createColourBufferImage()
 
 void VulkanRenderer::loadModels()
 {
-    m_descriptorCreator = [this](std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) -> uint16_t 
-    {
-        ++m_materialId;
-
-        std::vector<VkDescriptorSetLayout> layouts(m_images.size(), m_descriptorSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = m_descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
-        allocInfo.pSetLayouts = layouts.data();
-
-        I3DModel::Material material;
-        material.sampler = sampler;
-        material.texture = texture;
-        material.descriptorSets.resize(m_images.size());
-
-        auto status = vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, material.descriptorSets.data());
-        if ( status != VK_SUCCESS && texture.expired())
-        {
-            Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
-        }
-        else
-        {
-            m_descriptorSets.try_emplace(m_materialId, material);
-        }
-
-        // connect the descriptors with buffer when binding
-
-        for (uint16_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            // VIEW PROJECTION DESCRIPTOR
-            // Buffer info and data offset info
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = m_uniformBuffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = sizeof(UniformBufferObject);
-
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = material.descriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pBufferInfo = &bufferInfo;
-            descriptorWrite.pImageInfo = nullptr;       // Optional
-            descriptorWrite.pTexelBufferView = nullptr; // Optional
-
-            // MODEL DESCRIPTOR
-            // Model Buffer Binding Info
-            VkDescriptorBufferInfo modelBufferInfo = {};
-            modelBufferInfo.buffer = m_dynamicUniformBuffers[i];
-            modelBufferInfo.offset = 0;
-            modelBufferInfo.range = m_modelUniformAlignment;
-
-            VkWriteDescriptorSet modelSetWrite = {};
-            modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            modelSetWrite.dstSet = material.descriptorSets[i];
-            modelSetWrite.dstBinding = 1;
-            modelSetWrite.dstArrayElement = 0;
-            modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-            modelSetWrite.descriptorCount = 1;
-            modelSetWrite.pBufferInfo = &modelBufferInfo;
-
-            // Texture
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = texture.lock()->m_textureImageView;
-            imageInfo.sampler = sampler;
-
-            VkWriteDescriptorSet textureSetWrite = {};
-            textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            textureSetWrite.dstSet = material.descriptorSets[i];
-            textureSetWrite.dstBinding = 2;
-            textureSetWrite.dstArrayElement = 0;
-            textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            textureSetWrite.descriptorCount = 1;
-            textureSetWrite.pImageInfo = &imageInfo;
-
-            // List of Descriptor Set Writes
-            std::vector<VkWriteDescriptorSet> setWrites = {descriptorWrite, modelSetWrite, textureSetWrite};
-
-            // Update the descriptor sets with new buffer/binding info
-            vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(),
-                                   0, nullptr);
-        }
-
-        return m_materialId;
-    };
 
     const std::array<std::string_view, 6> skyBoxTextures
     {
