@@ -1,16 +1,41 @@
 
 #include "ObjModel.h"
 #include "Utils.h"
+#include "PipelineCreatorBase.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
-void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory, 
-                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
+
+void ObjModel::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+        VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator)
+{
+    assert(device);
+    assert(physicalDevice);
+    assert(cmdBufPool);
+    assert(queue);
+    assert(descriptorCreator);
+
+    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
+    std::vector<Vertex> vertices{};
+    std::vector<uint32_t> indices{};
+
+    m_device = device;
+    m_physicalDevice = physicalDevice;
+    load(pTextureFactory, descriptorCreator, vertices, indices);
+    Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, indices, vertices,
+        m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+}
+
+void ObjModel::load(TextureFactory* pTextureFactory, 
+                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                        VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
                     std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
     assert(pTextureFactory);
     assert(descriptorCreator);
+    assert(m_pipelineCreatorBase);
     vertices.clear();
     indices.clear();
 
@@ -23,9 +48,9 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
     std::string warn, err;
 
     std::string absPath;
-    Utils::formPath(MODEL_DIR.c_str(), path, absPath);
+    Utils::formPath(MODEL_DIR, m_path, absPath);
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, absPath.c_str(), MODEL_DIR.c_str(), false, false))
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, absPath.c_str(), MODEL_DIR.data(), false, false))
     {
         Utils::printLog(ERROR_PARAM, (warn + err));
     }
@@ -57,7 +82,8 @@ void ObjModel::load(std::string_view path, TextureFactory* pTextureFactory,
             auto texture = pTextureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
             if (!texture.expired())
             {
-                realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels));
+                realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels,
+                    *m_pipelineCreatorBase->getDescriptorSetLayout().get()));
                 materialsMap.try_emplace(materialId, realMaterialId);
             }
             else

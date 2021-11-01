@@ -12,7 +12,7 @@ class I3DModel
 {
 public:
 
-    static std::string MODEL_DIR;
+    static constexpr std::string_view MODEL_DIR = "models";
 
     struct Material
     {
@@ -78,16 +78,17 @@ public:
     {
     }
 
-    virtual ~I3DModel();
+    virtual ~I3DModel() 
+    {
+        vkDeviceWaitIdle(m_device);
+        vkDestroyBuffer(m_device, m_generalBuffer, nullptr);
+        vkFreeMemory(m_device, m_generalBufferMemory, nullptr);
+    }
 
-    virtual void init(std::string_view path, VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
-                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator) final;
+    virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
+                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                          VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator) = 0;
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) = 0;
-
-private:
-    virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
-                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
-                      std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) = 0; 
 
 protected:
     struct SubObject

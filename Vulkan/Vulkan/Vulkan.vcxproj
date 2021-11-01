@@ -150,7 +150,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CubeModel.cpp" />
-    <ClCompile Include="I3DModel.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="ObjModel.cpp" />
     <ClCompile Include="PipelineCreatorBase.cpp" />

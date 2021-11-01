@@ -33,9 +33,6 @@
     <ClCompile Include="XCBControl.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
-    <ClCompile Include="I3DModel.cpp">
-      <Filter>Исходные файлы</Filter>
-    </ClCompile>
     <ClCompile Include="ObjModel.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
