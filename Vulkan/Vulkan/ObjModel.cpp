@@ -1,15 +1,14 @@
 
 #include "ObjModel.h"
 #include "Utils.h"
-#include "PipelineCreatorBase.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
 
 void ObjModel::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
-        VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator)
+    const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+        VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
 {
     assert(device);
     assert(physicalDevice);
@@ -36,6 +35,7 @@ void ObjModel::load(TextureFactory* pTextureFactory,
     assert(pTextureFactory);
     assert(descriptorCreator);
     assert(m_pipelineCreatorBase);
+    assert(!m_path.empty());
     vertices.clear();
     indices.clear();
 
@@ -82,8 +82,8 @@ void ObjModel::load(TextureFactory* pTextureFactory,
             auto texture = pTextureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
             if (!texture.expired())
             {
-                realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels,
-                    *m_pipelineCreatorBase->getDescriptorSetLayout().get()));
+                realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels),
+                    *m_pipelineCreatorBase->getDescriptorSetLayout().get());
                 materialsMap.try_emplace(materialId, realMaterialId);
             }
             else
@@ -142,10 +142,14 @@ void ObjModel::load(TextureFactory* pTextureFactory,
     }
 }
 
-void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
+void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding)
 {
     assert(descriptorBinding);
     assert(m_generalBuffer);
+    assert(m_pipelineCreatorBase);
+    assert(m_pipelineCreatorBase->getPipeline().get());
+
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorBase->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = { m_generalBuffer };
     VkDeviceSize offsets[] = { m_verticesBufferOffset };
@@ -156,7 +160,7 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t material
     {
         if (subObjects.size())
         {
-            descriptorBinding(subObjects[0].realMaterialId);
+            descriptorBinding(subObjects[0].realMaterialId, m_pipelineCreatorBase->getPipeline().get()->pipelineLayout);
             for (const auto &subObject : subObjects)
             {
                 vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1, static_cast<uint32_t>(subObject.indexOffset), 0, 0);

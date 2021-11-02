@@ -7,9 +7,8 @@
 #include <array>
 
 #include "VulkanCore.h"
-#include "ObjModel.h"
-#include <Vulkan/Skybox.h>
 #include "PipelineCreatorBase.h"
+#include "I3DModel.h"
 
 class VulkanRenderer
 {
@@ -54,11 +53,9 @@ private:
     void createCommandBuffer();
     void updateUniformBuffer(uint32_t currentImage);
     void createRenderPass();
-    void createDescriptorSetLayout();
     void createPushConstantRange();
     void allocateDynamicBufferTransferSpace();
     void createDescriptorPool();
-    void createDescriptorSetsSecondPass();
     void createFramebuffer();
     void createPipeline();
     void recordCommandBuffers(uint32_t currentImage);
@@ -85,17 +82,16 @@ private:
     uint16_t m_materialId = 0u;
     std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler, VkDescriptorSetLayout)> m_descriptorCreator = nullptr;
+    std::function<void()> m_descriptorSecondPassCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
 
     std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators;
+    std::vector<std::unique_ptr<I3DModel>> m_models;
 
     std::vector<VkSemaphore> m_presentCompleteSem;
     std::vector<VkSemaphore> m_renderCompleteSem;
     std::vector<VkFence> m_drawFences;
 
-    Skybox m_skyBox;
-
-    ObjModel m_objModel;
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersMemory;
     std::vector<VkBuffer> m_dynamicUniformBuffers;

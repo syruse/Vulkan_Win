@@ -23,7 +23,10 @@
 
 #include "PipelineCreatorTextured.h"
 #include "PipelineCreatorSkyBox.h"
-#include "PipelineCreatorQuad.h""
+#include "PipelineCreatorQuad.h"
+
+#include "ObjModel.h"
+#include "Skybox.h"
 
 VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
     : m_width(width)
@@ -60,6 +63,7 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
         I3DModel::Material material;
         material.sampler = sampler;
         material.texture = texture;
+        material.descriptorSetLayout = descriptorSetLayout;
         material.descriptorSets.resize(m_images.size());
 
         auto status = vkAllocateDescriptorSets(m_core.getDevice(), &allocInfo, material.descriptorSets.data());
@@ -139,12 +143,86 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
 
     m_pipelineCreators.reserve(3);
     m_pipelineCreators.emplace_back(new PipelineCreatorTextured("vert.spv", "frag.spv", 0u, m_pushConstantRange));
+    m_models.emplace_back(new ObjModel(MODEL_PATH.data(), m_pipelineCreators.back().get()));
 
 
     m_pipelineCreators.emplace_back(new PipelineCreatorSkyBox("vert_skybox.spv", "frag_skybox.spv"));
+    const std::array<std::string_view, 6> skyBoxTextures
+    {
+    "dark_ft.png",
+    "dark_bk.png",
+    "dark_dn.png",
+    "dark_up.png",
+    "dark_lt.png",
+    "dark_rt.png"
+    };
+    m_models.emplace_back(new Skybox(skyBoxTextures, m_pipelineCreators.back().get()));
 
 
     m_pipelineCreators.emplace_back(new PipelineCreatorQuad("vert_secondPass.spv", "frag_secondPass.spv", 1u));
+
+    m_descriptorSecondPassCreator = [this, &descriptorSetLayout = m_pipelineCreators.back().get()->getDescriptorSetLayout()]()
+    {
+        assert(descriptorSetLayout);
+        // Resize array to hold descriptor set for each swap chain image
+        m_descriptorSetsSecondPass.resize(m_images.size());
+
+        // Fill array of layouts ready for set creation
+        std::vector<VkDescriptorSetLayout> setLayouts(m_images.size(), *descriptorSetLayout.get());
+
+        // Input Attachment Descriptor Set Allocation Info
+        VkDescriptorSetAllocateInfo setAllocInfo = {};
+        setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAllocInfo.descriptorPool = m_descriptorPoolSecondPass;
+        setAllocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
+        setAllocInfo.pSetLayouts = setLayouts.data();
+
+        // Allocate Descriptor Sets
+        VkResult result = vkAllocateDescriptorSets(m_core.getDevice(), &setAllocInfo, m_descriptorSetsSecondPass.data());
+        CHECK_VULKAN_ERROR("Failed to allocate Input Attachment Descriptor Sets %d", result);
+
+        // Update each descriptor set with input attachment
+        for (size_t i = 0; i < m_images.size(); i++)
+        {
+            // Colour Attachment Descriptor
+            VkDescriptorImageInfo colourAttachmentDescriptor = {};
+            colourAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            colourAttachmentDescriptor.imageView = m_colourBufferImageView[i];
+            colourAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+
+            // Colour Attachment Descriptor Write
+            VkWriteDescriptorSet colourWrite = {};
+            colourWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            colourWrite.dstSet = m_descriptorSetsSecondPass[i];
+            colourWrite.dstBinding = 0;
+            colourWrite.dstArrayElement = 0;
+            colourWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            colourWrite.descriptorCount = 1;
+            colourWrite.pImageInfo = &colourAttachmentDescriptor;
+
+            // Depth Attachment Descriptor
+            VkDescriptorImageInfo depthAttachmentDescriptor = {};
+            depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            depthAttachmentDescriptor.imageView = m_depthImageView;
+            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+
+            // Depth Attachment Descriptor Write
+            VkWriteDescriptorSet depthWrite = {};
+            depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            depthWrite.dstSet = m_descriptorSetsSecondPass[i];
+            depthWrite.dstBinding = 1;
+            depthWrite.dstArrayElement = 0;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorCount = 1;
+            depthWrite.pImageInfo = &depthAttachmentDescriptor;
+
+            // List of input descriptor set writes
+            std::vector<VkWriteDescriptorSet> setWrites = {colourWrite, depthWrite};
+
+            // Update descriptor sets
+            vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
+        }
+    };
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -159,9 +237,6 @@ VulkanRenderer::~VulkanRenderer()
         vkDestroyBuffer(m_core.getDevice(), m_dynamicUniformBuffers[i], nullptr);
         vkFreeMemory(m_core.getDevice(), m_dynamicUniformBuffersMemory[i], nullptr);
     }
-
-    vkDestroyDescriptorSetLayout(m_core.getDevice(), m_descriptorSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(m_core.getDevice(), m_descriptorSetLayoutSecondPass, nullptr);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
@@ -201,8 +276,6 @@ void VulkanRenderer::cleanupSwapChain()
 
     vkDestroySwapchainKHR(m_core.getDevice(), m_swapChainKHR, nullptr);
 
-    m_pipeLine.reset(nullptr);
-    m_pipeLineSecondPass.reset(nullptr);
     vkDestroyRenderPass(m_core.getDevice(), m_renderPass, nullptr);
 
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
@@ -226,7 +299,6 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height)
         createColourBufferImage();
         createDescriptorPool();
         recreateDescriptorSets();
-        createDescriptorSetsSecondPass();
         createRenderPass();
         createFramebuffer();
         createPipeline();
@@ -240,8 +312,10 @@ void VulkanRenderer::recreateDescriptorSets()
     std::unordered_map<uint16_t, I3DModel::Material> descriptorSets(std::move(m_descriptorSets));
     for (auto& material : descriptorSets)
     {
-        m_descriptorCreator(material.second.texture, material.second.sampler);
+        m_descriptorCreator(material.second.texture, material.second.sampler, material.second.descriptorSetLayout);
     }
+
+    m_descriptorSecondPassCreator();
 }
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
@@ -296,41 +370,6 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace()
 
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds MAX_OBJECTS
     mp_modelTransferSpace = (I3DModel::DynamicUniformBufferObject*)_aligned_malloc(m_modelUniformAlignment * MAX_OBJECTS, m_modelUniformAlignment);
-}
-
-void VulkanRenderer::createDescriptorSetLayout()
-{
-
-
-    ///---------------------------------------------------------------------------///
-    // CREATE INPUT ATTACHMENT IMAGE DESCRIPTOR SET LAYOUT
-    // Colour Input Binding
-    VkDescriptorSetLayoutBinding colourInputLayoutBinding = {};
-    colourInputLayoutBinding.binding = 0;
-    colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    colourInputLayoutBinding.descriptorCount = 1;
-    colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Depth Input Binding
-    VkDescriptorSetLayoutBinding depthInputLayoutBinding = {};
-    depthInputLayoutBinding.binding = 1;
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputLayoutBinding.descriptorCount = 1;
-    depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Array of input attachment bindings
-    std::vector<VkDescriptorSetLayoutBinding> inputBindings = { colourInputLayoutBinding, depthInputLayoutBinding };
-
-    // Create a descriptor set layout for input attachments
-    VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
-    inputLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    inputLayoutCreateInfo.bindingCount = static_cast<uint32_t>(inputBindings.size());
-    inputLayoutCreateInfo.pBindings = inputBindings.data();
-
-    // Create Descriptor Set Layout
-    if (vkCreateDescriptorSetLayout(m_core.getDevice(), &inputLayoutCreateInfo, nullptr, &m_descriptorSetLayoutSecondPass) != VK_SUCCESS) {
-        Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout for second pass!");
-    }
 }
 
 void VulkanRenderer::createDescriptorPool()
@@ -388,68 +427,6 @@ void VulkanRenderer::createDescriptorPool()
     if (vkCreateDescriptorPool(m_core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPoolSecondPass) != VK_SUCCESS) {
     Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
     }
-}
-
-void VulkanRenderer::createDescriptorSetsSecondPass()
-{
-	// Resize array to hold descriptor set for each swap chain image
-    m_descriptorSetsSecondPass.resize(m_images.size());
-
-	// Fill array of layouts ready for set creation
-	std::vector<VkDescriptorSetLayout> setLayouts(m_images.size(), m_descriptorSetLayoutSecondPass);
-
-	// Input Attachment Descriptor Set Allocation Info
-	VkDescriptorSetAllocateInfo setAllocInfo = {};
-	setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	setAllocInfo.descriptorPool = m_descriptorPoolSecondPass;
-	setAllocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
-	setAllocInfo.pSetLayouts = setLayouts.data();
-
-	// Allocate Descriptor Sets
-	VkResult result = vkAllocateDescriptorSets(m_core.getDevice(), &setAllocInfo, m_descriptorSetsSecondPass.data());
-    CHECK_VULKAN_ERROR("Failed to allocate Input Attachment Descriptor Sets %d", result);
-
-	// Update each descriptor set with input attachment
-	for (size_t i = 0; i < m_images.size(); i++)
-	{
-		// Colour Attachment Descriptor
-		VkDescriptorImageInfo colourAttachmentDescriptor = {};
-		colourAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		colourAttachmentDescriptor.imageView = m_colourBufferImageView[i];
-		colourAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-
-		// Colour Attachment Descriptor Write
-		VkWriteDescriptorSet colourWrite = {};
-		colourWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		colourWrite.dstSet = m_descriptorSetsSecondPass[i];
-		colourWrite.dstBinding = 0;
-		colourWrite.dstArrayElement = 0;
-		colourWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		colourWrite.descriptorCount = 1;
-		colourWrite.pImageInfo = &colourAttachmentDescriptor;
-
-		// Depth Attachment Descriptor
-		VkDescriptorImageInfo depthAttachmentDescriptor = {};
-		depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		depthAttachmentDescriptor.imageView = m_depthImageView;
-		depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-
-		// Depth Attachment Descriptor Write
-		VkWriteDescriptorSet depthWrite = {};
-		depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		depthWrite.dstSet = m_descriptorSetsSecondPass[i];
-		depthWrite.dstBinding = 1;
-		depthWrite.dstArrayElement = 0;
-		depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		depthWrite.descriptorCount = 1;
-		depthWrite.pImageInfo = &depthAttachmentDescriptor;
-
-		// List of input descriptor set writes
-		std::vector<VkWriteDescriptorSet> setWrites = { colourWrite, depthWrite };
-
-		// Update descriptor sets
-		vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
-	}
 }
 
 void VulkanRenderer::createSwapChain()
@@ -683,20 +660,20 @@ void VulkanRenderer::createColourBufferImage()
 
 void VulkanRenderer::loadModels()
 {
-
-    const std::array<std::string_view, 6> skyBoxTextures
+    std::for_each(m_models.begin(), m_models.end(), 
+    [device = m_core.getDevice(), physdevice = m_core.getPhysDevice(), cmdBufPool = m_cmdBufPool, queue = m_queue, &descriptorCreator = m_descriptorCreator]
+    (I3DModel* pModel)
     {
-    "dark_ft.png",
-    "dark_bk.png",
-    "dark_dn.png",
-    "dark_up.png",
-    "dark_lt.png",
-    "dark_rt.png"
-    };
-    m_skyBox.init("vert_skybox.spv", "frag_skybox.spv", m_width, m_height, m_descriptorSetLayout, m_renderPass,
-        m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, skyBoxTextures, m_descriptorCreator);
-    
-    m_objModel.init(MODEL_PATH.data(), m_core.getDevice(), m_core.getPhysDevice(), m_cmdBufPool, m_queue, m_descriptorCreator);
+        assert(pModel);
+        assert(device);
+        assert(physdevice);
+        assert(cmdBufPool);
+        assert(queue);
+        assert(descriptorCreator);
+        pModel->init(device, physdevice, cmdBufPool, queue, descriptorCreator);
+    });
+
+    m_descriptorSecondPassCreator();
 }
 
 bool VulkanRenderer::renderScene()
@@ -960,31 +937,13 @@ void VulkanRenderer::createSemaphores()
 
 void VulkanRenderer::createPipeline()
 {
-    m_pipeLine = Pipeliner::getInstance().createPipeLine("vert.spv", "frag.spv", m_width, m_height,
-        m_descriptorSetLayout, m_renderPass, m_core.getDevice(), 0u, m_pushConstantRange);
-    assert(m_pipeLine);
-
-    ///-----------------------------------------------------------------------------///
-    // CREATE SECOND PASS PIPELINE
-    // No vertex data for second pass
-
-    auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
-
-    // Don't want to write to depth buffer
-    auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
-    depthStencil.depthWriteEnable = VK_FALSE;
-
-    auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
-    pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // as a simple set with two triangles for quad drawing
-
-    m_pipeLineSecondPass = Pipeliner::getInstance().createPipeLine("vert_secondPass.spv", "frag_secondPass.spv",
-        m_width, m_height, m_descriptorSetLayoutSecondPass, m_renderPass, m_core.getDevice(), 1u);
-
-    assert(m_pipeLineSecondPass);
+    std::for_each(m_pipelineCreators.begin(), m_pipelineCreators.end(), 
+    [width = m_width, height = m_height, renderPass = m_renderPass, device = m_core.getDevice()](const std::unique_ptr<PipelineCreatorBase>& pipelineCreator)
+    {
+        assert(renderPass);
+        assert(device);
+        pipelineCreator.get()->recreate(width, height, renderPass, device);
+    });
 }
 
 void VulkanRenderer::createDepthResources()
@@ -1023,15 +982,13 @@ void VulkanRenderer::init()
     createCommandBuffer();
     createDepthResources();
     createColourBufferImage();
-    createDescriptorSetLayout();
     createPushConstantRange();
     allocateDynamicBufferTransferSpace();
     createUniformBuffers();
     createDescriptorPool();
     createRenderPass();
-    loadModels();
-    createDescriptorSetsSecondPass();
     createFramebuffer();
     createPipeline();
+    loadModels();
     createSemaphores();
 }

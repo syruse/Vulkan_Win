@@ -41,42 +41,42 @@ const std::vector<uint32_t> _indices =
     0, 1, 5
 };
 
-void Skybox::init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height, 
-                  VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
-                  VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-                  const std::array<std::string_view, 6>& textureFileNames,
-                  std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator)
+void Skybox::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+                  const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
+                                         VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
 {
     assert(descriptorCreator);
-    
-
+    assert(m_pipelineCreatorBase);
+    assert(!m_textureFileNames.empty()); 
 
     TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
     assert(pTextureFactory);
 
-    auto texture = pTextureFactory->createCubeTexture(textureFileNames);
+    auto texture = pTextureFactory->createCubeTexture(m_textureFileNames);
     if (!texture.expired())
     {
-        m_realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels));
+        m_realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels),
+                                             *m_pipelineCreatorBase->getDescriptorSetLayout().get());
     }
 
     Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, _indices, _vertices,
         m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }
 
-void Skybox::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId,
-    VkPipelineLayout pipelineLayout)> descriptorBinding)
+void Skybox::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding)
 {
     assert(descriptorBinding);
     assert(m_generalBuffer);
+    assert(m_pipelineCreatorBase);
+    assert(m_pipelineCreatorBase->getPipeline().get());
 
-    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipeline);
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorBase->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = { m_generalBuffer };
     VkDeviceSize offsets[] = { m_verticesBufferOffset };
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    descriptorBinding(m_realMaterialId, m_pipeLine->pipelineLayout);
+    descriptorBinding(m_realMaterialId, m_pipelineCreatorBase->getPipeline().get()->pipelineLayout);
     vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(_indices.size()), 1U, 0U, 0, 0U);
 }

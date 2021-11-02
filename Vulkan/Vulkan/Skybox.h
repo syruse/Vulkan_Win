@@ -2,9 +2,10 @@
 
 #include "Pipeliner.h"
 #include "TextureFactory.h"
+#include "I3DModel.h"
 #include <glm/glm.hpp>
 
-class Skybox
+class Skybox : public I3DModel
 {
 public:
 
@@ -31,22 +32,19 @@ public:
         }
     };
 
-    Skybox() = default;
+    Skybox(const std::array<std::string_view, 6>& textureFileNames, PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
+        : I3DModel(pipelineCreatorBase)
+        , m_textureFileNames(textureFileNames)
+    {}
 
-    void init(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
-        VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
-        VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-        const std::array<std::string_view, 6>& textureFileNames,
-        std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator);
+    virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+                  const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
+                                         VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
 
-    void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId,
-        VkPipelineLayout pipelineLayout)> descriptorBinding);
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
 
 private:
 
-    Pipeliner::pipeline_ptr m_pipeLine = { nullptr, nullptr };
+    std::array<std::string_view, 6> m_textureFileNames;
     std::uint32_t m_realMaterialId = 0u;
-    VkDeviceSize m_verticesBufferOffset = 0;
-    VkBuffer m_generalBuffer = nullptr;
-    VkDeviceMemory m_generalBufferMemory = nullptr;
 };

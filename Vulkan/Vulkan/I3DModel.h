@@ -6,6 +6,7 @@
 #include "vulkan/vulkan.h"
 #include "glm/gtx/hash.hpp"
 #include "TextureFactory.h"
+#include "PipelineCreatorBase.h"
 #include <map>
 
 class I3DModel
@@ -18,6 +19,7 @@ public:
     {
         std::weak_ptr<TextureFactory::Texture> texture;
         VkSampler sampler;
+        VkDescriptorSetLayout descriptorSetLayout;
         std::vector<VkDescriptorSet> descriptorSets{}; /// separate set for each swapchain image
     };
 
@@ -72,7 +74,6 @@ public:
         }
     };
 
-    class PipelineCreatorBase;
     constexpr I3DModel(PipelineCreatorBase* pipelineCreatorBase):
         m_pipelineCreatorBase(pipelineCreatorBase)
     {
@@ -86,21 +87,12 @@ public:
     }
 
     virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
-                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
-                          VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator) = 0;
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) = 0;
-
-protected:
-    struct SubObject
-    {
-        std::uint32_t realMaterialId;
-        std::size_t   indexOffset;
-        std::size_t   indexAmount;
-    };
+                      const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                          VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) = 0;
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) = 0;
 
 protected:
     PipelineCreatorBase* m_pipelineCreatorBase = nullptr;
-    std::vector<std::vector<SubObject>> m_SubObjects{};
     VkDevice m_device = nullptr;
     VkPhysicalDevice m_physicalDevice = nullptr;
     DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
