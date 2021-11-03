@@ -40,8 +40,30 @@ const std::vector<uint16_t> _indices =
     6, 7, 3
 };
 
-void CubeModel::load(std::string_view path, TextureFactory* pTextureFactory, 
-                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
+void CubeModel::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+    const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+        VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
+{
+    assert(device);
+    assert(physicalDevice);
+    assert(cmdBufPool);
+    assert(queue);
+    assert(descriptorCreator);
+
+    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
+    std::vector<Vertex> vertices{};
+    std::vector<uint32_t> indices{};
+
+    m_device = device;
+    m_physicalDevice = physicalDevice;
+    load(pTextureFactory, descriptorCreator, vertices, indices);
+    Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, indices, vertices,
+        m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+}
+
+void CubeModel::load(TextureFactory* pTextureFactory, 
+                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                        VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
                     std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
     assert(pTextureFactory);
@@ -53,10 +75,11 @@ void CubeModel::load(std::string_view path, TextureFactory* pTextureFactory,
 
     uint16_t realMaterialId = 0u;
 
-    auto texture = pTextureFactory->create2DTexture(path.data());
+    auto texture = pTextureFactory->create2DTexture(m_path.data());
     if (!texture.expired())
     {
-        realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels));
+        realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels),
+                                            *m_pipelineCreatorBase->getDescriptorSetLayout().get());
     }
     else
     {
@@ -68,10 +91,14 @@ void CubeModel::load(std::string_view path, TextureFactory* pTextureFactory,
     m_SubObjects.emplace_back(vec);
 }
 
-void CubeModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding)
+void CubeModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding)
 {
     assert(descriptorBinding);
     assert(m_generalBuffer);
+    assert(m_pipelineCreatorBase);
+    assert(m_pipelineCreatorBase->getPipeline().get());
+
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorBase->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = { m_generalBuffer };
     VkDeviceSize offsets[] = { m_verticesBufferOffset };
@@ -82,7 +109,7 @@ void CubeModel::draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materia
     {
         if (subObjects.size())
         {
-            descriptorBinding(subObjects[0].realMaterialId);
+            descriptorBinding(subObjects[0].realMaterialId, m_pipelineCreatorBase->getPipeline().get()->pipelineLayout);
             for (const auto &subObject : subObjects)
             {
                 vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1, static_cast<uint32_t>(subObject.indexOffset), 0, 0);

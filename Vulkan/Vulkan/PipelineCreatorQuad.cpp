@@ -25,7 +25,7 @@ void PipelineCreatorQuad::createPipeline(uint32_t width, uint32_t height,
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // as a simple set with two triangles for quad drawing
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader,
-        width, height, m_descriptorSetLayout, renderPass, device, m_subpassAmount);
+        width, height, *m_descriptorSetLayout.get(), renderPass, device, m_subpassAmount);
 
     assert(m_pipeline);
 }
@@ -59,7 +59,8 @@ void PipelineCreatorQuad::createDescriptorSetLayout(VkDevice device)
     inputLayoutCreateInfo.pBindings = inputBindings.data();
 
     // Create Descriptor Set Layout
-    if (vkCreateDescriptorSetLayout(device, &inputLayoutCreateInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
+    m_descriptorSetLayout = std::make_unique<VkDescriptorSetLayout>();
+    if (vkCreateDescriptorSetLayout(device, &inputLayoutCreateInfo, nullptr, m_descriptorSetLayout.get()) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout for second pass!");
     }
 }

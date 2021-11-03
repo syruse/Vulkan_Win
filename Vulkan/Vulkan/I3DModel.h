@@ -15,6 +15,13 @@ public:
 
     static constexpr std::string_view MODEL_DIR = "models";
 
+    struct SubObject
+    {
+        std::uint32_t realMaterialId;
+        std::size_t   indexOffset;
+        std::size_t   indexAmount;
+    };
+
     struct Material
     {
         std::weak_ptr<TextureFactory::Texture> texture;

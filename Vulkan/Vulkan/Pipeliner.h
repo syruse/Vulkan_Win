@@ -15,7 +15,7 @@ public:
         VkPipelineLayout pipelineLayout = nullptr;
     };
 
-    using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, void(*)(Pipeliner::PipeLine* p)>;
+    using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, std::function<void(Pipeliner::PipeLine* p)>>;
 
 private:
     ///private ctor

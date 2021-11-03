@@ -30,7 +30,7 @@ void PipelineCreatorSkyBox::createPipeline(uint32_t width, uint32_t height,
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, width, height,
-        m_descriptorSetLayout, renderPass, device);
+        *m_descriptorSetLayout.get(), renderPass, device);
     assert(m_pipeline);
 }
 

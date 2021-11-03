@@ -570,21 +570,20 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     size_t meshIndex = 0;
     const uint32_t dynamicOffset = static_cast<uint32_t>(m_modelUniformAlignment) * meshIndex;
 
-    ///  SkyBox
+    ///  SkyBox and 3D Models
 
-    auto descriptorBinding2 = [this, currentImage, dynamicOffset](uint16_t materialId, VkPipelineLayout pipelineLayout)
+    auto descriptorBinding = [this, currentImage, dynamicOffset](uint16_t materialId, VkPipelineLayout pipelineLayout)
     {
+        /**
+         * Unlike vertex and index buffers, descriptor sets are not unique to graphics pipelines.
+         * Therefore we need to specify if we want to bind descriptor sets to the graphics or compute pipeline
+         */
+
         vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
             &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
     };
 
-    m_skyBox.draw(m_cmdBufs[currentImage], descriptorBinding2);
-
-
-    /// For Each mesh start
-
-    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipeline);
-    
+    /*
     vkCmdPushConstants(
         m_cmdBufs[currentImage],
         m_pipeLine->pipelineLayout,
@@ -592,32 +591,23 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
         0,								// Offset of push constants to update
         sizeof(PushConstant),		    // Size of data being pushed
         &_pushConstant);		        // Actual data being pushed (can be array)
-    
-    /**
-    * Unlike vertex and index buffers, descriptor sets are not unique to graphics pipelines.
-    * Therefore we need to specify if we want to bind descriptor sets to the graphics or compute pipeline
     */
-    // Bind Descriptor Sets
-    //vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[currentImage], 1, &dynamicOffset);
 
-    /** no need to draw over vertices vkCmdDraw(m_cmdBufs[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0); */
-    // Execute pipeline
-
-    auto descriptorBinding = [this, currentImage, dynamicOffset](uint16_t materialId)
+    for(const auto& model: m_models)
     {
-        vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLine->pipelineLayout, 0, 1,
-                                &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
-    };
-    
-    m_objModel.draw(m_cmdBufs[currentImage], descriptorBinding);
+        model->draw(m_cmdBufs[currentImage], descriptorBinding);
+    }
+
+
     /// For Each mesh end
 
     ///-----------------------------------------------------------------------------------///
     /// Start second subpass
     vkCmdNextSubpass(m_cmdBufs[currentImage], VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLineSecondPass->pipeline);
-    vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeLineSecondPass->pipelineLayout,
+    /// hardcoded m_pipelineCreators.back().get() , FIX this
+    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreators.back().get()->getPipeline()->pipeline);
+    vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreators.back().get()->getPipeline()->pipelineLayout,
         0, 1, &m_descriptorSetsSecondPass[currentImage], 0, nullptr);
     vkCmdDraw(m_cmdBufs[currentImage], 6, 1, 0, 0);
 
@@ -662,7 +652,7 @@ void VulkanRenderer::loadModels()
 {
     std::for_each(m_models.begin(), m_models.end(), 
     [device = m_core.getDevice(), physdevice = m_core.getPhysDevice(), cmdBufPool = m_cmdBufPool, queue = m_queue, &descriptorCreator = m_descriptorCreator]
-    (I3DModel* pModel)
+    (const std::unique_ptr<I3DModel>& pModel)
     {
         assert(pModel);
         assert(device);
@@ -982,7 +972,6 @@ void VulkanRenderer::init()
     createCommandBuffer();
     createDepthResources();
     createColourBufferImage();
-    createPushConstantRange();
     allocateDynamicBufferTransferSpace();
     createUniformBuffers();
     createDescriptorPool();

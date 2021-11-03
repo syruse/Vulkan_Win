@@ -5,7 +5,7 @@
 
 std::string TextureFactory::TEXTURES_DIR = "textures";
 
-TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue)
+TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true)
     : m_device(device)
     , m_physicalDevice(physicalDevice)
     , m_cmdBufPool(cmdBufPool)

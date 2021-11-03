@@ -33,7 +33,9 @@ public:
     VkSampler getTextureSampler(uint32_t mipLevels);
 
 private:
-    constexpr TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true);
+
+    TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true);
+
 private:
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_textures{};
     std::unordered_map<uint32_t, VkSampler> m_samplers{};

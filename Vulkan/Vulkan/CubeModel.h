@@ -5,12 +5,23 @@
 class CubeModel : public I3DModel
 {
 public:
-    CubeModel() = default;
+    CubeModel(std::string_view path, PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
+        : I3DModel(pipelineCreatorBase)
+        , m_path(path)
+    {}
 
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId)> descriptorBinding) override;
+    virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+        const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+            VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
+
+    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
 
 private:
-    virtual void load(std::string_view path, TextureFactory* pTextureFactory, 
-                      std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler)> descriptorCreator, 
-                      std::vector<Vertex> &vertices, std::vector<uint32_t> &indices) override;
+    void load(TextureFactory* pTextureFactory, 
+             std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                 VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
+             std::vector<Vertex> &vertices, std::vector<uint32_t> &indices);
+
+    std::string m_path;
+    std::vector<std::vector<SubObject>> m_SubObjects{};
 };

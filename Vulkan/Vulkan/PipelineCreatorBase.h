@@ -14,12 +14,14 @@ public:
     constexpr PipelineCreatorBase(std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u}):
     m_vertShader(vertShader),
     m_fragShader(fragShader),
+    m_descriptorSetLayout(),
     m_subpassAmount(subpass),
-    m_pushConstantRange(pushConstantRange)
+    m_pushConstantRange(pushConstantRange),
+    m_pipeline()
     {
     }
 
-    Pipeliner::pipeline_ptr recreate(uint32_t width, uint32_t height, 
+    void recreate(uint32_t width, uint32_t height, 
         VkRenderPass renderPass, VkDevice device);
 
     inline const descriptor_set_layout_ptr& getDescriptorSetLayout()
@@ -42,8 +44,8 @@ protected:
 
     std::string_view m_vertShader;
     std::string_view m_fragShader;
-    descriptor_set_layout_ptr m_descriptorSetLayout = {nullptr, nullptr};
+    descriptor_set_layout_ptr m_descriptorSetLayout;
     uint32_t m_subpassAmount = 0u;
     VkPushConstantRange m_pushConstantRange = {0u, 0u, 0u};
-    Pipeliner::pipeline_ptr m_pipeline = {nullptr, nullptr};
+    Pipeliner::pipeline_ptr m_pipeline;
 };

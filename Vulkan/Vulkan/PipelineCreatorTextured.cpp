@@ -10,7 +10,7 @@ void PipelineCreatorTextured::createPipeline(uint32_t width, uint32_t height,
     assert(device);
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, width, height,
-    m_descriptorSetLayout, renderPass, device, m_subpassAmount, m_pushConstantRange);
+    *m_descriptorSetLayout.get(), renderPass, device, m_subpassAmount, m_pushConstantRange);
     assert(m_pipeline);
 }
 

@@ -6,13 +6,6 @@ class ObjModel : public I3DModel
 {
 public:
 
-    struct SubObject
-    {
-        std::uint32_t realMaterialId;
-        std::size_t   indexOffset;
-        std::size_t   indexAmount;
-    };
-
     ObjModel(std::string_view path, PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
         : I3DModel(pipelineCreatorBase)
         , m_path(path)
