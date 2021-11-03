@@ -2,7 +2,7 @@
 #include "Utils.h"
 #include <assert.h>
 
-Pipeliner::pipeline_ptr PipelineCreatorBase::recreate(uint32_t width, uint32_t height, 
+void PipelineCreatorBase::recreate(uint32_t width, uint32_t height, 
     VkRenderPass renderPass, VkDevice device)
 {
     if(!m_descriptorSetLayout)
@@ -10,6 +10,15 @@ Pipeliner::pipeline_ptr PipelineCreatorBase::recreate(uint32_t width, uint32_t h
 
     ///make a reset if exists
     m_pipeline.reset();
+    auto deleter = [device](VkDescriptorSetLayout* p)
+    {
+        assert(device);
+        Utils::printLog(INFO_PARAM, "removal triggered");
+        vkDestroyDescriptorSetLayout(device, *p, nullptr);
+        delete p;
+    };
+    m_descriptorSetLayout.get_deleter() = deleter;
+
     createPipeline(width, height, renderPass, device);
 }
 
@@ -47,18 +56,10 @@ void PipelineCreatorBase::createDescriptorSetLayout(VkDevice device)
     layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());;
     layoutCreateInfo.pBindings = layoutBindings.data();
 
-    VkDescriptorSetLayout descriptorSetLayout;
-    if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    m_descriptorSetLayout = std::make_unique<VkDescriptorSetLayout>();
+    if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, m_descriptorSetLayout.get()) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout!");
     }
-
-    m_descriptorSetLayout.reset(&descriptorSetLayout);
-    auto deleter = [device](VkDescriptorSetLayout* p)
-    {
-        assert(device);
-        vkDestroyDescriptorSetLayout(device, *p, nullptr);
-    };
-    m_descriptorSetLayout.get_deleter() = deleter;
 }
 
 
