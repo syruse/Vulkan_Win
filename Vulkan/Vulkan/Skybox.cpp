@@ -45,9 +45,16 @@ void Skybox::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPoo
                   const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
                                          VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
 {
+    assert(device);
+    assert(physicalDevice);
+    assert(cmdBufPool);
+    assert(queue);
     assert(descriptorCreator);
     assert(m_pipelineCreatorBase);
     assert(!m_textureFileNames.empty()); 
+
+    m_device = device;
+    m_physicalDevice = physicalDevice;
 
     TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
     assert(pTextureFactory);

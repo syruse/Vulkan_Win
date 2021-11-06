@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <chrono>
 #include <limits>
+#include <algorithm>
 
 #ifdef _WIN32
 #include "Win32Control.h"
