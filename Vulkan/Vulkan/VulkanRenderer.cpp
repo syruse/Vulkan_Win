@@ -228,6 +228,8 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
 
 VulkanRenderer::~VulkanRenderer()
 {
+    Pipeliner::getInstance().saveCache();
+
     cleanupSwapChain();
 
     _aligned_free(mp_modelTransferSpace);

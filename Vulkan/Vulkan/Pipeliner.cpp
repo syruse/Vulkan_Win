@@ -2,6 +2,7 @@
 #include "Pipeliner.h"
 #include "Utils.h"
 #include "I3DModel.h"
+#include <fstream>
 
 ///persistent default configuration
 VkPipelineVertexInputStateCreateInfo Pipeliner::_vertexInputInfo = {};
@@ -23,8 +24,88 @@ void deletePipeLine(Pipeliner::PipeLine *p)
     delete p;
 }
 
+bool Pipeliner::saveCache()
+{
+    Utils::printLog(INFO_PARAM, "saving pipeline cache: ", PIPELINE_CACHE_FILE);
+    assert(m_device);
+    assert(m_pipeline_cache);
+    size_t cacheDataSize = 0u;
+    // Determine the size of the cache data.
+    VkResult result = vkGetPipelineCacheData(m_device,
+        m_pipeline_cache,
+        &cacheDataSize,
+        nullptr);
+    if (result == VK_SUCCESS)
+    {
+        // Allocate a temporary store for the cache data.
+        std::vector<char> buffer(cacheDataSize);
+            // Retrieve the actual data from the cache.
+            result = vkGetPipelineCacheData(m_device,
+                m_pipeline_cache,
+                &cacheDataSize,
+                buffer.data());
+            if (result == VK_SUCCESS)
+            {
+                // Open the file and write the data to it.
+
+                std::ofstream file(PIPELINE_CACHE_FILE.data(), std::ios::binary);
+                if (!file.is_open()) {
+                    Utils::printLog(ERROR_PARAM, "error when opening file: ",  PIPELINE_CACHE_FILE);
+                }
+
+                file.write(buffer.data(), buffer.size());
+                file.close();
+            }
+    }
+
+    vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
+
+    return result == VK_SUCCESS ? true : false;
+}
+
+bool Pipeliner::createCache()
+{
+    if (m_pipeline_cache)
+    {
+        Utils::printLog(INFO_PARAM, " pipeline_cache object already exists ");
+        return true;
+    }
+
+    assert(m_device);
+    std::vector<char> pipeline_data;
+
+    std::ifstream file(PIPELINE_CACHE_FILE.data(), std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        Utils::printLog(INFO_PARAM, " pipeline cache not found ", PIPELINE_CACHE_FILE);
+    }
+    else
+    {
+        size_t cacheDataSize = (size_t)file.tellg();
+        pipeline_data.reserve(cacheDataSize);
+        pipeline_data.resize(cacheDataSize);
+
+        (cacheDataSize);
+        file.seekg(0);
+        file.read(pipeline_data.data(), cacheDataSize);
+        file.close();
+    }
+
+    /* Add initial pipeline cache data from the cached file */
+    VkPipelineCacheCreateInfo create_info{ VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+    create_info.initialDataSize = pipeline_data.size();
+    create_info.pInitialData = pipeline_data.data();
+
+    /* Create Vulkan pipeline cache */
+    VkResult result = vkCreatePipelineCache(m_device, &create_info, nullptr, &m_pipeline_cache);
+    CHECK_VULKAN_ERROR("vkCreatePipelineCache error %d\n", result);
+
+    return result == VK_SUCCESS ? true : false;
+}
+
+
 Pipeliner::Pipeliner()
 {
+
     m_shaderStageCreateInfo[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     m_shaderStageCreateInfo[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
     m_shaderStageCreateInfo[0].module = nullptr;
@@ -103,6 +184,11 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     m_device = device;
     assert(m_device);
     assert(descriptorSetLayout);
+
+    if (!m_pipeline_cache)
+    {
+        createCache();
+    }
     
     std::unique_ptr<PipeLine, decltype(&deletePipeLine)> pipeline(new Pipeliner::PipeLine(), deletePipeLine);
     pipeline->vsModule = Utils::VulkanCreateShaderModule(device, vertShader);
@@ -152,7 +238,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     pipelineInfo.pDepthStencilState = &m_depthStencil;
     pipelineInfo.subpass = subpass;
 
-    res = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline->pipeline);
+    res = vkCreateGraphicsPipelines(device, m_pipeline_cache, 1, &pipelineInfo, NULL, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
 
     ///restore default configuration

@@ -10,3 +10,4 @@
 /Vulkan/Vulkan/x64/Release
 Vulkan/Vulkan/CMakeFiles/
 build/
+*.cache

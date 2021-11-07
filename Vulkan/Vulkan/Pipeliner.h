@@ -7,6 +7,9 @@
 class Pipeliner
 {
 public:
+
+    static constexpr std::string_view PIPELINE_CACHE_FILE{ "pipeline_data.cache" };
+
     struct PipeLine
     {
         VkShaderModule vsModule = nullptr;
@@ -23,12 +26,16 @@ private:
 
     friend void deletePipeLine(PipeLine* p);
 
+    bool createCache();
+
 public:
     static Pipeliner& getInstance()
     {
         static Pipeliner pipeliner;
         return pipeliner;
     }
+
+    bool saveCache();
 
     /// you can customize states of pipeline by get desired and change before invoking createPipeLine
     pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader,
@@ -70,6 +77,7 @@ public:
 private:
 
     VkDevice m_device = nullptr;
+    VkPipelineCache m_pipeline_cache = nullptr;
 
     VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2] = {};
     VkPipelineVertexInputStateCreateInfo m_vertexInputInfo = {};
