@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vulkan/vulkan.h"
+#include <vulkan/vulkan.h>
 #include <iostream>
 #include <vector>
 #include <array>
@@ -12,8 +12,6 @@
 #endif
 
 namespace Utils {
-
-    static constexpr std::string_view SHADERS_DIR{"shaders"};
 
     struct VulkanPhysicalDevices {
         std::vector<VkPhysicalDevice> m_devices;
@@ -49,7 +47,6 @@ namespace Utils {
     void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
     void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
 
-    void formPath(std::string_view dir, std::string_view fileName, std::string& resultPath);
     std::string formPath(std::string_view dir, std::string_view fileName);
 
     void VulkanCheckValidationLayerSupport();
@@ -81,6 +78,10 @@ namespace Utils {
     VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
         const std::array<std::string, 6>& textureFileNames, VkImage& textureImage, VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
 
+    void VulkanImageMemoryBarrier(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels, uint32_t layersCount,
+        VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage);
+
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U, uint32_t layersCount = 1U);
 
@@ -96,12 +97,6 @@ namespace Utils {
         VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
         VkDeviceMemory& generalBufferMemory);
 }
-
-#ifdef _WIN32
-    static constexpr char DIR_SEPARATOR = '\\';
-#else
-    static constexpr char DIR_SEPARATOR = '/';
-#endif
 
 #define MAX(a, b)                          (((a) > (b)) ? (a) : (b))
 #define ARRAY_SIZE_IN_ELEMENTS(a)          (sizeof(a)/sizeof(a[0]))

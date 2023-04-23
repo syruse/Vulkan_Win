@@ -144,8 +144,7 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
 
     m_pipelineCreators.reserve(3);
     m_pipelineCreators.emplace_back(new PipelineCreatorTextured("vert.spv", "frag.spv", 0u, m_pushConstantRange));
-    m_models.emplace_back(new ObjModel(MODEL_PATH.data(), m_pipelineCreators.back().get()));
-
+    m_models.emplace_back(new ObjModel(MODEL_PATH, m_pipelineCreators.back().get(), 10U));
 
     m_pipelineCreators.emplace_back(new PipelineCreatorSkyBox("vert_skybox.spv", "frag_skybox.spv"));
     const std::array<std::string_view, 6> skyBoxTextures
@@ -159,14 +158,13 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
     };
     m_models.emplace_back(new Skybox(skyBoxTextures, m_pipelineCreators.back().get()));
 
-
-    m_pipelineCreators.emplace_back(new PipelineCreatorQuad("vert_secondPass.spv", "frag_secondPass.spv", 1u));
-
-    m_descriptorSecondPassCreator = [this, &descriptorSetLayout = m_pipelineCreators.back().get()->getDescriptorSetLayout()]()
+    m_pipelineCreators.emplace_back(new PipelineCreatorQuad("vert_secondPass.spv", "frag_secondPass.spv", true, 1u));
+    // TO FIX
+    m_descriptorSecondPassCreator = [this](const PipelineCreatorBase::descriptor_set_layout_ptr& descriptorSetLayout, VkDescriptorPool descriptorPool, std::vector<VkDescriptorSet>& descriptorsSet, bool isDepthNeeded)
     {
         assert(descriptorSetLayout);
         // Resize array to hold descriptor set for each swap chain image
-        m_descriptorSetsSecondPass.resize(m_images.size());
+        descriptorsSet.resize(m_images.size());
 
         // Fill array of layouts ready for set creation
         std::vector<VkDescriptorSetLayout> setLayouts(m_images.size(), *descriptorSetLayout.get());
@@ -174,56 +172,61 @@ VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t h
         // Input Attachment Descriptor Set Allocation Info
         VkDescriptorSetAllocateInfo setAllocInfo = {};
         setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        setAllocInfo.descriptorPool = m_descriptorPoolSecondPass;
+        setAllocInfo.descriptorPool = descriptorPool;
         setAllocInfo.descriptorSetCount = static_cast<uint32_t>(m_images.size());
         setAllocInfo.pSetLayouts = setLayouts.data();
 
         // Allocate Descriptor Sets
-        VkResult result = vkAllocateDescriptorSets(m_core.getDevice(), &setAllocInfo, m_descriptorSetsSecondPass.data());
+        VkResult result = vkAllocateDescriptorSets(m_core.getDevice(), &setAllocInfo, descriptorsSet.data());
         CHECK_VULKAN_ERROR("Failed to allocate Input Attachment Descriptor Sets %d", result);
 
         // Update each descriptor set with input attachment
         for (size_t i = 0; i < m_images.size(); i++)
         {
-            // Colour Attachment Descriptor
+            // Color Attachment Descriptor
             VkDescriptorImageInfo colourAttachmentDescriptor = {};
             colourAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             colourAttachmentDescriptor.imageView = m_colourBufferImageView[i];
             colourAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
-            // Colour Attachment Descriptor Write
+            // Color Attachment Descriptor Write
             VkWriteDescriptorSet colourWrite = {};
             colourWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            colourWrite.dstSet = m_descriptorSetsSecondPass[i];
+            colourWrite.dstSet = descriptorsSet[i];
             colourWrite.dstBinding = 0;
             colourWrite.dstArrayElement = 0;
             colourWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             colourWrite.descriptorCount = 1;
             colourWrite.pImageInfo = &colourAttachmentDescriptor;
 
-            // Depth Attachment Descriptor
-            VkDescriptorImageInfo depthAttachmentDescriptor = {};
-            depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            depthAttachmentDescriptor.imageView = m_depthImageView;
-            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-
-            // Depth Attachment Descriptor Write
-            VkWriteDescriptorSet depthWrite = {};
-            depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            depthWrite.dstSet = m_descriptorSetsSecondPass[i];
-            depthWrite.dstBinding = 1;
-            depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-            depthWrite.descriptorCount = 1;
-            depthWrite.pImageInfo = &depthAttachmentDescriptor;
-
             // List of input descriptor set writes
-            std::vector<VkWriteDescriptorSet> setWrites = {colourWrite, depthWrite};
+            std::vector<VkWriteDescriptorSet> setWrites = {colourWrite};
+            if (isDepthNeeded) {
+                // Depth Attachment Descriptor
+                VkDescriptorImageInfo depthAttachmentDescriptor = {};
+                depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                depthAttachmentDescriptor.imageView = m_depthImageView;
+                depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+
+                // Depth Attachment Descriptor Write
+                VkWriteDescriptorSet depthWrite = {};
+                depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                depthWrite.dstSet = descriptorsSet[i];
+                depthWrite.dstBinding = 1;
+                depthWrite.dstArrayElement = 0;
+                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+                depthWrite.descriptorCount = 1;
+                depthWrite.pImageInfo = &depthAttachmentDescriptor;
+
+                setWrites.push_back(depthWrite);
+            }
 
             // Update descriptor sets
             vkUpdateDescriptorSets(m_core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
         }
     };
+
+    m_pipelineFXAA = std::make_unique<PipelineCreatorQuad>("vert_fxaa.spv", "frag_fxaa.spv", false);
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -272,6 +275,9 @@ void VulkanRenderer::cleanupSwapChain()
     for (auto framebuffer : m_fbs) {
         vkDestroyFramebuffer(m_core.getDevice(), framebuffer, nullptr);
     }
+    for (auto framebuffer : m_fbsFXAA) {
+        vkDestroyFramebuffer(m_core.getDevice(), framebuffer, nullptr);
+    }
 
     for (auto imageView : m_views) {
         vkDestroyImageView(m_core.getDevice(), imageView, nullptr);
@@ -280,9 +286,11 @@ void VulkanRenderer::cleanupSwapChain()
     vkDestroySwapchainKHR(m_core.getDevice(), m_swapChainKHR, nullptr);
 
     vkDestroyRenderPass(m_core.getDevice(), m_renderPass, nullptr);
+    vkDestroyRenderPass(m_core.getDevice(), m_renderPassFXAA, nullptr);
 
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPool, nullptr);
     vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPoolSecondPass, nullptr);
+    vkDestroyDescriptorPool(m_core.getDevice(), m_descriptorPoolFXAApass, nullptr);
 }
 
 void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height)
@@ -318,7 +326,8 @@ void VulkanRenderer::recreateDescriptorSets()
         m_descriptorCreator(material.second.texture, material.second.sampler, material.second.descriptorSetLayout);
     }
 
-    m_descriptorSecondPassCreator();
+    m_descriptorSecondPassCreator(m_pipelineCreators.back().get()->getDescriptorSetLayout(), m_descriptorPoolSecondPass, m_descriptorSetsSecondPass, true);
+    m_descriptorSecondPassCreator(m_pipelineFXAA->getDescriptorSetLayout(), m_descriptorPoolFXAApass, m_descriptorSetsFXAApass, false);
 }
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
@@ -331,7 +340,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.view = glm::lookAt(glm::vec3(100.0f, 3.0f, 100.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(glm::vec3(100.0f, 35.0f, 30.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(65.0f), m_width / (float)m_height, 0.01f, 1000.0f);
 
     /**
@@ -429,6 +438,27 @@ void VulkanRenderer::createDescriptorPool()
 
     if (vkCreateDescriptorPool(m_core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPoolSecondPass) != VK_SUCCESS) {
     Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
+    }
+
+    // TO FIX hoisting to some function
+    ///----------------------------------------------------------------------------------///
+    // CREATE INPUT ATTACHMENT DESCRIPTOR POOL
+    // Colour Attachment Pool Size
+    VkDescriptorPoolSize colourInputPoolSizeFXAA = {};
+    colourInputPoolSizeFXAA.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    colourInputPoolSizeFXAA.descriptorCount = static_cast<uint32_t>(m_colourBufferImageView.size());
+
+    std::vector<VkDescriptorPoolSize> inputPoolSizesFXAA = { colourInputPoolSizeFXAA };
+
+    // Create input attachment pool
+    VkDescriptorPoolCreateInfo inputPoolCreateInfoFXAA = {};
+    inputPoolCreateInfoFXAA.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    inputPoolCreateInfoFXAA.maxSets = m_images.size();
+    inputPoolCreateInfoFXAA.poolSizeCount = static_cast<uint32_t>(inputPoolSizesFXAA.size());
+    inputPoolCreateInfoFXAA.pPoolSizes = inputPoolSizesFXAA.data();
+
+    if (vkCreateDescriptorPool(m_core.getDevice(), &inputPoolCreateInfoFXAA, nullptr, &m_descriptorPoolFXAApass) != VK_SUCCESS) {
+        Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
     }
 }
 
@@ -544,13 +574,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     std::array<VkClearValue, 3> clearValues{};
     clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
-    clearValues[1].color = { 0.2f, 0.0f, 0.0f, 1.0f };
+    clearValues[1].color = { 1.0f, 1.0f, 1.0f, 1.0f };
     clearValues[2].depthStencil.depth = 1.0f;
-
-    VkImageSubresourceRange imageRange = {};
-    imageRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    imageRange.levelCount = 1;
-    imageRange.layerCount = 1;
 
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -566,6 +591,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
     VkResult res = vkBeginCommandBuffer(m_cmdBufs[currentImage], &beginInfo);
     CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
     renderPassInfo.framebuffer = m_fbs[currentImage];
+
+    Utils::VulkanImageMemoryBarrier(m_core.getDevice(), m_queue, m_cmdBufPool, m_colourBufferImage[currentImage], m_colourFormat,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
     vkCmdBeginRenderPass(m_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -586,7 +615,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
             &m_descriptorSets[materialId].descriptorSets[currentImage], 1, &dynamicOffset);
     };
 
-    /*
+    /* TO FIX pass window size
     vkCmdPushConstants(
         m_cmdBufs[currentImage],
         m_pipeLine->pipelineLayout,
@@ -616,8 +645,40 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage)
 
     vkCmdEndRenderPass(m_cmdBufs[currentImage]);
 
+
+    /// FXAA render pass
+    Utils::printLog(INFO_PARAM, "FXAA render pass started");
+
+    VkRenderPassBeginInfo renderPassFXAAInfo = {};
+    renderPassFXAAInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassFXAAInfo.renderPass = m_renderPassFXAA;
+    renderPassFXAAInfo.renderArea.offset.x = 0;
+    renderPassFXAAInfo.renderArea.offset.y = 0;
+    renderPassFXAAInfo.renderArea.extent.width = m_width;
+    renderPassFXAAInfo.renderArea.extent.height = m_height;
+    renderPassFXAAInfo.clearValueCount = clearValues.size();
+    renderPassFXAAInfo.pClearValues = clearValues.data();
+    renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
+
+    Utils::VulkanImageMemoryBarrier(m_core.getDevice(), m_queue, m_cmdBufPool, m_colourBufferImage[currentImage], m_colourFormat,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+
+    vkCmdBeginRenderPass(m_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineFXAA.get()->getPipeline()->pipeline);
+    vkCmdBindDescriptorSets(m_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineFXAA.get()->getPipeline()->pipelineLayout,
+        0, 1, &m_descriptorSetsFXAApass[currentImage], 0, nullptr);
+    vkCmdDraw(m_cmdBufs[currentImage], 6, 1, 0, 0);
+
+    vkCmdEndRenderPass(m_cmdBufs[currentImage]);
+
     res = vkEndCommandBuffer(m_cmdBufs[currentImage]);
     CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
+
+    Utils::VulkanImageMemoryBarrier(m_core.getDevice(), m_queue, m_cmdBufPool, m_colourBufferImage[currentImage], m_colourFormat,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
     Utils::printLog(INFO_PARAM, "Command buffers recorded");
 }
@@ -666,7 +727,9 @@ void VulkanRenderer::loadModels()
         pModel->init(device, physdevice, cmdBufPool, queue, descriptorCreator);
     });
 
-    m_descriptorSecondPassCreator();
+    // TO FIX
+    m_descriptorSecondPassCreator(m_pipelineCreators.back().get()->getDescriptorSetLayout(), m_descriptorPoolSecondPass, m_descriptorSetsSecondPass, true);
+    m_descriptorSecondPassCreator(m_pipelineFXAA->getDescriptorSetLayout(), m_descriptorPoolFXAApass, m_descriptorSetsFXAApass, false);
 }
 
 bool VulkanRenderer::renderScene()
@@ -735,7 +798,7 @@ bool VulkanRenderer::renderScene()
 
     return ret_status;
 }
-
+// TO FIX common code getting into functions
 void VulkanRenderer::createRenderPass()
 {
     // Array of our subpasses
@@ -784,7 +847,7 @@ void VulkanRenderer::createRenderPass()
     VkAttachmentDescription swapchainColourAttachment = {};
     swapchainColourAttachment.format = m_core.getSurfaceFormat().format;					// Format to use for attachment
     swapchainColourAttachment.samples = VK_SAMPLE_COUNT_1_BIT;					            // Number of samples to write for multisampling
-    swapchainColourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;				            // Describes what to do with attachment before rendering
+    swapchainColourAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;				            // Describes what to do with attachment before rendering
     swapchainColourAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;			            // Describes what to do with attachment after rendering
     swapchainColourAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	            // Describes what to do with stencil before rendering
     swapchainColourAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;            // Describes what to do with stencil after rendering
@@ -866,6 +929,63 @@ void VulkanRenderer::createRenderPass()
     VkResult res = vkCreateRenderPass(m_core.getDevice(), &renderPassCreateInfo, NULL, &m_renderPass);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
+
+    // Create info for Render Pass FXAA
+    VkAttachmentDescription ColourAttachmentFXAA = {};
+    ColourAttachmentFXAA.format = m_core.getSurfaceFormat().format;					// Format to use for attachment
+    ColourAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;					            // Number of samples to write for multisampling
+    ColourAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;				            // Describes what to do with attachment before rendering
+    ColourAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;			            // Describes what to do with attachment after rendering
+    ColourAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	            // Describes what to do with stencil before rendering
+    ColourAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;            // Describes what to do with stencil after rendering
+
+    // Framebuffer data will be stored as an image, but images can be given different data layouts
+    // to give optimal use for certain operations
+    ColourAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;			        // Image data layout before render pass starts
+    ColourAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;		        // Image data layout after render pass (to change to)
+
+    // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
+    VkAttachmentReference swapchainColourAttachmentReferenceFXAA = {};
+    swapchainColourAttachmentReferenceFXAA.attachment = 0;
+    swapchainColourAttachmentReferenceFXAA.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // References to attachments that subpass will take input from
+    std::array<VkAttachmentReference, 1> inputReferencesFXAA;
+    inputReferencesFXAA[0].attachment = 1;
+    inputReferencesFXAA[0].layout = VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR;
+
+    std::array<VkSubpassDescription, 1> subpassesFXAA{};
+    subpassesFXAA[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassesFXAA[0].colorAttachmentCount = 1;
+    subpassesFXAA[0].pColorAttachments = &swapchainColourAttachmentReferenceFXAA;
+    subpassesFXAA[0].inputAttachmentCount = static_cast<uint32_t>(inputReferencesFXAA.size());
+    subpassesFXAA[0].pInputAttachments = inputReferencesFXAA.data();
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = { ColourAttachmentFXAA, colorAttachment };
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 1> dependenciesFXAA;
+
+    dependenciesFXAA[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependenciesFXAA[0].dstSubpass = 0;
+    dependenciesFXAA[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependenciesFXAA[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependenciesFXAA[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dependenciesFXAA[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependenciesFXAA[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};
+    renderPassCreateInfoFXAA.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoFXAA.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsFXAA.size());
+    renderPassCreateInfoFXAA.pAttachments = renderPassAttachmentsFXAA.data();
+    renderPassCreateInfoFXAA.subpassCount = 1;
+    renderPassCreateInfoFXAA.pSubpasses = subpassesFXAA.data();
+    renderPassCreateInfoFXAA.dependencyCount = static_cast<uint32_t>(dependenciesFXAA.size());
+    renderPassCreateInfoFXAA.pDependencies = dependenciesFXAA.data();
+
+    res = vkCreateRenderPass(m_core.getDevice(), &renderPassCreateInfoFXAA, NULL, &m_renderPassFXAA);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
     Utils::printLog(INFO_PARAM, "Created a render pass");
 }
 
@@ -897,6 +1017,32 @@ void VulkanRenderer::createFramebuffer()
 
         res = vkCreateFramebuffer(m_core.getDevice(), &fbCreateInfo, NULL, &m_fbs[i]);
         CHECK_VULKAN_ERROR("vkCreateFramebuffer error %d\n", res);
+    }
+
+    m_fbsFXAA.resize(m_images.size());
+
+    for (size_t i = 0; i < m_images.size(); i++) {
+        if (Utils::VulkanCreateImageView(m_core.getDevice(), m_images[i], m_core.getSurfaceFormat().format, VK_IMAGE_ASPECT_COLOR_BIT, m_views[i]) != VK_SUCCESS) {
+            Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
+        }
+
+        std::array<VkImageView, 2> attachments = { m_views[i], m_colourBufferImageView[i] };
+
+        //The color attachment differs for every swap chain image, 
+        //but the same depth image can be used by all of them 
+        //because only a single subpass is running at the same time due to our semaphores.
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassFXAA;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = m_width;
+        fbCreateInfo.height = m_height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(m_core.getDevice(), &fbCreateInfo, NULL, &m_fbsFXAA[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer FXAA error %d\n", res);
     }
 
     Utils::printLog(INFO_PARAM, "Frame buffers created");
@@ -937,6 +1083,8 @@ void VulkanRenderer::createPipeline()
         assert(device);
         pipelineCreator.get()->recreate(width, height, renderPass, device);
     });
+
+    m_pipelineFXAA.get()->recreate(m_width, m_height, m_renderPassFXAA, m_core.getDevice());
 }
 
 void VulkanRenderer::createDepthResources()

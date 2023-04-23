@@ -1,9 +1,8 @@
 
 #include "TextureFactory.h"
+#include "Constants.h"
 #include "Utils.h"
 #include <assert.h>
-
-std::string TextureFactory::TEXTURES_DIR = "textures";
 
 TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true)
     : m_device(device)
@@ -41,7 +40,7 @@ TextureFactory::~TextureFactory()
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically)
 {
-    auto id = textureFileNames[0].data();
+    auto id = std::string{ textureFileNames[0] };
     uint32_t mipLevels = 1U;
 
     if (m_textures.count(id) == 0)
@@ -50,12 +49,12 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
 
         std::array<std::string, 6> _textureFileNames
         {
-            Utils::formPath(TEXTURES_DIR, textureFileNames[0]),
-            Utils::formPath(TEXTURES_DIR, textureFileNames[1]),
-            Utils::formPath(TEXTURES_DIR, textureFileNames[2]),
-            Utils::formPath(TEXTURES_DIR, textureFileNames[3]),
-            Utils::formPath(TEXTURES_DIR, textureFileNames[4]),
-            Utils::formPath(TEXTURES_DIR, textureFileNames[5])
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[0]),
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[1]),
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[2]),
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[3]),
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[4]),
+            Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[5])
         };
 
         if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, _textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
@@ -88,8 +87,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 
         uint32_t mipLevels = 0U;
 
-        std::string texturePath;
-        Utils::formPath(TEXTURES_DIR, pTextureFileName, texturePath);
+        std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
 
         if(Utils::VulkanCreateTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory, mipLevels) != VK_SUCCESS)
         {
@@ -103,13 +101,13 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
         /// Note: creation of sampler in advance
         getTextureSampler(mipLevels);
         texture->mipLevels = mipLevels;
-        m_textures.try_emplace(pTextureFileName.data(), texture);
+        m_textures.try_emplace(std::string{ pTextureFileName }, texture);
 
         return texture;
     }
     else
     {
-        return m_textures[pTextureFileName.data()];
+        return m_textures[std::string{ pTextureFileName }];
     }
 }
 

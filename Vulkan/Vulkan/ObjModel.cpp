@@ -1,6 +1,8 @@
 
 #include "ObjModel.h"
+#include "Constants.h"
 #include "Utils.h"
+
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <unordered_map>
@@ -47,10 +49,9 @@ void ObjModel::load(TextureFactory* pTextureFactory,
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    std::string absPath;
-    Utils::formPath(MODEL_DIR, m_path, absPath);
+    std::string absPath = Utils::formPath(Constants::MODEL_DIR, m_path);
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, absPath.c_str(), MODEL_DIR.data(), false, false))
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, absPath.c_str(), Constants::MODEL_DIR.data(), false, false))
     {
         Utils::printLog(ERROR_PARAM, (warn + err));
     }
@@ -99,9 +100,9 @@ void ObjModel::load(TextureFactory* pTextureFactory,
         for (const auto &index : shape.mesh.indices)
         {
             vertex.pos = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]};
+                attrib.vertices[3 * index.vertex_index + 0] * m_vertexMagnitudeMultiplier,
+                attrib.vertices[3 * index.vertex_index + 1] * m_vertexMagnitudeMultiplier,
+                attrib.vertices[3 * index.vertex_index + 2] * m_vertexMagnitudeMultiplier };
 
             vertex.texCoord = {
                 attrib.texcoords[2 * index.texcoord_index + 0],

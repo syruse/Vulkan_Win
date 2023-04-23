@@ -1,14 +1,13 @@
 #pragma once
-#include "vulkan/vulkan.h"
-#include <string>
-#include <memory>
+
 #include <functional>
+#include <memory>
+#include <string>
+#include <vulkan/vulkan.h>
 
 class Pipeliner
 {
 public:
-
-    static constexpr std::string_view PIPELINE_CACHE_FILE{ "pipeline_data.cache" };
 
     struct PipeLine
     {
@@ -21,7 +20,7 @@ public:
     using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, std::function<void(Pipeliner::PipeLine* p)>>;
 
 private:
-    ///private ctor
+    /// private ctor
     Pipeliner();
 
     friend void deletePipeLine(PipeLine* p);
@@ -75,27 +74,25 @@ public:
     };
 
 private:
+    VkDevice m_device{ nullptr };
+    VkPipelineCache m_pipeline_cache{ nullptr };
 
-    VkDevice m_device = nullptr;
-    VkPipelineCache m_pipeline_cache = nullptr;
-
-    VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2] = {};
-    VkPipelineVertexInputStateCreateInfo m_vertexInputInfo = {};
-    VkPipelineInputAssemblyStateCreateInfo m_pipelineIACreateInfo = {};
-    VkViewport m_vp = {};
-    VkRect2D m_scissor = {};
-    VkPipelineViewportStateCreateInfo m_vpCreateInfo = {};
-    VkPipelineRasterizationStateCreateInfo m_rastCreateInfo = {};
-    VkPipelineMultisampleStateCreateInfo m_pipelineMSCreateInfo = {};
-    VkPipelineColorBlendStateCreateInfo m_blendCreateInfo = {};
+    VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2]{};
+    VkPipelineVertexInputStateCreateInfo m_vertexInputInfo{};
+    VkPipelineInputAssemblyStateCreateInfo m_pipelineIACreateInfo{};
+    VkViewport m_vp{};
+    VkRect2D m_scissor{};
+    VkPipelineViewportStateCreateInfo m_vpCreateInfo{};
+    VkPipelineRasterizationStateCreateInfo m_rastCreateInfo{};
+    VkPipelineMultisampleStateCreateInfo m_pipelineMSCreateInfo{};
+    VkPipelineColorBlendStateCreateInfo m_blendCreateInfo{};
     VkPipelineDepthStencilStateCreateInfo m_depthStencil{};
 
-    ///persistent default configuration
-    static VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
-    static VkPipelineInputAssemblyStateCreateInfo _pipelineIACreateInfo;
-    static VkPipelineRasterizationStateCreateInfo _rastCreateInfo;
-    static VkPipelineMultisampleStateCreateInfo _pipelineMSCreateInfo;
-    static VkPipelineColorBlendStateCreateInfo _blendCreateInfo;
-    static VkPipelineDepthStencilStateCreateInfo _depthStencil;
-
+    /// persistent default configuration
+    inline static VkPipelineVertexInputStateCreateInfo _vertexInputInfo{};
+    inline static VkPipelineInputAssemblyStateCreateInfo _pipelineIACreateInfo{};
+    inline static VkPipelineRasterizationStateCreateInfo _rastCreateInfo{};
+    inline static VkPipelineMultisampleStateCreateInfo _pipelineMSCreateInfo{};
+    inline static VkPipelineColorBlendStateCreateInfo _blendCreateInfo{};
+    inline static VkPipelineDepthStencilStateCreateInfo _depthStencil{};
 };

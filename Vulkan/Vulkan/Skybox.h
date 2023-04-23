@@ -44,7 +44,6 @@ public:
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
 
 private:
-
-    std::array<std::string_view, 6> m_textureFileNames;
-    std::uint32_t m_realMaterialId = 0u;
+    std::array<std::string_view, 6> m_textureFileNames{};
+    std::uint32_t m_realMaterialId{ 0U };
 };

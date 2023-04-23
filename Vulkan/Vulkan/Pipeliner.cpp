@@ -1,16 +1,10 @@
 
 #include "Pipeliner.h"
-#include "Utils.h"
+#include "Constants.h"
 #include "I3DModel.h"
-#include <fstream>
+#include "Utils.h"
 
-///persistent default configuration
-VkPipelineVertexInputStateCreateInfo Pipeliner::_vertexInputInfo = {};
-VkPipelineInputAssemblyStateCreateInfo Pipeliner::_pipelineIACreateInfo = {};
-VkPipelineRasterizationStateCreateInfo Pipeliner::_rastCreateInfo = {};
-VkPipelineMultisampleStateCreateInfo Pipeliner::_pipelineMSCreateInfo = {};
-VkPipelineColorBlendStateCreateInfo Pipeliner::_blendCreateInfo = {};
-VkPipelineDepthStencilStateCreateInfo Pipeliner::_depthStencil{};
+#include <fstream>
 
 void deletePipeLine(Pipeliner::PipeLine *p)
 {
@@ -26,7 +20,7 @@ void deletePipeLine(Pipeliner::PipeLine *p)
 
 bool Pipeliner::saveCache()
 {
-    Utils::printLog(INFO_PARAM, "saving pipeline cache: ", PIPELINE_CACHE_FILE);
+    Utils::printLog(INFO_PARAM, "saving pipeline cache: ", Constants::PIPELINE_CACHE_FILE);
     assert(m_device);
     assert(m_pipeline_cache);
     size_t cacheDataSize = 0u;
@@ -48,9 +42,9 @@ bool Pipeliner::saveCache()
             {
                 // Open the file and write the data to it.
 
-                std::ofstream file(PIPELINE_CACHE_FILE.data(), std::ios::binary);
+                std::ofstream file(std::string{ Constants::PIPELINE_CACHE_FILE }, std::ios::binary);
                 if (!file.is_open()) {
-                    Utils::printLog(ERROR_PARAM, "error when opening file: ",  PIPELINE_CACHE_FILE);
+                    Utils::printLog(ERROR_PARAM, "error when opening file: ", std::string{ Constants::PIPELINE_CACHE_FILE });
                 }
 
                 file.write(buffer.data(), buffer.size());
@@ -74,9 +68,9 @@ bool Pipeliner::createCache()
     assert(m_device);
     std::vector<char> pipeline_data;
 
-    std::ifstream file(PIPELINE_CACHE_FILE.data(), std::ios::ate | std::ios::binary);
+    std::ifstream file(std::string{ Constants::PIPELINE_CACHE_FILE }, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        Utils::printLog(INFO_PARAM, " pipeline cache not found ", PIPELINE_CACHE_FILE);
+        Utils::printLog(INFO_PARAM, " pipeline cache not found ", Constants::PIPELINE_CACHE_FILE);
     }
     else
     {

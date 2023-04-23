@@ -6,8 +6,8 @@ class ObjModel : public I3DModel
 {
 public:
 
-    ObjModel(std::string_view path, PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
-        : I3DModel(pipelineCreatorBase)
+    ObjModel(std::string_view path, PipelineCreatorBase* pipelineCreatorBase, uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
+        : I3DModel(pipelineCreatorBase, vertexMagnitudeMultiplier)
         , m_path(path)
     {}
 
@@ -23,6 +23,6 @@ private:
                  VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
              std::vector<Vertex> &vertices, std::vector<uint32_t> &indices);
 
-    std::string m_path;
+    std::string m_path{};
     std::vector<std::vector<SubObject>> m_SubObjects{};
 };

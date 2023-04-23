@@ -1,16 +1,14 @@
 #pragma once
 
-#include <string>
-#include "vulkan/vulkan.h"
-#include <unordered_map>
-#include <memory>
 #include <functional>
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <vulkan/vulkan.h>
 
 class TextureFactory
 {
 public:
-
-    static std::string TEXTURES_DIR;
 
     struct Texture
     {

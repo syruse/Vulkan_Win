@@ -1,8 +1,6 @@
-
 #include "PipelineCreatorQuad.h"
 #include <assert.h>
 #include "Utils.h"
-
 
 void PipelineCreatorQuad::createPipeline(uint32_t width, uint32_t height, 
         VkRenderPass renderPass, VkDevice device)
@@ -30,7 +28,6 @@ void PipelineCreatorQuad::createPipeline(uint32_t width, uint32_t height,
     assert(m_pipeline);
 }
 
-
 void PipelineCreatorQuad::createDescriptorSetLayout(VkDevice device)
 {
     ///---------------------------------------------------------------------------///
@@ -38,19 +35,23 @@ void PipelineCreatorQuad::createDescriptorSetLayout(VkDevice device)
     // Colour Input Binding
     VkDescriptorSetLayoutBinding colourInputLayoutBinding = {};
     colourInputLayoutBinding.binding = 0;
-    colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    colourInputLayoutBinding.descriptorType = m_isDepthNeeded ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colourInputLayoutBinding.descriptorCount = 1;
     colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Depth Input Binding
-    VkDescriptorSetLayoutBinding depthInputLayoutBinding = {};
-    depthInputLayoutBinding.binding = 1;
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputLayoutBinding.descriptorCount = 1;
-    depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
     // Array of input attachment bindings
-    std::vector<VkDescriptorSetLayoutBinding> inputBindings = { colourInputLayoutBinding, depthInputLayoutBinding };
+    std::vector<VkDescriptorSetLayoutBinding> inputBindings = { colourInputLayoutBinding };
+
+    if (m_isDepthNeeded) {
+        // Depth Input Binding
+        VkDescriptorSetLayoutBinding depthInputLayoutBinding = {};
+        depthInputLayoutBinding.binding = 1;
+        depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthInputLayoutBinding.descriptorCount = 1;
+        depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        inputBindings.push_back(depthInputLayoutBinding);
+    }
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -64,4 +65,3 @@ void PipelineCreatorQuad::createDescriptorSetLayout(VkDevice device)
         Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout for second pass!");
     }
 }
-

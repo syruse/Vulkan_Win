@@ -6,4 +6,7 @@ C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe secondPass.frag -o shaders/frag_seco
 
 C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe skybox.vert -o shaders/vert_skybox.spv
 C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe skybox.frag -o shaders/frag_skybox.spv
+
+C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe fxaa.vert -o shaders/vert_fxaa.spv
+C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe fxaa.frag -o shaders/frag_fxaa.spv
 pause

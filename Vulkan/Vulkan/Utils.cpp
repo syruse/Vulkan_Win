@@ -1,13 +1,14 @@
 #include "Utils.h"
+#include "Constants.h"
+/// declaration for template instatiation
+#include "I3DModel.h"
+#include "Skybox.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <assert.h>
 #include <fstream>
 #include <memory>
-
-/// declaration for template instatiation
-#include "I3DModel.h"
-#include "Skybox.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -255,29 +256,20 @@ namespace Utils {
         VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
     }
 
-    void formPath(std::string_view dir, std::string_view fileName, std::string& resultPath)
-    {
-        resultPath.reserve(dir.length() + fileName.length() + 1);
-        resultPath = dir.data();
-        resultPath += DIR_SEPARATOR;
-        resultPath += fileName.data();
-    }
-
     std::string formPath(std::string_view dir, std::string_view fileName)
     {
         std::string resultPath;
         resultPath.reserve(dir.length() + fileName.length() + 1);
-        resultPath = dir.data();
-        resultPath += DIR_SEPARATOR;
-        resultPath += fileName.data();
+        resultPath = std::string{ dir };
+        resultPath += Constants::DIR_SEPARATOR;
+        resultPath += std::string{ fileName };
 
         return resultPath;
     }
 
     VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName)
     {
-        std::string shaderPath;
-        formPath(SHADERS_DIR, fileName, shaderPath);
+        std::string shaderPath = formPath(Constants::SHADERS_DIR, fileName);
 
         assert(shaderPath.c_str());
         std::ifstream file(shaderPath.c_str(), std::ios::ate | std::ios::binary);
@@ -365,6 +357,37 @@ namespace Utils {
         res = vkBindImageMemory(device, image, imageMemory, 0);
 
         return res;
+    }
+    // TO FIX combine it with VulkanTransitionImageLayout
+    void VulkanImageMemoryBarrier(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels, uint32_t layersCount,
+        VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage)
+    {
+        VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = newLayout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = aspectMask;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = mipLevels;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = layersCount;
+        barrier.srcAccessMask = srcAccessMask;
+        barrier.dstAccessMask = dstAccessMask;
+
+        vkCmdPipelineBarrier(
+            commandBuffer,
+            sourceStage, destinationStage,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier
+        );
     }
 
     void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format, 
@@ -696,8 +719,9 @@ if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_F
                              VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer, 
                              VkDeviceMemory& generalBufferMemory)
     {
-        ///Note: general buffer keeping both geometry data, 
-        ///      index buffer is placed first and next to index buffer the vertex buffer placed
+        /** Note: general buffer keeping both geometry data, 
+                  index buffer is placed first and next to index buffer the vertex buffer placed
+        */
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         verticesBufferOffset = indicesSize;
         const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();

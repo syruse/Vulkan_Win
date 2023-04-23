@@ -23,7 +23,7 @@ void PipelineCreatorSkyBox::createPipeline(uint32_t width, uint32_t height,
 
     // Don't want to write to depth buffer
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
-    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthTestEnable = VK_TRUE;
     depthStencil.depthWriteEnable = VK_FALSE;
 
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();

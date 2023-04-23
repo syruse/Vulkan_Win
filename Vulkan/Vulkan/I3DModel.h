@@ -1,19 +1,19 @@
 #pragma once
 
+#include "TextureFactory.h"
+#include "PipelineCreatorBase.h"
+
 #include <array>
 #include <string>
 #include <glm/glm.hpp>
-#include "vulkan/vulkan.h"
-#include "glm/gtx/hash.hpp"
-#include "TextureFactory.h"
-#include "PipelineCreatorBase.h"
+#include <vulkan/vulkan.h>
+#include <glm/gtx/hash.hpp>
+
 #include <map>
 
 class I3DModel
 {
 public:
-
-    static constexpr std::string_view MODEL_DIR = "models";
 
     struct SubObject
     {
@@ -81,8 +81,9 @@ public:
         }
     };
 
-    constexpr I3DModel(PipelineCreatorBase* pipelineCreatorBase):
-        m_pipelineCreatorBase(pipelineCreatorBase)
+    constexpr I3DModel(PipelineCreatorBase* pipelineCreatorBase, uint32_t vertexMagnitudeMultiplier = 1U):
+        m_pipelineCreatorBase(pipelineCreatorBase),
+        m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier)
     {
     }
 
@@ -99,13 +100,14 @@ public:
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) = 0;
 
 protected:
-    PipelineCreatorBase* m_pipelineCreatorBase = nullptr;
-    VkDevice m_device = nullptr;
-    VkPhysicalDevice m_physicalDevice = nullptr;
-    DynamicUniformBufferObject m_modelMtrx = { glm::mat4(1.0f) };
-    VkDeviceSize m_verticesBufferOffset = 0;
-    VkBuffer m_generalBuffer = nullptr;
-    VkDeviceMemory m_generalBufferMemory = nullptr;
+    uint32_t m_vertexMagnitudeMultiplier{ 1U };
+    PipelineCreatorBase* m_pipelineCreatorBase{ nullptr };
+    VkDevice m_device{ nullptr };
+    VkPhysicalDevice m_physicalDevice{ nullptr };
+    DynamicUniformBufferObject m_modelMtrx { glm::mat4(1.0f) };
+    VkDeviceSize m_verticesBufferOffset{ 0U };
+    VkBuffer m_generalBuffer{ nullptr };
+    VkDeviceMemory m_generalBufferMemory{ nullptr };
 };
 
 namespace std

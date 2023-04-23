@@ -1,10 +1,9 @@
-
 #include "Skybox.h"
-#include "Utils.h"
 #include "I3DModel.h"
+#include "Utils.h"
 #include <assert.h>
 
-///Note: designed for VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+/// Note: designed for VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 const std::vector<Skybox::Vertex> _vertices =
 {
     // front

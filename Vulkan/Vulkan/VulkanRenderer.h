@@ -82,7 +82,7 @@ private:
     uint16_t m_materialId = 0u;
     std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
     std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler, VkDescriptorSetLayout)> m_descriptorCreator = nullptr;
-    std::function<void()> m_descriptorSecondPassCreator = nullptr;
+    std::function<void(const PipelineCreatorBase::descriptor_set_layout_ptr&, VkDescriptorPool, std::vector<VkDescriptorSet>&, bool isDepthNeeded)> m_descriptorSecondPassCreator = nullptr;
     std::vector<VkFramebuffer> m_fbs;
 
     std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators;
@@ -110,4 +110,10 @@ private:
     std::vector<VkImage> m_colourBufferImage;
     std::vector<VkDeviceMemory> m_colourBufferImageMemory;
     std::vector<VkImageView> m_colourBufferImageView;
+
+    std::vector<VkDescriptorSet> m_descriptorSetsFXAApass;
+    VkDescriptorPool m_descriptorPoolFXAApass;
+    std::unique_ptr<PipelineCreatorBase> m_pipelineFXAA;
+    VkRenderPass m_renderPassFXAA;
+    std::vector<VkFramebuffer> m_fbsFXAA;
 };

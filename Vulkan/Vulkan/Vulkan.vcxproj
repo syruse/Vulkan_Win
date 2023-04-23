@@ -166,6 +166,7 @@
     <ClCompile Include="XCBControl.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Constants.h" />
     <ClInclude Include="CubeModel.h" />
     <ClInclude Include="I3DModel.h" />
     <ClInclude Include="IControl.h" />
