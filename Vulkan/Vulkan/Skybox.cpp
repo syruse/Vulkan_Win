@@ -40,32 +40,23 @@ const std::vector<uint32_t> _indices =
     0, 1, 5
 };
 
-void Skybox::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-                  const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
+void Skybox::init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
                                          VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
 {
-    assert(device);
-    assert(physicalDevice);
-    assert(cmdBufPool);
-    assert(queue);
+    auto p_devide = m_vkState._core.getDevice();
+    assert(p_devide);
     assert(descriptorCreator);
     assert(m_pipelineCreatorBase);
     assert(!m_textureFileNames.empty()); 
 
-    m_device = device;
-    m_physicalDevice = physicalDevice;
-
-    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
-    assert(pTextureFactory);
-
-    auto texture = pTextureFactory->createCubeTexture(m_textureFileNames);
+    auto texture = m_textureFactory.createCubeTexture(m_textureFileNames);
     if (!texture.expired())
     {
-        m_realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels),
+        m_realMaterialId = descriptorCreator(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels),
                                              *m_pipelineCreatorBase->getDescriptorSetLayout().get());
     }
 
-    Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, _indices, _vertices,
+    Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices, _vertices,
         m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }
 

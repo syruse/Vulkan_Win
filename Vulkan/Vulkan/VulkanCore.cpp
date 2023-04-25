@@ -83,7 +83,7 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const
 }
 
 
-const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps()
+const VkSurfaceCapabilitiesKHR& VulkanCore::getSurfaceCaps() const
 {
     assert(m_gfxDevIndex >= 0);
 
@@ -92,7 +92,7 @@ const VkSurfaceCapabilitiesKHR VulkanCore::getSurfaceCaps()
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         getPhysDevice(),
         m_surface,
-        &(m_physDevices.m_surfaceCaps[m_gfxDevIndex]));
+        const_cast<VkSurfaceCapabilitiesKHR*>(&(m_physDevices.m_surfaceCaps[m_gfxDevIndex])));
 
     return m_physDevices.m_surfaceCaps[m_gfxDevIndex];
 }

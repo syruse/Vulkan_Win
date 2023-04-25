@@ -1,28 +1,25 @@
 #pragma once
 
+#include "VulkanState.h"
 #include <functional>
 #include <string>
 #include <memory>
 #include <unordered_map>
-#include <vulkan/vulkan.h>
 
 class TextureFactory
 {
 public:
-
     struct Texture
     {
-        VkImage m_textureImage = nullptr;
-        VkDeviceMemory m_textureImageMemory = nullptr;
-        VkImageView m_textureImageView = nullptr;
-        uint32_t mipLevels = 0u;
+        VkImage m_textureImage{ nullptr };
+        VkDeviceMemory m_textureImageMemory{ nullptr };
+        VkImageView m_textureImageView{ nullptr };
+        uint32_t mipLevels{ 0u };
     };
 
-    static TextureFactory& init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue)
-    {
-        static TextureFactory texFactory(device, physicalDevice, cmdBufPool, queue);
-        return texFactory;
-    }
+    TextureFactory(const VulkanState& vulkanState) noexcept(true);
+
+    void init();
 
     ~TextureFactory();
 
@@ -31,16 +28,9 @@ public:
     VkSampler getTextureSampler(uint32_t mipLevels);
 
 private:
-
-    TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true);
-
-private:
+    const VulkanState& m_vkState;
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_textures{};
     std::unordered_map<uint32_t, VkSampler> m_samplers{};
     VkPhysicalDeviceProperties m_properties{};
-    VkDevice m_device = nullptr;
-    VkPhysicalDevice m_physicalDevice = nullptr;
-    VkCommandPool m_cmdBufPool = nullptr;
-    VkQueue m_queue = nullptr;
-    std::function<void(TextureFactory::Texture *p)> mTextureDeleter = nullptr;
+    std::function<void(TextureFactory::Texture* p)> mTextureDeleter{ nullptr };
 };

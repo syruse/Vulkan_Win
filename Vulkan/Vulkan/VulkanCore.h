@@ -19,17 +19,17 @@ public:
 
     const VkSurfaceFormatKHR& getSurfaceFormat() const;
 
-    const VkSurfaceCapabilitiesKHR getSurfaceCaps();
+    const VkSurfaceCapabilitiesKHR& getSurfaceCaps() const;
 
     VkSurfaceKHR getSurface() const { return m_surface; }
 
     int getQueueFamily() const { return m_gfxQueueFamily; }
 
-    VkInstance getInstance() { return m_inst; }
+    VkInstance getInstance() const { return m_inst; }
 
-    VkDevice getDevice() { return m_device; }
+    VkDevice getDevice() const { return m_device; }
 
-    const std::unique_ptr<IControl>& getWinController() { return m_winController; }
+    const std::unique_ptr<IControl>& getWinController() const { return m_winController; }
 
 private:
     void createInstance();

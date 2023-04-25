@@ -4,38 +4,34 @@
 #include "Utils.h"
 #include <assert.h>
 
-TextureFactory::TextureFactory(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue) noexcept(true)
-    : m_device(device)
-    , m_physicalDevice(physicalDevice)
-    , m_cmdBufPool(cmdBufPool)
-    , m_queue(queue)
+TextureFactory::TextureFactory(const VulkanState& vulkanState) noexcept(true)
+    : m_vkState(vulkanState)
 {
-    assert(m_device);
-    assert(m_physicalDevice);
-    assert(m_cmdBufPool);
-    assert(m_queue);
-
     mTextureDeleter = [this](TextureFactory::Texture *p) {
+        auto p_devide = m_vkState._core.getDevice();
+        assert(p_devide);
         Utils::printLog(INFO_PARAM, "texture resources removal");
-        vkDestroyImageView(m_device, p->m_textureImageView, nullptr);
-        vkDestroyImage(m_device, p->m_textureImage, nullptr);
-        vkFreeMemory(m_device, p->m_textureImageMemory, nullptr);
+        vkDestroyImageView(p_devide, p->m_textureImageView, nullptr);
+        vkDestroyImage(p_devide, p->m_textureImage, nullptr);
+        vkFreeMemory(p_devide, p->m_textureImageMemory, nullptr);
         delete p;
     };
-
-    vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
-    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", m_properties.limits.maxSamplerAnisotropy);
 }
 
 TextureFactory::~TextureFactory()
 {
     // Wait until no actions being run on device before destroying
-    vkDeviceWaitIdle(m_device);
+    std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
     for( const auto& [key, value] : m_samplers ) 
     {
         Utils::printLog(INFO_PARAM, "sampler removal with miplevels: ", key);
-        vkDestroySampler(m_device, value, nullptr);
+        vkDestroySampler(m_vkState._core.getDevice(), value, nullptr);
     }
+}
+
+void TextureFactory::init() {
+    vkGetPhysicalDeviceProperties(m_vkState._core.getPhysDevice(), &m_properties);
+    Utils::printLog(INFO_PARAM, "maxSamplerAnisotrop: ", m_properties.limits.maxSamplerAnisotropy);
 }
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames, bool is_flippingVertically)
@@ -57,11 +53,13 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
             Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[5])
         };
 
-        if (Utils::VulkanCreateCubeTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, _textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
+        if (Utils::VulkanCreateCubeTextureImage(m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), m_vkState._queue, m_vkState._cmdBufPool, 
+            _textureFileNames, texture->m_textureImage, texture->m_textureImageMemory) != VK_SUCCESS)
         {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
-        if (Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, 1U, VK_IMAGE_VIEW_TYPE_CUBE, 6U) != VK_SUCCESS)
+        if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 
+            texture->m_textureImageView, 1U, VK_IMAGE_VIEW_TYPE_CUBE, 6U) != VK_SUCCESS)
         {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture imageView ");
         }
@@ -81,34 +79,36 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling, bool is_flippingVertically)
 {
-    if(m_textures.count(pTextureFileName.data()) == 0)
-    {
-        std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
+	if (m_textures.count(pTextureFileName.data()) == 0)
+	{
+		std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
-        uint32_t mipLevels = 0U;
+		uint32_t mipLevels = 0U;
 
-        std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
+		std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
 
-        if(Utils::VulkanCreateTextureImage(m_device, m_physicalDevice, m_queue, m_cmdBufPool, texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory, mipLevels) != VK_SUCCESS)
-        {
-            Utils::printLog(ERROR_PARAM, "failed to create texture image ");
-        }
-        if(Utils::VulkanCreateImageView(m_device, texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, mipLevels) != VK_SUCCESS)
-        {
-            Utils::printLog(ERROR_PARAM, "failed to create texture imageView ");
-        }
+		if (Utils::VulkanCreateTextureImage(m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), m_vkState._queue, m_vkState._cmdBufPool,
+			texturePath.c_str(), texture->m_textureImage, texture->m_textureImageMemory, mipLevels) != VK_SUCCESS)
+		{
+			Utils::printLog(ERROR_PARAM, "failed to create texture image ");
+		}
+		if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT,
+			texture->m_textureImageView, mipLevels) != VK_SUCCESS)
+		{
+			Utils::printLog(ERROR_PARAM, "failed to create texture imageView ");
+		}
 
-        /// Note: creation of sampler in advance
-        getTextureSampler(mipLevels);
-        texture->mipLevels = mipLevels;
-        m_textures.try_emplace(std::string{ pTextureFileName }, texture);
+		/// Note: creation of sampler in advance
+		getTextureSampler(mipLevels);
+		texture->mipLevels = mipLevels;
+		m_textures.try_emplace(std::string{ pTextureFileName }, texture);
 
-        return texture;
-    }
-    else
-    {
-        return m_textures[std::string{ pTextureFileName }];
-    }
+		return texture;
+	}
+	else
+	{
+		return m_textures[std::string{ pTextureFileName }];
+	}
 }
 
 VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels)
@@ -134,7 +134,7 @@ VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels)
         samplerInfo.maxLod = static_cast<float>(mipLevels);
         samplerInfo.mipLodBias = 0.0f;
 
-        if (vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
+        if (vkCreateSampler(m_vkState._core.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
         {
             Utils::printLog(ERROR_PARAM, "failed to create texture sampler!");
         }

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "I3DModel.h"
 #include "Pipeliner.h"
 #include "TextureFactory.h"
-#include "I3DModel.h"
 #include <glm/glm.hpp>
 
 class Skybox : public I3DModel
@@ -32,14 +32,14 @@ public:
         }
     };
 
-    Skybox(const std::array<std::string_view, 6>& textureFileNames, PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
-        : I3DModel(pipelineCreatorBase)
+    Skybox(const VulkanState& vulkanState, TextureFactory& textureFactory, const std::array<std::string_view, 6>& textureFileNames, 
+        PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorBase)
         , m_textureFileNames(textureFileNames)
     {}
 
-    virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-                  const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
-                                         VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
+    virtual void init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
+                      VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
 
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
 

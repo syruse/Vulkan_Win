@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TextureFactory.h"
+#include "VulkanState.h"
 #include "PipelineCreatorBase.h"
 
 #include <array>
@@ -81,7 +82,10 @@ public:
         }
     };
 
-    constexpr I3DModel(PipelineCreatorBase* pipelineCreatorBase, uint32_t vertexMagnitudeMultiplier = 1U):
+    constexpr I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, 
+        PipelineCreatorBase* pipelineCreatorBase, uint32_t vertexMagnitudeMultiplier = 1U):
+        m_vkState(vulkanState),
+        m_textureFactory(textureFactory),
         m_pipelineCreatorBase(pipelineCreatorBase),
         m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier)
     {
@@ -89,21 +93,20 @@ public:
 
     virtual ~I3DModel() 
     {
-        vkDeviceWaitIdle(m_device);
-        vkDestroyBuffer(m_device, m_generalBuffer, nullptr);
-        vkFreeMemory(m_device, m_generalBufferMemory, nullptr);
+        std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
+        vkDestroyBuffer(m_vkState._core.getDevice(), m_generalBuffer, nullptr);
+        vkFreeMemory(m_vkState._core.getDevice(), m_generalBufferMemory, nullptr);
     }
 
-    virtual void init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue, 
-                      const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
-                          VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) = 0;
+    virtual void init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                      VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) = 0;
     virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) = 0;
 
 protected:
+    const VulkanState& m_vkState;
+    TextureFactory& m_textureFactory;
     uint32_t m_vertexMagnitudeMultiplier{ 1U };
     PipelineCreatorBase* m_pipelineCreatorBase{ nullptr };
-    VkDevice m_device{ nullptr };
-    VkPhysicalDevice m_physicalDevice{ nullptr };
     DynamicUniformBufferObject m_modelMtrx { glm::mat4(1.0f) };
     VkDeviceSize m_verticesBufferOffset{ 0U };
     VkBuffer m_generalBuffer{ nullptr };

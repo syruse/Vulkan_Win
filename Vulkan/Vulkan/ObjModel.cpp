@@ -8,33 +8,25 @@
 #include <unordered_map>
 
 
-void ObjModel::init(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
-    const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+void ObjModel::init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
         VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator)
 {
-    assert(device);
-    assert(physicalDevice);
-    assert(cmdBufPool);
-    assert(queue);
+    auto p_devide = m_vkState._core.getDevice();
+    assert(p_devide);
     assert(descriptorCreator);
 
-    TextureFactory* pTextureFactory = &TextureFactory::init(device, physicalDevice, cmdBufPool, queue);
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
 
-    m_device = device;
-    m_physicalDevice = physicalDevice;
-    load(pTextureFactory, descriptorCreator, vertices, indices);
-    Utils::createGeneralBuffer(device, physicalDevice, cmdBufPool, queue, indices, vertices,
+    load(descriptorCreator, vertices, indices);
+    Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices, vertices,
         m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }
 
-void ObjModel::load(TextureFactory* pTextureFactory, 
-                    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+void ObjModel::load(std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
                         VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
                     std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
-    assert(pTextureFactory);
     assert(descriptorCreator);
     assert(m_pipelineCreatorBase);
     assert(!m_path.empty());
@@ -80,10 +72,10 @@ void ObjModel::load(TextureFactory* pTextureFactory,
 
         if(materialsMap.count(materialId) == 0)
         {
-            auto texture = pTextureFactory->create2DTexture(materials[materialId].diffuse_texname.c_str());
+            auto texture = m_textureFactory.create2DTexture(materials[materialId].diffuse_texname.c_str());
             if (!texture.expired())
             {
-                realMaterialId = descriptorCreator(texture, pTextureFactory->getTextureSampler(texture.lock()->mipLevels),
+                realMaterialId = descriptorCreator(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels),
                     *m_pipelineCreatorBase->getDescriptorSetLayout().get());
                 materialsMap.try_emplace(materialId, realMaterialId);
             }
