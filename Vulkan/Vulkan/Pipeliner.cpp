@@ -6,8 +6,7 @@
 
 #include <fstream>
 
-void deletePipeLine(Pipeliner::PipeLine *p)
-{
+void deletePipeLine(Pipeliner::PipeLine* p) {
     auto device = Pipeliner::getInstance().m_device;
     Utils::printLog(INFO_PARAM, "pipeline removal");
     assert(p);
@@ -18,38 +17,29 @@ void deletePipeLine(Pipeliner::PipeLine *p)
     delete p;
 }
 
-bool Pipeliner::saveCache()
-{
+bool Pipeliner::saveCache() {
     Utils::printLog(INFO_PARAM, "saving pipeline cache: ", Constants::PIPELINE_CACHE_FILE);
     assert(m_device);
     assert(m_pipeline_cache);
     size_t cacheDataSize = 0u;
     // Determine the size of the cache data.
-    VkResult result = vkGetPipelineCacheData(m_device,
-        m_pipeline_cache,
-        &cacheDataSize,
-        nullptr);
-    if (result == VK_SUCCESS)
-    {
+    VkResult result = vkGetPipelineCacheData(m_device, m_pipeline_cache, &cacheDataSize, nullptr);
+    if (result == VK_SUCCESS) {
         // Allocate a temporary store for the cache data.
         std::vector<char> buffer(cacheDataSize);
-            // Retrieve the actual data from the cache.
-            result = vkGetPipelineCacheData(m_device,
-                m_pipeline_cache,
-                &cacheDataSize,
-                buffer.data());
-            if (result == VK_SUCCESS)
-            {
-                // Open the file and write the data to it.
+        // Retrieve the actual data from the cache.
+        result = vkGetPipelineCacheData(m_device, m_pipeline_cache, &cacheDataSize, buffer.data());
+        if (result == VK_SUCCESS) {
+            // Open the file and write the data to it.
 
-                std::ofstream file(std::string{ Constants::PIPELINE_CACHE_FILE }, std::ios::binary);
-                if (!file.is_open()) {
-                    Utils::printLog(ERROR_PARAM, "error when opening file: ", std::string{ Constants::PIPELINE_CACHE_FILE });
-                }
-
-                file.write(buffer.data(), buffer.size());
-                file.close();
+            std::ofstream file(std::string{Constants::PIPELINE_CACHE_FILE}, std::ios::binary);
+            if (!file.is_open()) {
+                Utils::printLog(ERROR_PARAM, "error when opening file: ", std::string{Constants::PIPELINE_CACHE_FILE});
             }
+
+            file.write(buffer.data(), buffer.size());
+            file.close();
+        }
     }
 
     vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
@@ -57,10 +47,8 @@ bool Pipeliner::saveCache()
     return result == VK_SUCCESS ? true : false;
 }
 
-bool Pipeliner::createCache()
-{
-    if (m_pipeline_cache)
-    {
+bool Pipeliner::createCache() {
+    if (m_pipeline_cache) {
         Utils::printLog(INFO_PARAM, " pipeline_cache object already exists ");
         return true;
     }
@@ -68,12 +56,10 @@ bool Pipeliner::createCache()
     assert(m_device);
     std::vector<char> pipeline_data;
 
-    std::ifstream file(std::string{ Constants::PIPELINE_CACHE_FILE }, std::ios::ate | std::ios::binary);
+    std::ifstream file(std::string{Constants::PIPELINE_CACHE_FILE}, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
         Utils::printLog(INFO_PARAM, " pipeline cache not found ", Constants::PIPELINE_CACHE_FILE);
-    }
-    else
-    {
+    } else {
         size_t cacheDataSize = (size_t)file.tellg();
         pipeline_data.reserve(cacheDataSize);
         pipeline_data.resize(cacheDataSize);
@@ -85,7 +71,7 @@ bool Pipeliner::createCache()
     }
 
     /* Add initial pipeline cache data from the cached file */
-    VkPipelineCacheCreateInfo create_info{ VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+    VkPipelineCacheCreateInfo create_info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
     create_info.initialDataSize = pipeline_data.size();
     create_info.pInitialData = pipeline_data.data();
 
@@ -96,10 +82,7 @@ bool Pipeliner::createCache()
     return result == VK_SUCCESS ? true : false;
 }
 
-
-Pipeliner::Pipeliner()
-{
-
+Pipeliner::Pipeliner() {
     m_shaderStageCreateInfo[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     m_shaderStageCreateInfo[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
     m_shaderStageCreateInfo[0].module = nullptr;
@@ -156,13 +139,13 @@ Pipeliner::Pipeliner()
     _depthStencil.depthWriteEnable = VK_TRUE;
     _depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     _depthStencil.depthBoundsTestEnable = VK_FALSE;
-    _depthStencil.minDepthBounds = 0.0f; // Optional
-    _depthStencil.maxDepthBounds = 1.0f; // Optional
+    _depthStencil.minDepthBounds = 0.0f;  // Optional
+    _depthStencil.maxDepthBounds = 1.0f;  // Optional
     _depthStencil.stencilTestEnable = VK_FALSE;
-    _depthStencil.front = {}; // Optional
-    _depthStencil.back = {}; // Optional
+    _depthStencil.front = {};  // Optional
+    _depthStencil.back = {};   // Optional
 
-    //set default configuration
+    // set default configuration
     m_vertexInputInfo = _vertexInputInfo;
     m_pipelineIACreateInfo = _pipelineIACreateInfo;
     m_rastCreateInfo = _rastCreateInfo;
@@ -171,19 +154,18 @@ Pipeliner::Pipeliner()
     m_depthStencil = _depthStencil;
 }
 
-Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
-                                                VkDescriptorSetLayout descriptorSetLayout,
-                                                VkRenderPass renderPass, VkDevice device, uint32_t subpass, VkPushConstantRange pushConstantRange)
-{
+Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width,
+                                                  uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
+                                                  VkRenderPass renderPass, VkDevice device, uint32_t subpass,
+                                                  VkPushConstantRange pushConstantRange) {
     m_device = device;
     assert(m_device);
     assert(descriptorSetLayout);
 
-    if (!m_pipeline_cache)
-    {
+    if (!m_pipeline_cache) {
         createCache();
     }
-    
+
     std::unique_ptr<PipeLine, decltype(&deletePipeLine)> pipeline(new Pipeliner::PipeLine(), deletePipeLine);
     pipeline->vsModule = Utils::VulkanCreateShaderModule(device, vertShader);
     assert(pipeline->vsModule);
@@ -202,13 +184,10 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
     layoutInfo.pSetLayouts = &descriptorSetLayout;
-    if (pushConstantRange.size != 0u)
-    {
+    if (pushConstantRange.size != 0u) {
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &pushConstantRange;
-    }
-    else
-    {
+    } else {
         layoutInfo.pushConstantRangeCount = 0;
         layoutInfo.pPushConstantRanges = nullptr;
     }
@@ -235,7 +214,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     res = vkCreateGraphicsPipelines(device, m_pipeline_cache, 1, &pipelineInfo, NULL, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
 
-    ///restore default configuration
+    /// restore default configuration
     m_vertexInputInfo = _vertexInputInfo;
     m_pipelineIACreateInfo = _pipelineIACreateInfo;
     m_rastCreateInfo = _rastCreateInfo;
@@ -245,4 +224,3 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
 
     return pipeline;
 }
-

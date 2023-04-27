@@ -2,25 +2,19 @@
 
 #include "I3DModel.h"
 
-class ObjModel : public I3DModel
-{
+class ObjModel : public I3DModel {
 public:
+    ObjModel(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view path,
+             PipelineCreatorTextured* pipelineCreatorTextured, uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, vertexMagnitudeMultiplier), m_path(path) {
+    }
 
-    ObjModel(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view path, 
-        PipelineCreatorBase* pipelineCreatorBase, uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
-        : I3DModel(vulkanState, textureFactory, pipelineCreatorBase, vertexMagnitudeMultiplier)
-        , m_path(path)
-    {}
+    virtual void init() override;
 
-    virtual void init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
-            VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
-
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
+    virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) override;
 
 private:
-    void load(std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
-                 VkDescriptorSetLayout descriptorSetLayout)> descriptorCreator,
-             std::vector<Vertex> &vertices, std::vector<uint32_t> &indices);
+    void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
 
     std::string m_path{};
     std::vector<std::vector<SubObject>> m_SubObjects{};

@@ -1,13 +1,12 @@
 #pragma once
 
+#include <memory>
 #include "IControl.h"
 #include "Utils.h"
-#include <memory>
 
 class IControl;
 
-class VulkanCore
-{
+class VulkanCore {
 public:
     explicit VulkanCore(std::unique_ptr<IControl>&& winController);
 
@@ -21,15 +20,25 @@ public:
 
     const VkSurfaceCapabilitiesKHR& getSurfaceCaps() const;
 
-    VkSurfaceKHR getSurface() const { return m_surface; }
+    VkSurfaceKHR getSurface() const {
+        return m_surface;
+    }
 
-    int getQueueFamily() const { return m_gfxQueueFamily; }
+    int getQueueFamily() const {
+        return m_gfxQueueFamily;
+    }
 
-    VkInstance getInstance() const { return m_inst; }
+    VkInstance getInstance() const {
+        return m_inst;
+    }
 
-    VkDevice getDevice() const { return m_device; }
+    VkDevice getDevice() const {
+        return m_device;
+    }
 
-    const std::unique_ptr<IControl>& getWinController() const { return m_winController; }
+    const std::unique_ptr<IControl>& getWinController() const {
+        return m_winController;
+    }
 
 private:
     void createInstance();
@@ -42,11 +51,11 @@ private:
     // Vulkan objects
     VkInstance m_inst = nullptr;
     VkSurfaceKHR m_surface = nullptr;
-    Utils::VulkanPhysicalDevices m_physDevices {};
+    Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
 
     // Internal stuff
-    int m_gfxDevIndex = - 1;
-    int m_gfxQueueFamily = -1;;
+    int m_gfxDevIndex = -1;
+    int m_gfxQueueFamily = -1;
+    ;
 };
-

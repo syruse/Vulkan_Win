@@ -6,26 +6,14 @@
 
 #include <array>
 
-#include "VulkanState.h"
-#include "PipelineCreatorBase.h"
 #include "I3DModel.h"
+#include "PipelineCreatorBase.h"
+#include "VulkanState.h"
 
-class VulkanRenderer: public VulkanState
-{
+class VulkanRenderer : public VulkanState {
 public:
     static constexpr uint16_t MAX_OBJECTS = 1;
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
-
-    struct UniformBufferObject
-    {
-        alignas(16) glm::mat4 view;
-        alignas(16) glm::mat4 proj;
-    };
-
-    struct PushConstant
-    {
-        alignas(16) glm::mat4 model;
-    } _pushConstant;
 
     VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
 
@@ -60,38 +48,24 @@ private:
 private:
     uint16_t m_currentFrame = 0u;
 
-    VkRenderPass m_renderPass;
-    VkPushConstantRange m_pushConstantRange;
-    VkDescriptorPool m_descriptorPool;
-    uint16_t m_materialId = 0u;
-    std::unordered_map<uint16_t, I3DModel::Material> m_descriptorSets;
-    std::function<uint16_t(std::weak_ptr<TextureFactory::Texture>, VkSampler, VkDescriptorSetLayout)> m_descriptorCreator = nullptr;
-    std::function<void(const PipelineCreatorBase::descriptor_set_layout_ptr&, VkDescriptorPool, std::vector<VkDescriptorSet>&, bool isDepthNeeded)> m_descriptorSecondPassCreator = nullptr;
-    std::vector<VkFramebuffer> m_fbs;
+    VkRenderPass m_renderPass{nullptr};
+    VkPushConstantRange m_pushConstantRange{};
 
-    std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators;
-    std::vector<std::unique_ptr<I3DModel>> m_models;
+    std::vector<VkFramebuffer> m_fbs{};
 
-    std::vector<VkSemaphore> m_presentCompleteSem;
-    std::vector<VkSemaphore> m_renderCompleteSem;
-    std::vector<VkFence> m_drawFences;
+    std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators{};
+    std::vector<std::unique_ptr<I3DModel>> m_models{};
 
-    std::vector<VkBuffer> m_uniformBuffers;
-    std::vector<VkDeviceMemory> m_uniformBuffersMemory;
-    std::vector<VkBuffer> m_dynamicUniformBuffers;
-    std::vector<VkDeviceMemory> m_dynamicUniformBuffersMemory;
-    size_t m_modelUniformAlignment;
-    I3DModel::DynamicUniformBufferObject *mp_modelTransferSpace = nullptr;
+    std::vector<VkSemaphore> m_presentCompleteSem{};
+    std::vector<VkSemaphore> m_renderCompleteSem{};
+    std::vector<VkFence> m_drawFences{};
 
-    std::vector<VkDescriptorSet> m_descriptorSetsSecondPass;
-    VkDescriptorPool m_descriptorPoolSecondPass;
+    // intermediate buffer being served for transferring data to gpu memory
+    Model* mp_modelTransferSpace{nullptr};
 
-    std::vector<VkDescriptorSet> m_descriptorSetsFXAApass;
-    VkDescriptorPool m_descriptorPoolFXAApass;
-    std::unique_ptr<PipelineCreatorBase> m_pipelineFXAA;
-    VkRenderPass m_renderPassFXAA;
-    std::vector<VkFramebuffer> m_fbsFXAA;
+    VkRenderPass m_renderPassFXAA{nullptr};
+    std::vector<VkFramebuffer> m_fbsFXAA{nullptr};
 
     /// smart ptr for taking over responsibility for lazy init and early removal
-    std::unique_ptr<TextureFactory> mTextureFactory;
+    std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 };

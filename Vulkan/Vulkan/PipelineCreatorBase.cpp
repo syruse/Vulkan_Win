@@ -1,17 +1,14 @@
 #include "PipelineCreatorBase.h"
 #include "Utils.h"
-#include <assert.h>
 
-void PipelineCreatorBase::recreate(uint32_t width, uint32_t height, 
-    VkRenderPass renderPass, VkDevice device)
-{
-    if(!m_descriptorSetLayout)
-       createDescriptorSetLayout(device);
+void PipelineCreatorBase::recreate(VkRenderPass renderPass) {
+    if (!m_descriptorSetLayout) {
+        createDescriptorSetLayout();
+    }
 
-    ///make a reset if exists
+    /// make a reset if exists
     m_pipeline.reset();
-    auto deleter = [device](VkDescriptorSetLayout* p)
-    {
+    auto deleter = [device = m_vkState._core.getDevice()](VkDescriptorSetLayout* p) {
         assert(device);
         Utils::printLog(INFO_PARAM, "removal triggered");
         vkDestroyDescriptorSetLayout(device, *p, nullptr);
@@ -19,12 +16,17 @@ void PipelineCreatorBase::recreate(uint32_t width, uint32_t height,
     };
     m_descriptorSetLayout.get_deleter() = deleter;
 
-    createPipeline(width, height, renderPass, device);
+    createPipeline(renderPass);
+}
+
+void PipelineCreatorBase::destructDescriptorPool() {
+    assert(m_vkState._core.getDevice());
+    assert(m_descriptorPool);
+    vkDestroyDescriptorPool(m_vkState._core.getDevice(), m_descriptorPool, nullptr);
 }
 
 // default textured layout
-void PipelineCreatorBase::createDescriptorSetLayout(VkDevice device)
-{
+void PipelineCreatorBase::createDescriptorSetLayout() {
     // UboViewProjection Binding Info
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
@@ -49,17 +51,17 @@ void PipelineCreatorBase::createDescriptorSetLayout(VkDevice device)
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = { uboLayoutBinding, modelLayoutBinding, samplerLayoutBinding };
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = {uboLayoutBinding, modelLayoutBinding, samplerLayoutBinding};
     // Create Descriptor Set Layout with given bindings
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());;
+    layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());
+    ;
     layoutCreateInfo.pBindings = layoutBindings.data();
 
     m_descriptorSetLayout = std::make_unique<VkDescriptorSetLayout>();
-    if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, m_descriptorSetLayout.get()) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(m_vkState._core.getDevice(), &layoutCreateInfo, nullptr, m_descriptorSetLayout.get()) !=
+        VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout!");
     }
 }
-
-

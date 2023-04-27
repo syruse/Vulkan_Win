@@ -1,16 +1,13 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
 #include <functional>
 #include <memory>
 #include <string>
-#include <vulkan/vulkan.h>
 
-class Pipeliner
-{
+class Pipeliner {
 public:
-
-    struct PipeLine
-    {
+    struct PipeLine {
         VkShaderModule vsModule = nullptr;
         VkShaderModule fsModule = nullptr;
         VkPipeline pipeline = nullptr;
@@ -20,7 +17,6 @@ public:
     using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, std::function<void(Pipeliner::PipeLine* p)>>;
 
 private:
-    /// private ctor
     Pipeliner();
 
     friend void deletePipeLine(PipeLine* p);
@@ -28,8 +24,7 @@ private:
     bool createCache();
 
 public:
-    static Pipeliner& getInstance()
-    {
+    static Pipeliner& getInstance() {
         static Pipeliner pipeliner;
         return pipeliner;
     }
@@ -37,45 +32,39 @@ public:
     bool saveCache();
 
     /// you can customize states of pipeline by get desired and change before invoking createPipeLine
-    pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader,
-        uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, 
-        VkRenderPass renderPass, VkDevice device, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
+    pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
+                                VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
+                                uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
 
     /// get and customize states your way (just before invoking createPipeLine)
 
-    inline VkPipelineVertexInputStateCreateInfo& getVertexInputInfo() 
-    {
+    inline VkPipelineVertexInputStateCreateInfo& getVertexInputInfo() {
         return m_vertexInputInfo;
     };
 
-    inline VkPipelineInputAssemblyStateCreateInfo& getInputAssemblyInfo()
-    {
+    inline VkPipelineInputAssemblyStateCreateInfo& getInputAssemblyInfo() {
         return m_pipelineIACreateInfo;
     };
 
-    inline VkPipelineRasterizationStateCreateInfo& getRasterizationInfo()
-    {
+    inline VkPipelineRasterizationStateCreateInfo& getRasterizationInfo() {
         return m_rastCreateInfo;
     };
 
-    inline VkPipelineMultisampleStateCreateInfo& getMultisampleInfo()
-    {
+    inline VkPipelineMultisampleStateCreateInfo& getMultisampleInfo() {
         return m_pipelineMSCreateInfo;
     };
 
-    inline VkPipelineDepthStencilStateCreateInfo& getDepthStencilInfo()
-    {
+    inline VkPipelineDepthStencilStateCreateInfo& getDepthStencilInfo() {
         return m_depthStencil;
     };
 
-    inline VkPipelineColorBlendStateCreateInfo& getColorBlendInfo()
-    {
+    inline VkPipelineColorBlendStateCreateInfo& getColorBlendInfo() {
         return m_blendCreateInfo;
     };
 
 private:
-    VkDevice m_device{ nullptr };
-    VkPipelineCache m_pipeline_cache{ nullptr };
+    VkDevice m_device{nullptr};
+    VkPipelineCache m_pipeline_cache{nullptr};
 
     VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2]{};
     VkPipelineVertexInputStateCreateInfo m_vertexInputInfo{};

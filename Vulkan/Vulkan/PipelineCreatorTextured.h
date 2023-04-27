@@ -1,19 +1,47 @@
 #pragma once
+
+#include "I3DModel.h"
 #include "PipelineCreatorBase.h"
+#include "TextureFactory.h"
 
-class PipelineCreatorTextured: public PipelineCreatorBase
-{
+class PipelineCreatorTextured : public PipelineCreatorBase {
 public:
+    class DescriptorSetData {
+        friend PipelineCreatorTextured;
 
-    constexpr PipelineCreatorTextured(std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-    :PipelineCreatorBase(vertShader, fragShader, subpass, pushConstantRange)
-    {}
+    private:
+        DescriptorSetData(const VulkanState& vkState) : m_vkState(vkState) {
+        }
+        DescriptorSetData(DescriptorSetData&&) = delete;  // copy ctor gets removed as well
 
+        static DescriptorSetData& instance(const VulkanState& vkState) {
+            static DescriptorSetData descriptorSetData{vkState};
+            return descriptorSetData;
+        }
+
+    private:
+        const VulkanState& m_vkState;
+        uint32_t m_materialId{0u};
+        std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
+    };
+
+    PipelineCreatorTextured(const VulkanState& vkState, uint32_t maxObjectsCount, std::string_view vertShader,
+                            std::string_view fragShader, uint32_t subpass = 0u,
+                            VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+        : PipelineCreatorBase(vkState, vertShader, fragShader, subpass, pushConstantRange), maxObjectsCount(maxObjectsCount) {
+    }
+
+    void createDescriptorPool() override;
+
+    uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
+
+    void recreateDescriptors();
+
+    const VkDescriptorSet* getDescriptorSet(uint32_t materialId, uint32_t descriptorSetsIndex) const;
 
 private:
+    virtual void createPipeline(VkRenderPass renderPass) override;
 
-    virtual void createPipeline(uint32_t width, uint32_t height, 
-        VkRenderPass renderPass, VkDevice device) override;
-
-
+private:
+    uint32_t maxObjectsCount = 1U;
 };

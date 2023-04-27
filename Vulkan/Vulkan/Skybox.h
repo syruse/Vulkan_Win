@@ -1,28 +1,23 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include "I3DModel.h"
 #include "Pipeliner.h"
 #include "TextureFactory.h"
-#include <glm/glm.hpp>
 
-class Skybox : public I3DModel
-{
+class Skybox : public I3DModel {
 public:
-
-    struct Vertex
-    {
+    struct Vertex {
         glm::vec3 pos;
 
-        static constexpr VkVertexInputBindingDescription getBindingDescription()
-        {
+        static constexpr VkVertexInputBindingDescription getBindingDescription() {
             VkVertexInputBindingDescription bindingDescription{};
             bindingDescription.binding = 0;
             bindingDescription.stride = sizeof(Vertex);
             bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
             return bindingDescription;
         }
-        static constexpr VkVertexInputAttributeDescription getAttributeDescription()
-        {
+        static constexpr VkVertexInputAttributeDescription getAttributeDescription() {
             VkVertexInputAttributeDescription attributeDescription{};
             attributeDescription.binding = 0;
             attributeDescription.location = 0;
@@ -32,18 +27,17 @@ public:
         }
     };
 
-    Skybox(const VulkanState& vulkanState, TextureFactory& textureFactory, const std::array<std::string_view, 6>& textureFileNames, 
-        PipelineCreatorBase* pipelineCreatorBase) noexcept(true)
-        : I3DModel(vulkanState, textureFactory, pipelineCreatorBase)
-        , m_textureFileNames(textureFileNames)
-    {}
+    Skybox(const VulkanState& vulkanState, TextureFactory& textureFactory,
+           const std::array<std::string_view, 6>& textureFileNames,
+           PipelineCreatorTextured* pipelineCreatorTextured) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured), m_textureFileNames(textureFileNames) {
+    }
 
-    virtual void init(const std::function<uint16_t(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler, 
-                      VkDescriptorSetLayout descriptorSetLayout)>& descriptorCreator) override;
+    virtual void init() override;
 
-    virtual void draw(VkCommandBuffer cmdBuf, std::function<void(uint16_t materialId, VkPipelineLayout pipelineLayout)> descriptorBinding) override;
+    virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) override;
 
 private:
     std::array<std::string_view, 6> m_textureFileNames{};
-    std::uint32_t m_realMaterialId{ 0U };
+    std::uint32_t m_realMaterialId{0U};
 };

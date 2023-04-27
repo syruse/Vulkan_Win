@@ -3,12 +3,10 @@
 #include <assert.h>
 #include "Skybox.h"
 
-void PipelineCreatorSkyBox::createPipeline(uint32_t width, uint32_t height, 
-        VkRenderPass renderPass, VkDevice device)
-{
+void PipelineCreatorSkyBox::createPipeline(VkRenderPass renderPass) {
     assert(m_descriptorSetLayout);
     assert(renderPass);
-    assert(device);
+    assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     constexpr auto bindingDescription = Skybox::Vertex::getBindingDescription();
@@ -28,10 +26,8 @@ void PipelineCreatorSkyBox::createPipeline(uint32_t width, uint32_t height,
 
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    
-    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, width, height,
-        *m_descriptorSetLayout.get(), renderPass, device);
+
+    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
+                                                         *m_descriptorSetLayout.get(), renderPass, m_vkState._core.getDevice());
     assert(m_pipeline);
 }
-
-
