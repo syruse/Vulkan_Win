@@ -1,10 +1,12 @@
 #ifdef _WIN32
 
 #include "Win32Control.h"
-#include <cassert>
 #include "Utils.h"
-#include "vulkan/vk_sdk_platform.h"
-#include "vulkan/vulkan_win32.h"
+
+#include <cassert>
+#include <SDL.h>
+#include <vulkan/vk_sdk_platform.h>
+#include <vulkan/vulkan_win32.h>
 
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
@@ -102,20 +104,26 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
-        case WM_CLOSE:
+        case WM_CREATE: {
+            if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+                MessageBox(hwnd, TEXT("SDL input mechanism cannot be initialized!"), TEXT("Error!"), MB_ICONEXCLAMATION | MB_OK);
+                PostQuitMessage(0);
+            }
+            SDL_CreateWindowFrom(hwnd);
+        }
+        case WM_CLOSE: {
             PostQuitMessage(0);
             break;
-
-        case WM_DESTROY:
+        }
+        case WM_DESTROY: {
             return 0;
-
+        }
         case WM_SIZE: {
             _windowQueueMsg.width = LOWORD(lParam);
             _windowQueueMsg.height = HIWORD(lParam);
             _windowQueueMsg.isResized = true;
             break;
         }
-
         case WM_KEYDOWN: {
             switch (wParam) {
                 case VK_ESCAPE:
@@ -123,11 +131,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     break;
             }
         } break;
-
-        default:
+        default: {
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
+        }  
     }
-
     return 0;
 }
 

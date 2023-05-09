@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
 
     bool bQuit = false;
     while (!bQuit) {
-        bQuit = _vulkanRenderer.renderScene();
+        bQuit = !_vulkanRenderer.renderScene();
     }
 
     return 0;

@@ -1,27 +1,27 @@
 #include "VulkanRenderer.h"
+#include "PipelineCreatorQuad.h"
+#include "PipelineCreatorSkyBox.h"
+#include "PipelineCreatorTextured.h"
+#include "ObjModel.h"
+#include "Skybox.h"
+
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <SDL.h>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE  /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "PipelineCreatorQuad.h"
-#include "PipelineCreatorSkyBox.h"
-#include "PipelineCreatorTextured.h"
-
-#include "ObjModel.h"
-#include "Skybox.h"
-
 static constexpr uint32_t _3D_MODELS_COUNT = 1U;
 
 VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
-      mTextureFactory(new TextureFactory(*this))  /// this is not used imedially it's safe
-{
+      mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
+      mCamera({65.0f, (float)width / height, 0.01f, 1000.0f}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
     // Define push constant values (no 'create' needed!)
     m_pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;  // Shader stage push constant will go to
@@ -138,20 +138,7 @@ void VulkanRenderer::recreateDescriptorSets() {
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     assert(_ubo.buffersMemory.size() > currentImage);
 
-    static auto startTime = std::chrono::high_resolution_clock::now();
-
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-    ViewProj viewProj{};
-    viewProj.view = glm::lookAt(glm::vec3(100.0f, 35.0f, 30.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    viewProj.proj = glm::perspective(glm::radians(65.0f), _width / (float)_height, 0.01f, 1000.0f);
-
-    /**
-     * GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted
-     * The easiest way to compensate for that is to flip the sign on the scaling factor of the Y axis in the projection matrix
-     */
-    viewProj.proj[1][1] *= -1;
+    const auto& viewProj = mCamera.viewProjMat();
 
     // Copy VP data
     void* data;
@@ -160,10 +147,13 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
     // Copy Model data
-    for (size_t i = 0; i < MAX_OBJECTS; i++) {
+    for (size_t i = 1u; i < MAX_OBJECTS; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
-        pModel->model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        pModel->model = glm::mat4(1.0f);
     }
+    // set target model matrix from Camera for our main 3d model
+    Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
+    pModel->model = mCamera.targetModelMat();
 
     // Map the list of model data
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * MAX_OBJECTS, 0, &data);
@@ -314,10 +304,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // Dynamic Offset Amount
-    size_t meshIndex = 0;
-    const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-
     /* TO FIX pass window size
     vkCmdPushConstants(
         _cmdBufs[currentImage],
@@ -329,8 +315,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     */
 
     ///  SkyBox and 3D Models
+    uint32_t meshIndex = 0u;
     for (const auto& model : m_models) {
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         model->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
+        ++meshIndex;
     }
 
     /// For Each mesh end
@@ -430,61 +419,99 @@ void VulkanRenderer::loadModels() {
 
 bool VulkanRenderer::renderScene() {
     bool ret_status = true;
+
     const auto& winController = _core.getWinController();
     assert(winController);
 
-    auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO    TO FIX
-    ret_status = windowQueueMSG.isQuited;
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float deltaTime = std::chrono::duration<float, std::chrono::milliseconds::period>(currentTime - startTime).count();
+
+    mCamera.update(deltaTime);
+
+    auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
+    ret_status = !windowQueueMSG.isQuited;
 
     if (windowQueueMSG.isResized) {
+        mCamera.resetPerspective({65.0f, (float)windowQueueMSG.width / windowQueueMSG.height, 0.01f, 1000.0f});
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
-    } else if (!windowQueueMSG.isQuited) {
-        // -- GET NEXT IMAGE --
-        // Wait for given fence to signal (open) from last draw before continuing
-        vkWaitForFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-        // Manually reset (close) fences
-        vkResetFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
-
-        uint32_t ImageIndex = 0;
-        VkResult res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX,
-                                             m_presentCompleteSem[m_currentFrame], VK_NULL_HANDLE, &ImageIndex);
-        CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
-
-        VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &_cmdBufs[ImageIndex];
-        submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame];
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitDstStageMask = &waitFlags;
-        submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
-        submitInfo.signalSemaphoreCount = 1;
-
-        recordCommandBuffers(ImageIndex);  /// added here since now comand buffer is reset after each vkBegin command
-        updateUniformBuffer(ImageIndex);
-
-        res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
-        CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
-
-        VkPresentInfoKHR presentInfo = {};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &_swapChain.handle;
-        presentInfo.pImageIndices = &ImageIndex;
-        presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
-        presentInfo.waitSemaphoreCount = 1;
-
-        res = vkQueuePresentKHR(_queue, &presentInfo);
-        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-            recreateSwapChain(_width, _height);
-        } else {
-            CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
-        }
-
-        // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
-        m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+        return ret_status;
     }
+
+    SDL_Event e;
+    if (SDL_PollEvent(&e) != 0) {
+        switch (e.type) {
+            case SDL_QUIT: {
+                SDL_Quit();
+                ret_status = false;
+                break;  
+            }
+            case SDL_KEYDOWN: {
+                if (e.key.keysym.sym == SDLK_w) {
+                    mCamera.move(Camera::EDirection::Forward);
+                } else if (e.key.keysym.sym == SDLK_a) {
+                    mCamera.move(Camera::EDirection::Left);
+                } else if (e.key.keysym.sym == SDLK_d) {
+                    mCamera.move(Camera::EDirection::Right);
+                } else if (e.key.keysym.sym == SDLK_s) {
+                    mCamera.move(Camera::EDirection::Back);
+                }
+                break; 
+            }
+            case SDL_MOUSEMOTION: {
+                std::cout << "Motion " << e.motion.xrel;
+                std::cout << "Motion " << e.motion.yrel;
+                break; 
+            }
+        };
+    }
+    // -- GET NEXT IMAGE --
+    // Wait for given fence to signal (open) from last draw before continuing
+    vkWaitForFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+    // Manually reset (close) fences
+    vkResetFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
+
+    uint32_t ImageIndex = 0;
+    VkResult res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
+                                         VK_NULL_HANDLE, &ImageIndex);
+    CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
+
+    VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &_cmdBufs[ImageIndex];
+    submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame];
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitDstStageMask = &waitFlags;
+    submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
+    submitInfo.signalSemaphoreCount = 1;
+
+    recordCommandBuffers(ImageIndex);  /// added here since now comand buffer is reset after each vkBegin command
+    updateUniformBuffer(ImageIndex);
+
+    res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
+    CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
+
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &_swapChain.handle;
+    presentInfo.pImageIndices = &ImageIndex;
+    presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
+    presentInfo.waitSemaphoreCount = 1;
+
+    res = vkQueuePresentKHR(_queue, &presentInfo);
+    if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreateSwapChain(_width, _height);
+    } else {
+        CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
+    }
+
+    // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
+    m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+
+    startTime = std::chrono::high_resolution_clock::now();
 
     return ret_status;
 }

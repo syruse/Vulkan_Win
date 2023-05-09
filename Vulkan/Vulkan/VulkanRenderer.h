@@ -6,13 +6,14 @@
 
 #include <array>
 
+#include "Camera.h"
 #include "I3DModel.h"
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
 class VulkanRenderer : public VulkanState {
 public:
-    static constexpr uint16_t MAX_OBJECTS = 1;
+    static constexpr uint16_t MAX_OBJECTS = 2;
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
     VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
@@ -21,6 +22,7 @@ public:
 
     void init();
 
+    /// @return: false if exitting is requested
     bool renderScene();
 
 private:
@@ -68,4 +70,6 @@ private:
 
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
+
+    Camera mCamera;
 };
