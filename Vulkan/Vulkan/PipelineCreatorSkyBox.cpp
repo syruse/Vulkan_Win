@@ -28,6 +28,7 @@ void PipelineCreatorSkyBox::createPipeline(VkRenderPass renderPass) {
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), renderPass, m_vkState._core.getDevice());
+                                                         *m_descriptorSetLayout.get(), renderPass, m_vkState._core.getDevice(),
+                                                         0u, m_pushConstantRange);
     assert(m_pipeline);
 }

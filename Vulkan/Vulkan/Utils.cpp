@@ -37,14 +37,14 @@ void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const
 
 void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps) {
     uint32_t NumExt = 0;
-    VkResult res = vkEnumerateInstanceExtensionProperties(NULL, &NumExt, NULL);
+    VkResult res = vkEnumerateInstanceExtensionProperties(nullptr, &NumExt, nullptr);
     CHECK_VULKAN_ERROR("vkEnumerateInstanceExtensionProperties error %d\n", res);
 
     printf("Found %d extensions\n", NumExt);
 
     ExtProps.resize(NumExt);
 
-    res = vkEnumerateInstanceExtensionProperties(NULL, &NumExt, &ExtProps[0]);
+    res = vkEnumerateInstanceExtensionProperties(nullptr, &NumExt, &ExtProps[0]);
     CHECK_VULKAN_ERROR("vkEnumerateInstanceExtensionProperties error %d\n", res);
 
     for (decltype(NumExt) i = 0; i < NumExt; ++i) {
@@ -85,7 +85,7 @@ void VulkanPrintImageUsageFlags(const VkImageUsageFlags& flags) {
 void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysicalDevices& PhysDevices) {
     uint32_t NumDevices = 0;
 
-    VkResult res = vkEnumeratePhysicalDevices(inst, &NumDevices, NULL);
+    VkResult res = vkEnumeratePhysicalDevices(inst, &NumDevices, nullptr);
     CHECK_VULKAN_ERROR("vkEnumeratePhysicalDevices error %d\n", res);
 
     printf("Num physical devices %d\n", NumDevices);
@@ -110,7 +110,7 @@ void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysi
         printf("    API version: %d.%d.%d\n", VK_VERSION_MAJOR(apiVer), VK_VERSION_MINOR(apiVer), VK_VERSION_PATCH(apiVer));
         uint32_t NumQFamily = 0;
 
-        vkGetPhysicalDeviceQueueFamilyProperties(PhysDev, &NumQFamily, NULL);
+        vkGetPhysicalDeviceQueueFamilyProperties(PhysDev, &NumQFamily, nullptr);
 
         printf("    Num of family queues: %d\n", NumQFamily);
 
@@ -125,7 +125,7 @@ void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysi
         }
 
         uint32_t NumFormats = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(PhysDev, Surface, &NumFormats, NULL);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(PhysDev, Surface, &NumFormats, nullptr);
         assert(NumFormats > 0);
 
         PhysDevices.m_surfaceFormats[i].resize(NumFormats);
@@ -145,7 +145,7 @@ void VulkanGetPhysicalDevices(VkInstance inst, VkSurfaceKHR Surface, VulkanPhysi
 
         uint32_t NumPresentModes = 0;
 
-        res = vkGetPhysicalDeviceSurfacePresentModesKHR(PhysDev, Surface, &NumPresentModes, NULL);
+        res = vkGetPhysicalDeviceSurfacePresentModesKHR(PhysDev, Surface, &NumPresentModes, nullptr);
         CHECK_VULKAN_ERROR("vkGetPhysicalDeviceSurfacePresentModesKHR error %d\n", res);
 
         assert(NumPresentModes != 0);
@@ -279,7 +279,7 @@ VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileNa
     shaderCreateInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
 
     VkShaderModule shaderModule;
-    VkResult res = vkCreateShaderModule(device, &shaderCreateInfo, NULL, &shaderModule);
+    VkResult res = vkCreateShaderModule(device, &shaderCreateInfo, nullptr, &shaderModule);
     CHECK_VULKAN_ERROR("vkCreateShaderModule error %d\n", res);
     Utils::printLog(INFO_PARAM, "Created shader ", shaderPath.c_str());
     return shaderModule;

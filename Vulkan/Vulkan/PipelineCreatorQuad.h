@@ -7,8 +7,11 @@ public:
     using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
 
     PipelineCreatorQuad(const VulkanState& vkState, std::string_view vertShader, std::string_view fragShader,
-                        bool isDepthNeeded = false, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorBase(vkState, vertShader, fragShader, subpass, pushConstantRange), m_isDepthNeeded(isDepthNeeded) {
+                        bool isDepthNeeded = false, bool isGPassNeeded = false, uint32_t subpass = 0u,
+                        VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+        : PipelineCreatorBase(vkState, vertShader, fragShader, subpass, pushConstantRange),
+          m_isDepthNeeded(isDepthNeeded),
+          m_isGPassNeeded(isGPassNeeded) {
     }
 
     void createDescriptorPool() override;
@@ -27,5 +30,6 @@ private:
 
 private:
     bool m_isDepthNeeded{false};
+    bool m_isGPassNeeded{false};
     descriptorSets m_descriptorSets{};
 };

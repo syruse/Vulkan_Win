@@ -21,7 +21,7 @@ VulkanCore::~VulkanCore() {
     auto func =
         reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_inst, "vkDestroyDebugUtilsMessengerEXT"));
     if (func != nullptr) {
-        func(m_inst, NULL, NULL);
+        func(m_inst, nullptr, nullptr);
     }
 #endif
 
@@ -70,6 +70,7 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const {
 const VkSurfaceCapabilitiesKHR& VulkanCore::getSurfaceCaps() const {
     assert(m_gfxDevIndex >= 0);
 
+    // TODO refresh it only when needed
     /// Note: must be refreshed for example when resizing
     ///       otherwise programm will use cached previous surface size causing the crash
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
@@ -117,7 +118,7 @@ void VulkanCore::createInstance() {
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = appName.c_str();
     appInfo.engineVersion = 1;
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.apiVersion = VK_API_VERSION_1_3;
 
     const char* pInstExt[] = {
 #ifdef _DEBUG
@@ -126,7 +127,7 @@ void VulkanCore::createInstance() {
         VK_KHR_SURFACE_EXTENSION_NAME, m_winController->getVulkanWindowSurfaceExtension().data()};
 
 #ifdef _DEBUG
-    const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
+    const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation", "VK_LAYER_RENDERDOC_Capture"};
 #endif
 
     VkInstanceCreateInfo instInfo = {};
@@ -139,7 +140,7 @@ void VulkanCore::createInstance() {
     instInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pInstExt);
     instInfo.ppEnabledExtensionNames = pInstExt;
 
-    VkResult res = vkCreateInstance(&instInfo, NULL, &m_inst);
+    VkResult res = vkCreateInstance(&instInfo, nullptr, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
 
 #ifdef _DEBUG
@@ -150,14 +151,14 @@ void VulkanCore::createInstance() {
     // Register the debug callback
     VkDebugReportCallbackCreateInfoEXT callbackCreateInfo;
     callbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
-    callbackCreateInfo.pNext = NULL;
+    callbackCreateInfo.pNext = nullptr;
     callbackCreateInfo.flags =
         VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
     callbackCreateInfo.pfnCallback = &MyDebugReportCallback;
-    callbackCreateInfo.pUserData = NULL;
+    callbackCreateInfo.pUserData = nullptr;
 
     VkDebugReportCallbackEXT callback;
-    res = my_vkCreateDebugReportCallbackEXT(m_inst, &callbackCreateInfo, NULL, &callback);
+    res = my_vkCreateDebugReportCallbackEXT(m_inst, &callbackCreateInfo, nullptr, &callback);
     CHECK_VULKAN_ERROR("my_vkCreateDebugReportCallbackEXT error %d\n", res);
 #endif
 }
@@ -184,7 +185,7 @@ void VulkanCore::createLogicalDevice() {
     devInfo.pQueueCreateInfos = &qInfo;
     devInfo.pEnabledFeatures = &deviceFeatures;
 
-    VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, NULL, &m_device);
+    VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, nullptr, &m_device);
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 

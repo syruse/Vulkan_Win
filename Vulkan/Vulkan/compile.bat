@@ -1,12 +1,12 @@
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe vulkan.vert -o shaders/vert.spv
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe vulkan.frag -o shaders/frag.spv
+%VULKAN_SDK%/Bin/glslc.exe gPass.vert -o shaders/vert_gPass.spv
+%VULKAN_SDK%/Bin/glslc.exe gPass.frag -o shaders/frag_gPass.spv
 
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe secondPass.vert -o shaders/vert_secondPass.spv
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe secondPass.frag -o shaders/frag_secondPass.spv
+%VULKAN_SDK%/Bin/glslc.exe gLigtingSubpass.vert -o shaders/vert_gLigtingSubpass.spv
+%VULKAN_SDK%/Bin/glslc.exe gLigtingSubpass.frag -o shaders/frag_gLigtingSubpass.spv
 
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe skybox.vert -o shaders/vert_skybox.spv
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe skybox.frag -o shaders/frag_skybox.spv
+%VULKAN_SDK%/Bin/glslc.exe skybox.vert -o shaders/vert_skybox.spv
+%VULKAN_SDK%/Bin/glslc.exe skybox.frag -o shaders/frag_skybox.spv
 
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe fxaa.vert -o shaders/vert_fxaa.spv
-C:/VulkanSDK/VulkanLocalVer/Bin32/glslc.exe fxaa.frag -o shaders/frag_fxaa.spv
+%VULKAN_SDK%/Bin/glslc.exe fxaa.vert -o shaders/vert_fxaa.spv
+%VULKAN_SDK%/Bin/glslc.exe fxaa.frag -o shaders/frag_fxaa.spv
 pause

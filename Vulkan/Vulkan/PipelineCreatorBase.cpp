@@ -56,7 +56,6 @@ void PipelineCreatorBase::createDescriptorSetLayout() {
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());
-    ;
     layoutCreateInfo.pBindings = layoutBindings.data();
 
     m_descriptorSetLayout = std::make_unique<VkDescriptorSetLayout>();

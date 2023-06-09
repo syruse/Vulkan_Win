@@ -1,8 +1,12 @@
 #version 450
 
 precision highp float;
-// TO FIX getting rid of hardcoded values
-#define windowSize vec2(512)
+
+layout(push_constant) uniform PushConstant {
+    vec2 windowSize;
+    vec3 lightPos;
+    vec3 cameraPos;
+} pushConstant;
 
 layout(binding = 0) uniform sampler2D inputColor;
 
@@ -233,5 +237,5 @@ vec3 FxaaPixelShader(vec2 pos, sampler2D tex, vec2 rcpFrame)
 
 void main()
 {
-   color = vec4(FxaaPixelShader(fragTexCoord, inputColor, vec2(1.0 / windowSize.x, 1.0 / windowSize.y)), 1.0);
+   color = vec4(FxaaPixelShader(fragTexCoord, inputColor, vec2(1.0 / pushConstant.windowSize.x, 1.0 / pushConstant.windowSize.y)), 1.0);
 } 

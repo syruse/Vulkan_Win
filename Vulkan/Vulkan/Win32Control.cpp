@@ -5,7 +5,6 @@
 
 #include <cassert>
 #include <SDL.h>
-#include <vulkan/vk_sdk_platform.h>
 #include <vulkan/vulkan_win32.h>
 
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
@@ -133,7 +132,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         } break;
         default: {
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
-        }  
+        }
     }
     return 0;
 }

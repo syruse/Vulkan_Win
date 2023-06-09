@@ -126,13 +126,24 @@ Pipeliner::Pipeliner() {
     _pipelineMSCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     _pipelineMSCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    static VkPipelineColorBlendAttachmentState blendAttachState = {};
-    blendAttachState.colorWriteMask = 0xf;
+    // Default alpha blending
+    VkPipelineColorBlendAttachmentState blendAttachState = {};
+    blendAttachState.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachState.blendEnable = VK_TRUE;
+    blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachState.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    static std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(MAX_COLOR_ATTACHMENTS, blendAttachState);
 
     _blendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     _blendCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-    _blendCreateInfo.attachmentCount = 1;
-    _blendCreateInfo.pAttachments = &blendAttachState;
+    _blendCreateInfo.attachmentCount = blendAttachments.size();
+    _blendCreateInfo.pAttachments = blendAttachments.data();
 
     _depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     _depthStencil.depthTestEnable = VK_TRUE;
@@ -145,7 +156,7 @@ Pipeliner::Pipeliner() {
     _depthStencil.front = {};  // Optional
     _depthStencil.back = {};   // Optional
 
-    // set default configuration
+    /// set default configuration
     m_vertexInputInfo = _vertexInputInfo;
     m_pipelineIACreateInfo = _pipelineIACreateInfo;
     m_rastCreateInfo = _rastCreateInfo;
@@ -192,7 +203,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
         layoutInfo.pPushConstantRanges = nullptr;
     }
 
-    VkResult res = vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipeline->pipelineLayout);
+    VkResult res = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipeline->pipelineLayout);
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout error %d\n", res);
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -211,7 +222,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     pipelineInfo.pDepthStencilState = &m_depthStencil;
     pipelineInfo.subpass = subpass;
 
-    res = vkCreateGraphicsPipelines(device, m_pipeline_cache, 1, &pipelineInfo, NULL, &pipeline->pipeline);
+    res = vkCreateGraphicsPipelines(device, m_pipeline_cache, 1, &pipelineInfo, nullptr, &pipeline->pipeline);
     CHECK_VULKAN_ERROR("vkCreateGraphicsPipelines error %d\n", res);
 
     /// restore default configuration

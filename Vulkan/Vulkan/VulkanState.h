@@ -10,21 +10,24 @@
 struct VulkanState {
     /** Using double buffering and vsync locks rendering to an integer fraction of the vsync rate.
         anyway the driver may execute some final operations before completly releasing subsequant buffer
-        to avoid wasting time we can use really idle buffer by triple buffering usung
+        to avoid wasting time we can use really idle buffer by triple buffering involvement
     */
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;  /// triple buffering to maximize performance
 
     struct Model {
         alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 MVP;
     };
 
     struct ViewProj {
-        alignas(16) glm::mat4 view;
-        alignas(16) glm::mat4 proj;
+        alignas(16) glm::mat4 viewProj;
+        alignas(16) glm::mat4 viewProjInverse;
     };
 
     struct PushConstant {
-        alignas(16) glm::mat4 model;
+        alignas(16) glm::vec2 windowSize;  // alighned as vec4 or 16bytes
+        alignas(16) glm::vec3 lightPos;
+        alignas(16) glm::vec3 cameraPos;
     };
 
     struct DepthBuffer {
@@ -39,6 +42,12 @@ struct VulkanState {
         std::array<VkImage, MAX_FRAMES_IN_FLIGHT> colorBufferImage{nullptr};
         std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> colorBufferImageMemory{nullptr};
         std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> colorBufferImageView{nullptr};
+    };
+
+    struct GPassBuffer {
+        uint8_t size{2u};
+        ColorBuffer normal{};
+        ColorBuffer color{};
     };
 
     struct SwapChain {
@@ -71,5 +80,6 @@ struct VulkanState {
     uint32_t _modelUniformAlignment{0u};
     DepthBuffer _depthBuffer{};
     ColorBuffer _colorBuffer{};
+    GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};
 };

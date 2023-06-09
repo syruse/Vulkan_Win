@@ -16,6 +16,8 @@ public:
 
     using pipeline_ptr = std::unique_ptr<Pipeliner::PipeLine, std::function<void(Pipeliner::PipeLine* p)>>;
 
+    static constexpr uint8_t MAX_COLOR_ATTACHMENTS = 3u;  // TO DO make it flexible
+
 private:
     Pipeliner();
 
