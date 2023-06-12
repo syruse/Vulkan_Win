@@ -66,7 +66,7 @@ struct VulkanState {
         std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> buffersMemory{};
     };
 
-    VulkanState(std::wstring_view appName, uint16_t width, uint16_t height);
+    VulkanState(std::string_view appName, uint16_t width, uint16_t height);
 
     uint16_t _width{0u};
     uint16_t _height{0u};

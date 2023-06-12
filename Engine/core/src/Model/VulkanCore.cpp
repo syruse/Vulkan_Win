@@ -111,12 +111,10 @@ void VulkanCore::selectPhysicalDevice() {
 
 void VulkanCore::createInstance() {
     assert(m_winController);
-    const std::wstring appNameW(m_winController->getAppName().data());
-    const std::string appName(appNameW.begin(), appNameW.end());
 
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = appName.c_str();
+    appInfo.pApplicationName = m_winController->getAppName().data();
     appInfo.engineVersion = 1;
     appInfo.apiVersion = VK_API_VERSION_1_3;
 

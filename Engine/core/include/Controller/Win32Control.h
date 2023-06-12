@@ -9,7 +9,7 @@
 
 class Win32Control : public IControl {
 public:
-    constexpr Win32Control(std::wstring_view appName, size_t width, size_t height)
+    constexpr Win32Control(std::string_view appName, size_t width, size_t height)
         : IControl(appName, width, height), m_hinstance(nullptr), m_hwnd(0) {
     }
 

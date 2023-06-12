@@ -13,7 +13,7 @@
 /// other OS
 #endif 
 
-VulkanState::VulkanState(std::wstring_view appName, uint16_t width, uint16_t height) :
+VulkanState::VulkanState(std::string_view appName, uint16_t width, uint16_t height) :
 	_width(width),
 	_height(height),
 #ifdef _WIN32

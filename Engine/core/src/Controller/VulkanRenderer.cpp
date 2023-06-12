@@ -18,7 +18,7 @@
 
 static constexpr uint32_t _3D_MODELS_COUNT = 1U;
 
-VulkanRenderer::VulkanRenderer(std::wstring_view appName, size_t width, size_t height)
+VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
       mCamera({65.0f, (float)width / height, 0.01f, 1000.0f}, {0.0f, 55.0f, -130.0f}) {

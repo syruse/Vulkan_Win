@@ -9,7 +9,7 @@
 
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
-static constexpr const wchar_t* WIN_CLASS_NAME = L"Win32Control";
+static constexpr const char* WIN_CLASS_NAME = "Win32Control";
 static IControl::WindowQueueMSG _windowQueueMsg{};
 
 Win32Control::~Win32Control() {

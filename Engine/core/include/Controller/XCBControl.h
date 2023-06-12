@@ -11,7 +11,7 @@ public:
     static constexpr uint32_t MASK = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_KEY_PRESS |
                                      XCB_EVENT_MASK_RESIZE_REDIRECT | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 
-    constexpr XCBControl(std::wstring_view appName, size_t width, size_t height)
+    constexpr XCBControl(std::string_view appName, size_t width, size_t height)
         : IControl(appName, width, height), m_pXCBConn(nullptr), m_pXCBScreen(nullptr) {
     }
 

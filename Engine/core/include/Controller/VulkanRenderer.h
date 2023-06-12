@@ -16,7 +16,7 @@ public:
     static constexpr uint16_t MAX_OBJECTS = 2;
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
-    VulkanRenderer(std::wstring_view appName, size_t width, size_t height);
+    VulkanRenderer(std::string_view appName, size_t width, size_t height);
 
     ~VulkanRenderer();
 

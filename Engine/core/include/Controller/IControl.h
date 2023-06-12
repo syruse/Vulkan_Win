@@ -19,7 +19,7 @@ public:
         }
     };
 
-    constexpr IControl(std::wstring_view appName, size_t width, size_t height)
+    constexpr IControl(std::string_view appName, size_t width, size_t height)
         : m_appName(appName), m_width(width), m_height(height) {
     }
 
@@ -29,7 +29,7 @@ public:
 
     virtual VkSurfaceKHR createSurface(VkInstance& inst) const = 0;
 
-    inline std::wstring_view getAppName() const {
+    inline std::string_view getAppName() const {
         return m_appName;
     }
 
@@ -40,7 +40,7 @@ public:
     virtual WindowQueueMSG processWindowQueueMSGs() = 0;
 
 protected:
-    std::wstring_view m_appName;
+    std::string_view m_appName;
     size_t m_width;
     size_t m_height;
 };
