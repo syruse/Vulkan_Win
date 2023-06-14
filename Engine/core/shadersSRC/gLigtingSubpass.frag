@@ -30,60 +30,60 @@ const float shiness = 8.5;
 void main()
 {
 #ifdef DEBUG
-	const float widthHalf = pushConstant.windowSize.x / 2.0;
-	if(gl_FragCoord.x > widthHalf)
-	{
-		float depth = subpassLoad(inputDepth).r;
-		float nearPlane = 1.0;
+    const float widthHalf = pushConstant.windowSize.x / 2.0;
+    if(gl_FragCoord.x > widthHalf)
+    {
+        float depth = subpassLoad(inputDepth).r;
+        float nearPlane = 1.0;
         float farPlane = 1000.0;
         float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
-		out_color = vec4(vec3(linearDepth), 1.0f);
-	}
-	else
-	{
-		out_color = subpassLoad(inputGPassColor).rgba;
-	}
+        out_color = vec4(vec3(linearDepth), 1.0f);
+    }
+    else
+    {
+        out_color = subpassLoad(inputGPassColor).rgba;
+    }
 #else
     // Load G-Buffer diffuse color from tile buffer.
     vec4 albedo = subpassLoad(inputGPassColor);
-	
+    
     // Load depth from tile buffer and reconstruct world position.
-	
-	/** not optimized clip space forming
-	    vec2 xyNormalized = vec2(gl_FragCoord.x / pushConstant.windowSize.x, gl_FragCoord.y / pushConstant.windowSize.y); // getting xy in range [0;1]
+    
+    /** not optimized clip space forming
+        vec2 xyNormalized = vec2(gl_FragCoord.x / pushConstant.windowSize.x, gl_FragCoord.y / pushConstant.windowSize.y); // getting xy in range [0;1]
         vec4 clip = vec4(xyNormalized * 2.0 - vec2(1.0), subpassLoad(inputDepth).x, 1.0); // xy : [0;1] -> [-1;1]
-	*/
-	
-	vec4 clip = vec4(in_uv * 2.0 - 1.0, subpassLoad(inputDepth).x, 1.0);
+    */
+    
+    vec4 clip = vec4(in_uv * 2.0 - 1.0, subpassLoad(inputDepth).x, 1.0);
     vec4 world_w = uboViewProjection.viewProjInverse * clip;
     vec3 world = world_w.xyz / world_w.w;
     // Load normal from tile buffer.
-	vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
+    vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
     vec3 normal = 2.0 * normalRange_0_1 - 1.0;
-	
-	// Blinn-Phong lighting model calculation
-	vec3 lightDir   = normalize(pushConstant.lightPos - world);
+    
+    // Blinn-Phong lighting model calculation
+    vec3 lightDir   = normalize(pushConstant.lightPos - world);
     vec3 viewDir    = normalize(pushConstant.cameraPos - world);
-	
-	vec3 specInputDir = vec3(0.0);
-	
+    
+    vec3 specInputDir = vec3(0.0);
+    
     if (is_blinnPhong) {
-		vec3 reflectDir = reflect(-lightDir, normal);
-		specInputDir = reflectDir;
-	}
-	else
-	{
-		vec3 halfwayDir = normalize(lightDir + viewDir);
-		specInputDir = halfwayDir;
-	}
+        vec3 reflectDir = reflect(-lightDir, normal);
+        specInputDir = reflectDir;
+    }
+    else
+    {
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        specInputDir = halfwayDir;
+    }
   
     float spec = pow(max(dot(normal, specInputDir), 0.0), shiness);
-	
-	vec3 ambient_color = albedo.rgb * vec3(0.29, 0.60, 0.11);
-	vec3 spec_color = clamp(ambient_color + (subpassLoad(inputGPassColor).rgb * spec), vec3(0.0), vec3(1.0));
-	
-	// length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
-	// preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-	out_color = mix(vec4(0.0), vec4(spec_color, albedo.a), length(normalRange_0_1));
+    
+    vec3 ambient_color = albedo.rgb * vec3(0.29, 0.60, 0.11);
+    vec3 spec_color = clamp(ambient_color + (subpassLoad(inputGPassColor).rgb * spec), vec3(0.0), vec3(1.0));
+    
+    // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
+    // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
+    out_color = mix(vec4(0.0), vec4(spec_color, albedo.a), length(normalRange_0_1));
 #endif
 }
