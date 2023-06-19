@@ -127,7 +127,7 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
         if (subObjects.size()) {
             vkCmdBindDescriptorSets(
                 cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
-                m_pipelineCreatorTextured->getDescriptorSet(subObjects[0].realMaterialId, descriptorSetIndex), 1, &dynamicOffset);
+                m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subObjects[0].realMaterialId), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
                 vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);

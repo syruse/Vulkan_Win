@@ -17,26 +17,29 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 static constexpr uint32_t _3D_MODELS_COUNT = 1U;
+static constexpr float Z_NEAR = 0.01f;
+static constexpr float Z_FAR = 1000.0f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
-      mCamera({65.0f, (float)width / height, 0.01f, 1000.0f}, {0.0f, 55.0f, -130.0f}) {
+      mCamera({65.0f, (float)width / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
 
-    _pushConstant.windowSize = glm::vec2(_width, _height);
+    _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
     _pushConstant.lightPos = glm::vec3(0.0f, 1000.0f, 0.0f);
 
-    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
 
-    m_pipelineCreators.reserve(4);
+    m_pipelineCreators.reserve(5);
     m_pipelineCreators.emplace_back(new PipelineCreatorTextured(*this, _3D_MODELS_COUNT, "vert_gPass.spv", "frag_gPass.spv"));
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get()), 10U));
 
-    m_pipelineCreators.emplace_back(new PipelineCreatorSkyBox(*this, "vert_skybox.spv", "frag_skybox.spv"));
+    m_pipelineCreators.emplace_back(
+        new PipelineCreatorSkyBox(*this, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
     const std::array<std::string_view, 6> skyBoxTextures{"dark_ft.png", "dark_bk.png", "dark_dn.png",
                                                          "dark_up.png", "dark_lt.png", "dark_rt.png"};
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
@@ -46,6 +49,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                             true, 1u, m_pushConstantRange));
     m_pipelineCreators.emplace_back(
         new PipelineCreatorQuad(*this, "vert_fxaa.spv", "frag_fxaa.spv", false, false, 0u, m_pushConstantRange));
+    // TODO shadow map
+    // m_pipelineCreators.emplace_back(new PipelineCreatorTextured(*this, _3D_MODELS_COUNT, "vert_gPass.spv", "frag_gPass.spv"));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -114,7 +119,7 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
-        pipelineCreator->destructDescriptorPool();
+        pipelineCreator->destroyDescriptorPool();
     }
 }
 
@@ -127,7 +132,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _height = height;
         m_currentFrame = 0u;
 
-        _pushConstant.windowSize = glm::vec2(_width, _height);
+        _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
 
         createSwapChain();
         createCommandBuffer();
@@ -142,11 +147,9 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
 }
 
 void VulkanRenderer::recreateDescriptorSets() {
-    assert(m_pipelineCreators.size() >= 4u);
-    static_cast<PipelineCreatorTextured*>(m_pipelineCreators[0].get())->recreateDescriptors();
-    static_cast<PipelineCreatorTextured*>(m_pipelineCreators[1].get())->recreateDescriptors();
-    static_cast<PipelineCreatorQuad*>(m_pipelineCreators[2].get())->createDescriptor();
-    static_cast<PipelineCreatorQuad*>(m_pipelineCreators[3].get())->createDescriptor();
+    for (auto& pipelineCreator : m_pipelineCreators) {
+        pipelineCreator->recreateDescriptors();
+    }
 }
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
@@ -175,6 +178,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
     pModel->model = model;
     pModel->MVP = viewProj.viewProj * pModel->model;
+
+    // move skybox to get unreachable
+    // pModel = (Model*)((uint64_t)mp_modelTransferSpace + _modelUniformAlignment);
+    // pModel->model = glm::translate(glm::mat4(1.0f), mCamera.targetPos());
+    // pModel->MVP = viewProj.viewProj * pModel->model;
 
     // Map the list of model data
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * MAX_OBJECTS, 0, &data);
@@ -339,14 +347,17 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdNextSubpass(_cmdBufs[currentImage], VK_SUBPASS_CONTENTS_INLINE);
 
     /// quad subpass
-    auto pipelineCreator = static_cast<PipelineCreatorQuad*>(m_pipelineCreators[2].get());
-    vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(PushConstant), &_pushConstant);
+    {
+        const auto& pipelineCreator = m_pipelineCreators[2];  // TODO get rid of direct indexing
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstant), &_pushConstant);
 
-    vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
-    vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineCreator->getPipeline()->pipelineLayout, 0, 1, pipelineCreator->getDescriptorSet(currentImage),
-                            0, nullptr);
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+    }
+
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -377,13 +388,16 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     /// fxaa quad subpass
-    pipelineCreator = static_cast<PipelineCreatorQuad*>(m_pipelineCreators[3].get());
-    vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(PushConstant), &_pushConstant);
-    vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
-    vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineCreator->getPipeline()->pipelineLayout, 0, 1, pipelineCreator->getDescriptorSet(currentImage),
-                            0, nullptr);
+    {
+        const auto& pipelineCreator = m_pipelineCreators[3];  // TODO get rid of direct indexing
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstant), &_pushConstant);
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+    }
+
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -454,7 +468,6 @@ void VulkanRenderer::createColorBufferImage() {
 }
 
 void VulkanRenderer::loadModels() {
-    assert(m_pipelineCreators.size() >= 4u);
     /// lazy init when core is ready
     mTextureFactory->init();
 
@@ -462,9 +475,10 @@ void VulkanRenderer::loadModels() {
         model->init();
     }
 
-    // for subpass and fxaa pass
-    static_cast<PipelineCreatorQuad*>(m_pipelineCreators[2].get())->createDescriptor();
-    static_cast<PipelineCreatorQuad*>(m_pipelineCreators[3].get())->createDescriptor();
+    // for first pair the calling can be skipped since it's already called in model->init()
+    for (auto& pipelineCreator : m_pipelineCreators) {
+        pipelineCreator->recreateDescriptors();
+    }
 }
 
 bool VulkanRenderer::renderScene() {
@@ -840,7 +854,6 @@ void VulkanRenderer::createSemaphores() {
 }
 
 void VulkanRenderer::createPipeline() {
-    assert(m_pipelineCreators.size() >= 4u);
     m_pipelineCreators[0].get()->recreate(m_renderPass);
     m_pipelineCreators[1].get()->recreate(m_renderPass);
     m_pipelineCreators[2].get()->recreate(m_renderPass);

@@ -15,18 +15,16 @@ public:
     }
 
     void createDescriptorPool() override;
+    void recreateDescriptors() override;
 
-    void createDescriptor();
-
-    const VkDescriptorSet* getDescriptorSet(size_t index) {
-        assert(index < m_descriptorSets.size());
-        return &m_descriptorSets[index];
+    const VkDescriptorSet* getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId = 0u) const override {
+        assert(descriptorSetsIndex < m_descriptorSets.size());
+        return &m_descriptorSets[descriptorSetsIndex];
     }
 
 private:
-    virtual void createPipeline(VkRenderPass renderPass) override;
-
-    virtual void createDescriptorSetLayout() override;
+    void createPipeline(VkRenderPass renderPass) override;
+    void createDescriptorSetLayout() override;
 
 private:
     bool m_isDepthNeeded{false};

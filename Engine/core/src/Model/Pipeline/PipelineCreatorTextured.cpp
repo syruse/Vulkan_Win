@@ -13,17 +13,44 @@ void PipelineCreatorTextured::createPipeline(VkRenderPass renderPass) {
     assert(m_pipeline);
 }
 
-void PipelineCreatorTextured::createDescriptorPool() {
-    // Type of descriptors + how many DESCRIPTORS, not Descriptor Sets (combined makes the pool size)
-    // ViewProjection Pool
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+void PipelineCreatorTextured::createDescriptorSetLayout() {
+    // dynamic UBO Binding Info
+    VkDescriptorSetLayoutBinding dynamicUBOLayoutBinding = {};
+    dynamicUBOLayoutBinding.binding = 0;
+    dynamicUBOLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    dynamicUBOLayoutBinding.descriptorCount = 1;
+    dynamicUBOLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    dynamicUBOLayoutBinding.pImmutableSamplers = nullptr;
 
-    // Model Pool (DYNAMIC)
-    VkDescriptorPoolSize modelPoolSize = {};
-    modelPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    modelPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    // Texture
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = {dynamicUBOLayoutBinding, samplerLayoutBinding};
+    // Create Descriptor Set Layout with given bindings
+    VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
+    layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCreateInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());
+    layoutCreateInfo.pBindings = layoutBindings.data();
+
+    m_descriptorSetLayout = std::make_unique<VkDescriptorSetLayout>();
+    if (vkCreateDescriptorSetLayout(m_vkState._core.getDevice(), &layoutCreateInfo, nullptr, m_descriptorSetLayout.get()) !=
+        VK_SUCCESS) {
+        Utils::printLog(ERROR_PARAM, "failed to create descriptor set layout!");
+    }
+}
+
+void PipelineCreatorTextured::createDescriptorPool() {
+    // Type of descriptors + how many Descriptors needed to be allocated in pool
+
+    // Dynamic UBO Pool
+    VkDescriptorPoolSize dynamicUBOPoolSize = {};
+    dynamicUBOPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    dynamicUBOPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
 
     // Texture
     VkDescriptorPoolSize texturePoolSize = {};
@@ -31,13 +58,13 @@ void PipelineCreatorTextured::createDescriptorPool() {
     texturePoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
 
     // List of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptorPoolSizes{poolSize, modelPoolSize, texturePoolSize};
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes{dynamicUBOPoolSize, texturePoolSize};
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(descriptorPoolSizes.size());
     poolInfo.pPoolSizes = descriptorPoolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(VulkanState::MAX_FRAMES_IN_FLIGHT * maxObjectsCount *
+    poolInfo.maxSets = static_cast<uint32_t>(VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
                                              10);  // Maximum number of Descriptor Sets that can be created from pool
 
     if (vkCreateDescriptorPool(m_vkState._core.getDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
@@ -76,39 +103,20 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
     // connect the descriptors with buffer when binding
 
     for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
-        // VIEW PROJECTION DESCRIPTOR
-        // Buffer info and data offset info
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_vkState._ubo.buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(VulkanState::ViewProj);
+        // Dynamic UBO DESCRIPTOR
+        VkDescriptorBufferInfo DUBOInfo = {};
+        DUBOInfo.buffer = m_vkState._dynamicUbo.buffers[i];
+        DUBOInfo.offset = 0;
+        DUBOInfo.range = m_vkState._modelUniformAlignment;
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = material.descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
-        descriptorWrite.pImageInfo = nullptr;        // Optional
-        descriptorWrite.pTexelBufferView = nullptr;  // Optional
-
-        // MODEL DESCRIPTOR
-        // Model Buffer Binding Info
-        VkDescriptorBufferInfo modelBufferInfo = {};
-        modelBufferInfo.buffer = m_vkState._dynamicUbo.buffers[i];
-        modelBufferInfo.offset = 0;
-        modelBufferInfo.range = m_vkState._modelUniformAlignment;
-
-        VkWriteDescriptorSet modelSetWrite = {};
-        modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        modelSetWrite.dstSet = material.descriptorSets[i];
-        modelSetWrite.dstBinding = 1;
-        modelSetWrite.dstArrayElement = 0;
-        modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        modelSetWrite.descriptorCount = 1;
-        modelSetWrite.pBufferInfo = &modelBufferInfo;
+        VkWriteDescriptorSet dynamicUBOSetWrite = {};
+        dynamicUBOSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        dynamicUBOSetWrite.dstSet = material.descriptorSets[i];
+        dynamicUBOSetWrite.dstBinding = 0;
+        dynamicUBOSetWrite.dstArrayElement = 0;
+        dynamicUBOSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        dynamicUBOSetWrite.descriptorCount = 1;
+        dynamicUBOSetWrite.pBufferInfo = &DUBOInfo;
 
         // Texture
         VkDescriptorImageInfo imageInfo{};
@@ -119,14 +127,14 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         VkWriteDescriptorSet textureSetWrite = {};
         textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         textureSetWrite.dstSet = material.descriptorSets[i];
-        textureSetWrite.dstBinding = 2;
+        textureSetWrite.dstBinding = 1;
         textureSetWrite.dstArrayElement = 0;
         textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         textureSetWrite.descriptorCount = 1;
         textureSetWrite.pImageInfo = &imageInfo;
 
         // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites = {descriptorWrite, modelSetWrite, textureSetWrite};
+        std::vector<VkWriteDescriptorSet> setWrites = {dynamicUBOSetWrite, textureSetWrite};
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,
@@ -136,7 +144,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
     return descriptorSetData.m_materialId;
 }
 
-const VkDescriptorSet* PipelineCreatorTextured::getDescriptorSet(uint32_t materialId, uint32_t descriptorSetsIndex) const {
+const VkDescriptorSet* PipelineCreatorTextured::getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId) const {
     auto& descriptorSetData = DescriptorSetData::instance(m_vkState);
     return &descriptorSetData.m_descriptorSets[materialId].descriptorSets[descriptorSetsIndex];
 }

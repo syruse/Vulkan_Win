@@ -68,6 +68,9 @@ private:
     VkRenderPass m_renderPassFXAA{nullptr};
     std::vector<VkFramebuffer> m_fbsFXAA{nullptr};
 
+    VkRenderPass m_renderPassShadowMap{nullptr};
+    std::vector<VkFramebuffer> m_fbsShadowMap{nullptr};
+
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 

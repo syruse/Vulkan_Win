@@ -10,5 +10,5 @@ public:
     }
 
 private:
-    virtual void createPipeline(VkRenderPass renderPass) override;
+    void createPipeline(VkRenderPass renderPass) override;
 };

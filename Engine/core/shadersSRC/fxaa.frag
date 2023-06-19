@@ -3,7 +3,7 @@
 precision highp float;
 
 layout(push_constant) uniform PushConstant {
-    vec2 windowSize;
+    vec4 windowSize;
     vec3 lightPos;
     vec3 cameraPos;
 } pushConstant;

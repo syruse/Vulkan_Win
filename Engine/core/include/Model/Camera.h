@@ -33,6 +33,10 @@ public:
         return glm::translate(glm::mat4(1.0f), mTarget) * glm::mat4_cast(mEndCameraRotation);
     }
 
+    const glm::vec3& targetPos() {
+        return mTarget;
+    }
+
     glm::vec3 cameraPosition() {
         return mTarget + mFromTargetToEye;
     }

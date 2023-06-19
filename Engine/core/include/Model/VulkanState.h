@@ -25,7 +25,7 @@ struct VulkanState {
     };
 
     struct PushConstant {
-        alignas(16) glm::vec2 windowSize;  // alighned as vec4 or 16bytes
+        alignas(16) glm::vec4 windowSize;  // alighned as vec4 or 16bytes
         alignas(16) glm::vec3 lightPos;
         alignas(16) glm::vec3 cameraPos;
     };

@@ -105,7 +105,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
     }
 }
 
-void PipelineCreatorQuad::createDescriptor() {
+void PipelineCreatorQuad::recreateDescriptors() {
     // Fill array of layouts ready for set creation
     auto descriptorSetLayout = *m_descriptorSetLayout.get();
     std::array<VkDescriptorSetLayout, VulkanState::MAX_FRAMES_IN_FLIGHT> layouts{descriptorSetLayout, descriptorSetLayout,

@@ -62,6 +62,6 @@ void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t 
 
 	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
 							m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
-							m_pipelineCreatorTextured->getDescriptorSet(m_realMaterialId, descriptorSetIndex), 1, &dynamicOffset);
+                            m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, m_realMaterialId), 1, &dynamicOffset);
 	vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(_indices.size()), 1U, 0U, 0, 0U);
 }

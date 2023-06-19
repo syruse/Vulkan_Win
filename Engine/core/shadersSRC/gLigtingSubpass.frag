@@ -12,7 +12,7 @@ layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
 } uboViewProjection;
 
 layout(push_constant) uniform PushConstant {
-    vec2 windowSize;
+    vec4 windowSize;
     vec3 lightPos;
     vec3 cameraPos;
 } pushConstant;
@@ -35,7 +35,7 @@ void main()
     {
         float depth = subpassLoad(inputDepth).r;
         float nearPlane = 1.0;
-        float farPlane = 1000.0;
+        float farPlane = pushConstant.windowSize.z;
         float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
         out_color = vec4(vec3(linearDepth), 1.0f);
     }

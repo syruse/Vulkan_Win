@@ -23,18 +23,18 @@ public:
           m_pipeline() {
     }
 
-    void recreate(VkRenderPass renderPass);
-
-    void destructDescriptorPool();
-
+    virtual void recreate(VkRenderPass renderPass) final;
+    virtual void destroyDescriptorPool() final;
     virtual void createDescriptorPool() = 0;
+    virtual void recreateDescriptors() = 0;
+    virtual const VkDescriptorSet* getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId = 0u) const = 0;
 
     inline const Pipeliner::pipeline_ptr& getPipeline() {
         return m_pipeline;
     }
 
 private:
-    virtual void createDescriptorSetLayout();
+    virtual void createDescriptorSetLayout() = 0;
     virtual void createPipeline(VkRenderPass renderPass) = 0;
 
 protected:

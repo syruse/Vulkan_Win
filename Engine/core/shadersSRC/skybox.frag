@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 2) uniform samplerCube samplerCubeMap;
+layout(binding = 1) uniform samplerCube samplerCubeMap;
 
 layout(location = 0) in vec3 fragTexCoord;
 
