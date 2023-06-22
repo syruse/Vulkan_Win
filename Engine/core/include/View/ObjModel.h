@@ -9,9 +9,10 @@ public:
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, vertexMagnitudeMultiplier), m_path(path) {
     }
 
-    virtual void init() override;
-
-    virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) override;
+    void init() override;
+    void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
+    void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
+                           uint32_t dynamicOffset) const override;
 
 private:
     void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);

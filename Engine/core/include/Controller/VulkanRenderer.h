@@ -13,7 +13,7 @@
 
 class VulkanRenderer : public VulkanState {
 public:
-    static constexpr uint16_t MAX_OBJECTS = 2;
+    static constexpr uint16_t MAX_OBJECTS = 3;  // TODO setting it automatically
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
     VulkanRenderer(std::string_view appName, size_t width, size_t height);
@@ -47,6 +47,8 @@ private:
     void loadModels();
     void recreateDescriptorSets();
 
+    void calculateLightThings();
+
 private:
     uint16_t m_currentFrame = 0u;
 
@@ -70,6 +72,7 @@ private:
 
     VkRenderPass m_renderPassShadowMap{nullptr};
     std::vector<VkFramebuffer> m_fbsShadowMap{nullptr};
+    glm::mat4 m_lightProj{1.0f};
 
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};

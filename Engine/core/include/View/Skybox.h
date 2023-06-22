@@ -33,9 +33,8 @@ public:
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured), m_textureFileNames(textureFileNames) {
     }
 
-    virtual void init() override;
-
-    virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) override;
+    void init() override;
+    void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
 
 private:
     std::array<std::string_view, 6> m_textureFileNames{};

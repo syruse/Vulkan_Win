@@ -29,7 +29,7 @@ public:
     virtual void recreateDescriptors() = 0;
     virtual const VkDescriptorSet* getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId = 0u) const = 0;
 
-    inline const Pipeliner::pipeline_ptr& getPipeline() {
+    inline const Pipeliner::pipeline_ptr& getPipeline() const {
         return m_pipeline;
     }
 

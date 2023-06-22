@@ -1,9 +1,11 @@
 #include "VulkanRenderer.h"
 #include "ObjModel.h"
 #include "PipelineCreatorQuad.h"
+#include "PipelineCreatorShadowMap.h"
 #include "PipelineCreatorSkyBox.h"
 #include "PipelineCreatorTextured.h"
 #include "Skybox.h"
+#include "Terrain.h"
 
 #include <SDL.h>
 #include <assert.h>
@@ -16,19 +18,22 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-static constexpr uint32_t _3D_MODELS_COUNT = 1U;
+static constexpr uint32_t _3D_MODELS_COUNT = 2U;
 static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
-      mCamera({65.0f, (float)width / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
+      mCamera({65.0f, static_cast<float>(width) / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
 
     _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
-    _pushConstant.lightPos = glm::vec3(0.0f, 1000.0f, 0.0f);
+    _pushConstant.lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
 
+    calculateLightThings();
+
+    // TODO consider combining into one object with _pushConstant
     m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
@@ -37,6 +42,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators.emplace_back(new PipelineCreatorTextured(*this, _3D_MODELS_COUNT, "vert_gPass.spv", "frag_gPass.spv"));
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get()), 10U));
+    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "grass1.jpg",
+                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get()), Z_FAR));
 
     m_pipelineCreators.emplace_back(
         new PipelineCreatorSkyBox(*this, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
@@ -49,8 +56,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                             true, 1u, m_pushConstantRange));
     m_pipelineCreators.emplace_back(
         new PipelineCreatorQuad(*this, "vert_fxaa.spv", "frag_fxaa.spv", false, false, 0u, m_pushConstantRange));
-    // TODO shadow map
-    // m_pipelineCreators.emplace_back(new PipelineCreatorTextured(*this, _3D_MODELS_COUNT, "vert_gPass.spv", "frag_gPass.spv"));
+
+    m_pipelineCreators.emplace_back(new PipelineCreatorShadowMap(*this, "vert_shadowMap.spv", "frag_shadowMap.spv"));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -88,6 +95,10 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyImage(_core.getDevice(), _depthBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _depthBuffer.depthImageMemory, nullptr);
 
+    vkDestroyImageView(_core.getDevice(), _shadowMapBuffer.depthImageView, nullptr);
+    vkDestroyImage(_core.getDevice(), _shadowMapBuffer.depthImage, nullptr);
+    vkFreeMemory(_core.getDevice(), _shadowMapBuffer.depthImageMemory, nullptr);
+
     for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyImageView(_core.getDevice(), _colorBuffer.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _colorBuffer.colorBufferImage[i], nullptr);
@@ -108,6 +119,9 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto framebuffer : m_fbsFXAA) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
+    for (auto framebuffer : m_fbsShadowMap) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
 
     for (auto imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
@@ -117,6 +131,7 @@ void VulkanRenderer::cleanupSwapChain() {
 
     vkDestroyRenderPass(_core.getDevice(), m_renderPass, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassShadowMap, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
@@ -133,6 +148,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         m_currentFrame = 0u;
 
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
+        calculateLightThings();
 
         createSwapChain();
         createCommandBuffer();
@@ -152,15 +168,23 @@ void VulkanRenderer::recreateDescriptorSets() {
     }
 }
 
+void VulkanRenderer::calculateLightThings() {
+    float aspectRatio = static_cast<float>(_height) / _width;
+    m_lightProj = glm::ortho(-Z_FAR, Z_FAR, -Z_FAR * aspectRatio, Z_FAR * aspectRatio, 1.0f, Z_FAR) *
+                  glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    m_lightProj[1][1] *= -1;
+}
+
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     assert(_ubo.buffersMemory.size() > currentImage);
 
     const auto& cameraViewProj = mCamera.viewProjMat();
     const auto& model = mCamera.targetModelMat();
 
-    ViewProj viewProj{};
+    static ViewProj viewProj{};
     viewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
     viewProj.viewProjInverse = glm::inverse(viewProj.viewProj);
+    viewProj.lightViewProj = m_lightProj;
 
     // Copy VP data
     void* data;
@@ -304,12 +328,44 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
-    // TODO make it flexible
+    VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
+    CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
+
+    //---------------------------------------------------------------------------------------------//
+    /// shadow map pass
+    VkClearValue shadowMapClearValues{};
+    shadowMapClearValues.depthStencil.depth = 1.0f;
+
+    VkRenderPassBeginInfo renderPassShadowMapInfo = {};
+    renderPassShadowMapInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassShadowMapInfo.renderPass = m_renderPassShadowMap;
+    renderPassShadowMapInfo.renderArea.offset.x = 0;
+    renderPassShadowMapInfo.renderArea.offset.y = 0;
+    renderPassShadowMapInfo.renderArea.extent.width = _width;
+    renderPassShadowMapInfo.renderArea.extent.height = _height;
+    renderPassShadowMapInfo.clearValueCount = 1;
+    renderPassShadowMapInfo.pClearValues = &shadowMapClearValues;
+    renderPassShadowMapInfo.framebuffer = m_fbsShadowMap[currentImage];
+
+    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassShadowMapInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // draw shadow of each object
+    for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
+        m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[4].get(), _cmdBufs[currentImage], currentImage,
+                                                    dynamicOffset);
+    }
+
+    vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+    //---------------------------------------------------------------------------------------------//
+    /// G pass
     VkClearValue clearValue;
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
-    std::vector<VkClearValue> clearValues(4, clearValue);
-    clearValues[3] = VkClearValue{};
+    std::vector<VkClearValue> clearValues(5, clearValue);
+    clearValues[3] = VkClearValue{};  // TODO make it flexible
     clearValues[3].depthStencil.depth = 1.0f;
+    clearValues[4] = clearValues[3];
 
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -320,9 +376,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassInfo.renderArea.extent.height = _height;
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
-
-    VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
-    CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
     renderPassInfo.framebuffer = m_fbs[currentImage];
 
     Utils::VulkanImageMemoryBarrier(_core.getDevice(), _queue, _cmdBufPool, _colorBuffer.colorBufferImage[currentImage],
@@ -333,11 +386,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     ///  SkyBox and 3D Models
-    uint32_t meshIndex = 0u;
-    for (const auto& model : m_models) {
+    for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-        model->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
-        ++meshIndex;
+        m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
 
     /// For Each mesh end
@@ -349,8 +400,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[2];  // TODO get rid of direct indexing
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
 
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -362,6 +413,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
+    //---------------------------------------------------------------------------------------------//
     /// FXAA render pass
 
     std::array<VkClearValue, 2> fxaaClearValues{};
@@ -386,12 +438,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
                                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    /// fxaa quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[3];  // TODO get rid of direct indexing
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -615,7 +665,9 @@ void VulkanRenderer::createRenderPass() {
         VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // for more efficiency and since it will not be used after drawing has finished
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
@@ -629,7 +681,7 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 3;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     std::array<VkAttachmentReference, 3> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef};
 
@@ -639,13 +691,15 @@ void VulkanRenderer::createRenderPass() {
     subpasses[0].pDepthStencilAttachment = &depthAttachmentRef;
 
     // References to attachments that subpass will take input from
-    std::array<VkAttachmentReference, 3> inputReferences;
+    std::array<VkAttachmentReference, 4> inputReferences;
     inputReferences[0].attachment = 1;
     inputReferences[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputReferences[1].attachment = 2;
     inputReferences[1].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputReferences[2].attachment = 3;
-    inputReferences[2].layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    inputReferences[2].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    inputReferences[3].attachment = 4;
+    inputReferences[3].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
 
     // Set up Subpass 2
     subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -663,7 +717,7 @@ void VulkanRenderer::createRenderPass() {
     // Transition must happen after...
     subpassDependencies[0].srcSubpass =
         VK_SUBPASS_EXTERNAL;  // Subpass index (VK_SUBPASS_EXTERNAL = Special value meaning outside of renderpass)
-    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;  // Pipeline stage
+    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;  // Pipeline initial stage
     subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;            // Stage access mask (memory access)
     // But must happen before...
     subpassDependencies[0].dstSubpass = 0;
@@ -697,8 +751,8 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[2].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    std::array<VkAttachmentDescription, 4> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment,
-                                                                    depthAttachment};
+    std::array<VkAttachmentDescription, 5> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment,
+                                                                    depthAttachment, shadowMapAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -713,19 +767,22 @@ void VulkanRenderer::createRenderPass() {
     VkResult res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfo, nullptr, &m_renderPass);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
+    Utils::printLog(INFO_PARAM, "Created a render pass G-PASS");
+
+    //-------------------------------------------------------//
     // Create info for Render Pass FXAA
-    VkAttachmentDescription ColorAttachmentFXAA = {};
-    ColorAttachmentFXAA.format = _core.getSurfaceFormat().format;         // Format to use for attachment
-    ColorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;                  // Number of samples to write for multisampling
-    ColorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;              // Describes what to do with attachment before rendering
-    ColorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;           // Describes what to do with attachment after rendering
-    ColorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // Describes what to do with stencil before rendering
-    ColorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // Describes what to do with stencil after rendering
+    VkAttachmentDescription colorAttachmentFXAA = {};
+    colorAttachmentFXAA.format = _core.getSurfaceFormat().format;         // Format to use for attachment
+    colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;                  // Number of samples to write for multisampling
+    colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;              // Describes what to do with attachment before rendering
+    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;           // Describes what to do with attachment after rendering
+    colorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // Describes what to do with stencil before rendering
+    colorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // Describes what to do with stencil after rendering
 
     // Framebuffer data will be stored as an image, but images can be given different data layouts
     // to give optimal use for certain operations
-    ColorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;      // Image data layout before render pass starts
-    ColorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // Image data layout after render pass (to change to)
+    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;      // Image data layout before render pass starts
+    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // Image data layout after render pass (to change to)
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
     VkAttachmentReference swapchainColorAttachmentReferenceFXAA = {};
@@ -733,43 +790,88 @@ void VulkanRenderer::createRenderPass() {
     swapchainColorAttachmentReferenceFXAA.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // References to attachments that subpass will take input from
-    std::array<VkAttachmentReference, 1> inputReferencesFXAA;
-    inputReferencesFXAA[0].attachment = 1;
-    inputReferencesFXAA[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkAttachmentReference inputReferenceFXAA;
+    inputReferenceFXAA.attachment = 1;
+    inputReferenceFXAA.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    std::array<VkSubpassDescription, 1> subpassesFXAA{};
-    subpassesFXAA[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassesFXAA[0].colorAttachmentCount = 1;
-    subpassesFXAA[0].pColorAttachments = &swapchainColorAttachmentReferenceFXAA;
-    subpassesFXAA[0].inputAttachmentCount = static_cast<uint32_t>(inputReferencesFXAA.size());
-    subpassesFXAA[0].pInputAttachments = inputReferencesFXAA.data();
+    VkSubpassDescription subpassFXAA{};
+    subpassFXAA.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassFXAA.colorAttachmentCount = 1;
+    subpassFXAA.pColorAttachments = &swapchainColorAttachmentReferenceFXAA;
+    subpassFXAA.inputAttachmentCount = 1;
+    subpassFXAA.pInputAttachments = &inputReferenceFXAA;
 
-    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {ColorAttachmentFXAA, colorAttachment};
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {colorAttachmentFXAA, colorAttachmentFXAA};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1> dependenciesFXAA;
+    VkSubpassDependency dependencyFXAA;
 
-    dependenciesFXAA[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependenciesFXAA[0].dstSubpass = 0;
-    dependenciesFXAA[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependenciesFXAA[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependenciesFXAA[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    dependenciesFXAA[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependenciesFXAA[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    dependencyFXAA.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyFXAA.dstSubpass = 0;
+    dependencyFXAA.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyFXAA.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyFXAA.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};
     renderPassCreateInfoFXAA.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassCreateInfoFXAA.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsFXAA.size());
     renderPassCreateInfoFXAA.pAttachments = renderPassAttachmentsFXAA.data();
     renderPassCreateInfoFXAA.subpassCount = 1;
-    renderPassCreateInfoFXAA.pSubpasses = subpassesFXAA.data();
-    renderPassCreateInfoFXAA.dependencyCount = static_cast<uint32_t>(dependenciesFXAA.size());
-    renderPassCreateInfoFXAA.pDependencies = dependenciesFXAA.data();
+    renderPassCreateInfoFXAA.pSubpasses = &subpassFXAA;
+    renderPassCreateInfoFXAA.dependencyCount = 1;
+    renderPassCreateInfoFXAA.pDependencies = &dependencyFXAA;
 
     res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoFXAA, nullptr, &m_renderPassFXAA);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
-    Utils::printLog(INFO_PARAM, "Created a render pass");
+    Utils::printLog(INFO_PARAM, "Created a render pass FXAA");
+
+    //-------------------------------------------------------//
+    // Create info for Render Pass SHADOW MAP
+
+    VkAttachmentReference depthAttachmentShadowMapRef{};
+    depthAttachmentShadowMapRef.attachment = 0;
+    depthAttachmentShadowMapRef.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpassesShadowMap{};
+    subpassesShadowMap.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassesShadowMap.colorAttachmentCount = 0;
+    subpassesShadowMap.pDepthStencilAttachment = &depthAttachmentShadowMapRef;
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 2> dependencies;
+
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoShadowMap = {};
+    renderPassCreateInfoShadowMap.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoShadowMap.attachmentCount = 1;
+    renderPassCreateInfoShadowMap.pAttachments = &shadowMapAttachment;
+    renderPassCreateInfoShadowMap.subpassCount = 1;
+    renderPassCreateInfoShadowMap.pSubpasses = &subpassesShadowMap;
+    renderPassCreateInfoShadowMap.dependencyCount = dependencies.size();
+    renderPassCreateInfoShadowMap.pDependencies = dependencies.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoShadowMap, nullptr, &m_renderPassShadowMap);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass SHADOW MAP");
 }
 
 void VulkanRenderer::createFramebuffer() {
@@ -778,14 +880,9 @@ void VulkanRenderer::createFramebuffer() {
     VkResult res;
 
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        if (Utils::VulkanCreateImageView(_core.getDevice(), _swapChain.images[i], _core.getSurfaceFormat().format,
-                                         VK_IMAGE_ASPECT_COLOR_BIT, _swapChain.views[i]) != VK_SUCCESS) {
-            Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
-        }
-
-        std::array<VkImageView, 4> attachments = {_colorBuffer.colorBufferImageView[i],
-                                                  _gPassBuffer.normal.colorBufferImageView[i],
-                                                  _gPassBuffer.color.colorBufferImageView[i], _depthBuffer.depthImageView};
+        std::array<VkImageView, 5> attachments = {
+            _colorBuffer.colorBufferImageView[i], _gPassBuffer.normal.colorBufferImageView[i],
+            _gPassBuffer.color.colorBufferImageView[i], _depthBuffer.depthImageView, _shadowMapBuffer.depthImageView};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -804,6 +901,8 @@ void VulkanRenderer::createFramebuffer() {
         CHECK_VULKAN_ERROR("vkCreateFramebuffer error %d\n", res);
     }
 
+    //-------------------------------------------------------//
+    // FBO FXAA
     m_fbsFXAA.resize(_swapChain.images.size());
 
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
@@ -825,6 +924,26 @@ void VulkanRenderer::createFramebuffer() {
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFXAA[i]);
         CHECK_VULKAN_ERROR("vkCreateFramebuffer FXAA error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO SHADOW MAP
+    m_fbsShadowMap.resize(_swapChain.images.size());
+
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        VkImageView attachment = _shadowMapBuffer.depthImageView;
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassShadowMap;
+        fbCreateInfo.attachmentCount = 1;
+        fbCreateInfo.pAttachments = &attachment;
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsShadowMap[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer SHADOW MAP error %d\n", res);
     }
 
     Utils::printLog(INFO_PARAM, "Frame buffers created");
@@ -858,6 +977,7 @@ void VulkanRenderer::createPipeline() {
     m_pipelineCreators[1].get()->recreate(m_renderPass);
     m_pipelineCreators[2].get()->recreate(m_renderPass);
     m_pipelineCreators[3].get()->recreate(m_renderPassFXAA);
+    m_pipelineCreators[4].get()->recreate(m_renderPassShadowMap);
 }
 
 void VulkanRenderer::createDepthResources() {
@@ -865,7 +985,16 @@ void VulkanRenderer::createDepthResources() {
                                           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                           _depthBuffer.depthFormat)) {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
+        return;
     }
+
+    _shadowMapBuffer.depthFormat = _depthBuffer.depthFormat;
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat,
+                             VK_IMAGE_TILING_OPTIMAL,
+                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
+    Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
+                                 VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,

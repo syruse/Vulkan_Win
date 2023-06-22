@@ -43,5 +43,5 @@ private:
     void createPipeline(VkRenderPass renderPass) override;
 
 private:
-    uint32_t m_maxObjectsCount = 1U;
+    uint32_t m_maxObjectsCount{0u};
 };

@@ -111,7 +111,7 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
     }
 }
 
-void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) {
+void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
     assert(m_generalBuffer);
     assert(m_pipelineCreatorTextured);
     assert(m_pipelineCreatorTextured->getPipeline().get());
@@ -128,6 +128,31 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
             vkCmdBindDescriptorSets(
                 cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
                 m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subObjects[0].realMaterialId), 1, &dynamicOffset);
+            for (const auto& subObject : subObjects) {
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
+                                 static_cast<uint32_t>(subObject.indexOffset), 0, 0);
+            }
+        }
+    }
+}
+
+void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
+                                      uint32_t dynamicOffset) const {
+    assert(m_generalBuffer);
+    assert(pipelineCreator);
+    assert(pipelineCreator->getPipeline().get());
+
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
+
+    VkBuffer vertexBuffers[] = {m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    for (const auto& subObjects : m_SubObjects) {
+        if (subObjects.size()) {
+            vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout,
+                                    0, 1, pipelineCreator->getDescriptorSet(descriptorSetIndex), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
                 vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);

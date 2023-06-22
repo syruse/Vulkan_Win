@@ -9,4 +9,7 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/fxaa.vert -o shaders/vert_fxaa.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/fxaa.frag -o shaders/frag_fxaa.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/shadowMap.vert -o shaders/vert_shadowMap.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/shadowMap.frag -o shaders/frag_shadowMap.spv
 pause

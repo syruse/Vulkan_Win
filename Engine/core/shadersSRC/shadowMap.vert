@@ -1,0 +1,18 @@
+#version 450
+
+layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
+    mat4 viewProj;
+    mat4 viewProjInverse;
+    mat4 lightViewProj;
+} uboViewProjection;
+
+layout(set = 0, binding = 1) uniform DynamicUBO {
+    mat4 model;
+    mat4 MVP;
+} dynamicUBO;
+
+layout(location = 0) in vec3 inPosition;
+
+void main() {
+    gl_Position = uboViewProjection.lightViewProj * dynamicUBO.model * vec4(inPosition, 1.0f);
+}

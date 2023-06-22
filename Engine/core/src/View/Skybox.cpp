@@ -27,8 +27,8 @@ const std::vector<uint32_t> _indices = {
 	// left
 	4, 0, 3, 3, 7, 4,
 	// bottom
-	//5, 4, 0, 0, 1, 5, // rejected by front face mode if no need to be drawn
-	0, 4, 5, 5, 1, 0, // accepted by front face mode
+	5, 4, 0, 0, 1, 5, // rejected by front face mode if no need to be drawn
+	//0, 4, 5, 5, 1, 0, // accepted by front face mode
 	// top
 	6, 3, 2, 6, 7, 3};
 
@@ -48,10 +48,14 @@ void Skybox::init() {
 							   _vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }
 
-void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) {
+void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
 	assert(m_generalBuffer);
 	assert(m_pipelineCreatorTextured);
 	assert(m_pipelineCreatorTextured->getPipeline().get());
+
+	vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
 
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 

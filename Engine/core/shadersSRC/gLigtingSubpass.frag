@@ -2,13 +2,15 @@
 
 precision highp float;
 
-layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput inputGPassNormal;
-layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inputGPassColor;
-layout(input_attachment_index = 3, set = 0, binding = 3) uniform subpassInput inputDepth;
+layout(input_attachment_index = 0, set = 0, binding = 1) uniform subpassInput inputGPassNormal;
+layout(input_attachment_index = 1, set = 0, binding = 2) uniform subpassInput inputGPassColor;
+layout(input_attachment_index = 2, set = 0, binding = 3) uniform subpassInput inputDepth;
+layout(binding = 4) uniform sampler2D inputShadowMap;
 
-layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
+layout(set = 0, binding = 5) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
+    mat4 lightViewProj;
 } uboViewProjection;
 
 layout(push_constant) uniform PushConstant {
@@ -22,14 +24,46 @@ layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 // uncomment if you need draw attachment content
-// #define DEBUG 1
+// #define DEBUG_DEPTH 1
+// #define DEBUG_SHADOW 1
 
 const bool is_blinnPhong = true;
 const float shiness = 8.5;
+const float softShadingFactor = 0.45; // soft shading by minimum factor limitation
+
+float getShading(vec3 world, float bias)
+{
+    vec4 lightPerspective = uboViewProjection.lightViewProj * vec4(world, 1.0);
+    vec3 normalizedCoords = lightPerspective.xyz / lightPerspective.w;
+    normalizedCoords = normalizedCoords * 0.5 + 0.5;
+    float currentDepth = normalizedCoords.z;
+    
+    // clipping coords which don't fit in normalized range to avoid shading far pixels
+    if (currentDepth > 1.0)
+    {
+        return 1.0;
+    }
+    
+    // calculate average shading basing on nearest pixels
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(inputShadowMap, 0);
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float pcfDepth = texture(inputShadowMap, normalizedCoords.xy + vec2(x, y) * texelSize).r;
+            // check whether current frag pos is in shadow
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;        
+        }    
+    }
+    shadow /= 9.0;
+
+    return 1.0 - shadow;
+} 
 
 void main()
 {
-#ifdef DEBUG
+#ifdef DEBUG_DEPTH
     const float widthHalf = pushConstant.windowSize.x / 2.0;
     if(gl_FragCoord.x > widthHalf)
     {
@@ -38,6 +72,16 @@ void main()
         float farPlane = pushConstant.windowSize.z;
         float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
         out_color = vec4(vec3(linearDepth), 1.0f);
+    }
+    else
+    {
+        out_color = subpassLoad(inputGPassColor).rgba;
+    }
+#elif DEBUG_SHADOW
+    const float widthHalf = pushConstant.windowSize.x / 2.0;
+    if(gl_FragCoord.x > widthHalf)
+    {
+        out_color = vec4(vec3(texture(inputShadowMap, in_uv).r), 1.0);
     }
     else
     {
@@ -65,6 +109,11 @@ void main()
     vec3 lightDir   = normalize(pushConstant.lightPos - world);
     vec3 viewDir    = normalize(pushConstant.cameraPos - world);
     
+    // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
+    // the bias based on dot product of normal and lightDir will solve this issue
+    float bias = max(0.5 * (1.0 - dot(normal, lightDir)), 0.005);
+    float shading = max(getShading(world, bias), softShadingFactor);
+    
     vec3 specInputDir = vec3(0.0);
     
     if (is_blinnPhong) {
@@ -84,6 +133,6 @@ void main()
     
     // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
     // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-    out_color = mix(vec4(0.0), vec4(spec_color, albedo.a), length(normalRange_0_1));
+    out_color = shading * mix(vec4(0.0), vec4(spec_color, albedo.a), length(normalRange_0_1));
 #endif
 }

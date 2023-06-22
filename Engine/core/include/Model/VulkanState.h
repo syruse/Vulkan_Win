@@ -22,6 +22,7 @@ struct VulkanState {
     struct ViewProj {
         alignas(16) glm::mat4 viewProj;
         alignas(16) glm::mat4 viewProjInverse;
+        alignas(16) glm::mat4 lightViewProj;
     };
 
     struct PushConstant {
@@ -79,6 +80,7 @@ struct VulkanState {
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};
     DepthBuffer _depthBuffer{};
+    DepthBuffer _shadowMapBuffer{};
     ColorBuffer _colorBuffer{};
     GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};
