@@ -18,15 +18,16 @@ void Terrain::init() {
     assert(m_pipelineCreatorTextured);
     assert(!m_textureFileName.empty());
 
-    float factor = static_cast<float>(m_vertexMagnitudeMultiplier);
-    for (auto& vertex : _vertices) {
-        vertex.pos = factor * vertex.pos;
-    }
-
-    auto texture = m_textureFactory.create2DTexture(m_textureFileName);
-    if (!texture.expired()) {
+    if (auto texture = m_textureFactory.create2DTexture(m_textureFileName).lock()) {
         m_realMaterialId =
-            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
+            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels));
+
+        float factor = static_cast<float>(m_vertexMagnitudeMultiplier);
+        for (auto& vertex : _vertices) {
+            vertex.pos = factor * vertex.pos;
+            // repetition factor can be calculated more precisely
+            vertex.texCoord = 50.0f * (factor / texture->width) * vertex.texCoord;
+        }
     }
 
     Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices,

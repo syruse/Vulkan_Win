@@ -29,7 +29,7 @@ layout(location = 0) out vec4 out_color;
 
 const bool is_blinnPhong = true;
 const float shiness = 8.5;
-const float softShadingFactor = 0.45; // soft shading by minimum factor limitation
+const float softShadingFactor = 0.35; // soft shading by minimum factor limitation
 
 float getShading(vec3 world, float bias)
 {
@@ -111,11 +111,10 @@ void main()
     
     // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
     // the bias based on dot product of normal and lightDir will solve this issue
-    float bias = max(0.5 * (1.0 - dot(normal, lightDir)), 0.005);
+    float bias = max(0.7 * (1.0 - dot(normal, lightDir)), 0.01);
     float shading = max(getShading(world, bias), softShadingFactor);
     
     vec3 specInputDir = vec3(0.0);
-    
     if (is_blinnPhong) {
         vec3 reflectDir = reflect(-lightDir, normal);
         specInputDir = reflectDir;
@@ -125,14 +124,12 @@ void main()
         vec3 halfwayDir = normalize(lightDir + viewDir);
         specInputDir = halfwayDir;
     }
-  
     float spec = pow(max(dot(normal, specInputDir), 0.0), shiness);
     
-    vec3 ambient_color = albedo.rgb * vec3(0.29, 0.60, 0.11);
-    vec3 spec_color = clamp(ambient_color + (subpassLoad(inputGPassColor).rgb * spec), vec3(0.0), vec3(1.0));
-    
+    vec3 res_color = (shading * albedo.rgb) + (spec * albedo.rgb);
+
     // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
     // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-    out_color = shading * mix(vec4(0.0), vec4(spec_color, albedo.a), length(normalRange_0_1));
+    out_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
 #endif
 }

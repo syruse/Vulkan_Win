@@ -62,23 +62,17 @@ void VulkanCreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDevi
 void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer,
                       VkDeviceSize size);
 
+void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
+                             uint32_t width, uint32_t height, uint32_t layersCount = 1U);
+
 VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName);
 
 VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
                            VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
                            VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U, uint32_t arrayLayers = 1U);
 
-/// <summary>
-/// VulkanCreateTextureImage function
-/// </summary>
-/// <param name="is_flippingVertically"> keep it in 'true' by default since texture applies from top to bottom in Vulkan</param>
-VkResult VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                  std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory,
-                                  std::uint32_t& mipLevels, bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
-
-VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                      const std::array<std::string, 6>& textureFileNames, VkImage& textureImage,
-                                      VkDeviceMemory& textureImageMemory, bool is_flippingVertically = true);
+void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat imageFormat,
+                           int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
 void VulkanImageMemoryBarrier(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
                               VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels,

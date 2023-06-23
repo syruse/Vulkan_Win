@@ -10,9 +10,6 @@
 #include <fstream>
 #include <memory>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 namespace Utils {
 
 void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* format, ...) {
@@ -412,7 +409,7 @@ void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool c
 }
 
 void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
-                             uint32_t width, uint32_t height, uint32_t layersCount = 1U) {
+                             uint32_t width, uint32_t height, uint32_t layersCount) {
     VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
     VkBufferImageCopy region{};
@@ -499,128 +496,6 @@ void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufP
                          nullptr, 1, &barrier);
 
     VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
-}
-
-VkResult VulkanCreateCubeTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                      const std::array<std::string, 6>& textureFileNames, VkImage& textureImage,
-                                      VkDeviceMemory& textureImageMemory, bool is_flippingVertically) {
-    VkResult res;
-
-    stbi_set_flip_vertically_on_load(is_flippingVertically);
-
-    int texWidth, texHeight, texChannels;
-    const VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
-    VkDeviceSize imageSizeTotal = 0u;
-    using datat_ptr = std::unique_ptr<stbi_uc, decltype(&stbi_image_free)>;
-    std::vector<datat_ptr> textureData;
-    textureData.reserve(6);
-
-    for (auto pStr : textureFileNames) {
-        assert(pStr.data());
-        /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
-        stbi_uc* pixels = stbi_load(pStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        assert(pixels);
-        textureData.emplace_back(pixels, stbi_image_free);
-        imageSizeTotal += static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
-    }
-
-    const VkDeviceSize layerSize = imageSizeTotal / 6;  // This is just the size of each layer.
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
-                       stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
-    for (std::size_t i = 0; i < 6u; ++i) {
-        memcpy((char*)data + (layerSize * i), textureData[i].get(), static_cast<size_t>(layerSize));
-    }
-    vkUnmapMemory(device, stagingBufferMemory);
-
-    res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
-                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, 1u, 6u);
-
-    VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1u, 6u);
-    VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth),
-                            static_cast<uint32_t>(texHeight), 6u);
-
-    VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1u, 6u);
-
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-    return res;
-}
-
-VkResult VulkanCreateTextureImage(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                  std::string_view pTextureFileName, VkImage& textureImage, VkDeviceMemory& textureImageMemory,
-                                  std::uint32_t& mipLevels, bool is_miplevelsEnabling, bool is_flippingVertically) {
-    VkResult res;
-
-    stbi_set_flip_vertically_on_load(is_flippingVertically);
-
-    int texWidth, texHeight, texChannels;
-    VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
-    /// STBI_rgb_alpha coerces to have ALPHA chanel for consistency with alphaless images
-    stbi_uc* pixels = stbi_load(pTextureFileName.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
-
-    /// Note: calculating the number of levels in the mip chain:
-    ///       std::log2 - how many times that dimension can be divided by 2
-    ///       std::floor function handles cases where the largest dimension is not a power of 2
-    ///       1 is added so that the original image has a mip level
-    mipLevels = is_miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
-
-    if (!pixels) {
-        Utils::printLog(ERROR_PARAM, pTextureFileName.data(), "failed to load texture image!");
-    }
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    VulkanCreateBuffer(device, physicalDevice, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
-                       stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
-    vkUnmapMemory(device, stagingBufferMemory);
-
-    stbi_image_free(pixels);
-
-    res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, imageFormat, VK_IMAGE_TILING_OPTIMAL,
-                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, mipLevels);
-
-    VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
-    VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth),
-                            static_cast<uint32_t>(texHeight));
-
-    // Check if image format supports linear blitting
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, &formatProperties);  /// TO FIX
-
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
-    }
-
-    if (!is_miplevelsEnabling) {
-        VulkanTransitionImageLayout(device, queue, cmdBufPool, textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    } else {
-        VulkanGenerateMipmaps(device, queue, cmdBufPool, textureImage, imageFormat, texWidth, texHeight, mipLevels);
-    }
-
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-    return res;
 }
 
 VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask,
