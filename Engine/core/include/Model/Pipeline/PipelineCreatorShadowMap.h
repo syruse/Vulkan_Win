@@ -6,9 +6,10 @@ class PipelineCreatorShadowMap : public PipelineCreatorBase {
 public:
     using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
 
-    PipelineCreatorShadowMap(const VulkanState& vkState, std::string_view vertShader, std::string_view fragShader,
-                             uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorBase(vkState, vertShader, fragShader, subpass, pushConstantRange) {
+    PipelineCreatorShadowMap(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
+                             std::string_view fragShader, uint32_t subpass = 0u,
+                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
     }
 
     void createDescriptorPool() override;
@@ -20,7 +21,7 @@ public:
     }
 
 private:
-    void createPipeline(VkRenderPass renderPass) override;
+    void createPipeline() override;
     void createDescriptorSetLayout() override;
 
 private:

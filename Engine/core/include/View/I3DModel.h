@@ -67,13 +67,8 @@ public:
         }
     };
 
-    constexpr I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory,
-                       PipelineCreatorTextured* pipelineCreatorTextured, uint32_t vertexMagnitudeMultiplier = 1U)
-        : m_vkState(vulkanState),
-          m_textureFactory(textureFactory),
-          m_pipelineCreatorTextured(pipelineCreatorTextured),
-          m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier) {
-    }
+    I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
+             uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true);
 
     virtual ~I3DModel() {
         std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());

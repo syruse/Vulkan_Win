@@ -26,10 +26,10 @@ public:
         std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
     };
 
-    PipelineCreatorTextured(const VulkanState& vkState, uint32_t maxObjectsCount, std::string_view vertShader,
+    PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, uint32_t subpass = 0u,
                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorBase(vkState, vertShader, fragShader, subpass, pushConstantRange), m_maxObjectsCount(maxObjectsCount) {
+        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
     }
 
     void createDescriptorPool() override;
@@ -38,9 +38,16 @@ public:
 
     uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
 
+    /// <summary>
+    /// it must be called for every 3d model instancing
+    /// </summary>
+    void increaseUsageCounter() {
+        ++m_maxObjectsCount;
+    }
+
 private:
     void createDescriptorSetLayout() override;
-    void createPipeline(VkRenderPass renderPass) override;
+    void createPipeline() override;
 
 private:
     uint32_t m_maxObjectsCount{0u};

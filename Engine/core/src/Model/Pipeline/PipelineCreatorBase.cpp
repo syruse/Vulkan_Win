@@ -1,7 +1,7 @@
 #include "PipelineCreatorBase.h"
 #include "Utils.h"
 
-void PipelineCreatorBase::recreate(VkRenderPass renderPass) {
+void PipelineCreatorBase::recreate() {
     if (!m_descriptorSetLayout) {
         createDescriptorSetLayout();
     }
@@ -16,7 +16,7 @@ void PipelineCreatorBase::recreate(VkRenderPass renderPass) {
     };
     m_descriptorSetLayout.get_deleter() = deleter;
 
-    createPipeline(renderPass);
+    createPipeline();
 }
 
 void PipelineCreatorBase::destroyDescriptorPool() {

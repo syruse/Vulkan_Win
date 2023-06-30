@@ -12,9 +12,10 @@ class PipelineCreatorBase {
 public:
     using descriptor_set_layout_ptr = std::unique_ptr<VkDescriptorSetLayout, std::function<void(VkDescriptorSetLayout* p)>>;
 
-    PipelineCreatorBase(const VulkanState& vkState, std::string_view vertShader, std::string_view fragShader,
-                        uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+    PipelineCreatorBase(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
+                        std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : m_vkState(vkState),
+          m_renderPass(renderPass),
           m_vertShader(vertShader),
           m_fragShader(fragShader),
           m_descriptorSetLayout(),
@@ -23,7 +24,7 @@ public:
           m_pipeline() {
     }
 
-    virtual void recreate(VkRenderPass renderPass) final;
+    virtual void recreate() final;
     virtual void destroyDescriptorPool() final;
     virtual void createDescriptorPool() = 0;
     virtual void recreateDescriptors() = 0;
@@ -35,10 +36,11 @@ public:
 
 private:
     virtual void createDescriptorSetLayout() = 0;
-    virtual void createPipeline(VkRenderPass renderPass) = 0;
+    virtual void createPipeline() = 0;
 
 protected:
     const VulkanState& m_vkState;
+    VkRenderPass& m_renderPass;
     VkDescriptorPool m_descriptorPool{nullptr};
     std::string_view m_vertShader{};
     std::string_view m_fragShader{};

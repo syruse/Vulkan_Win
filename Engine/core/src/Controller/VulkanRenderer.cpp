@@ -18,7 +18,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-static constexpr uint32_t _3D_MODELS_COUNT = 2U;
 static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
 
@@ -38,26 +37,34 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
 
-    m_pipelineCreators.reserve(5);
-    m_pipelineCreators.emplace_back(new PipelineCreatorTextured(*this, _3D_MODELS_COUNT, "vert_gPass.spv", "frag_gPass.spv"));
-    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
-                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get()), 10U));
-    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "grass1.jpg",
-                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get()), Z_FAR));
+    assert(m_pipelineCreators.size() == Pipelines::MAX);
+    m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
+    m_pipelineCreators[SKYBOX].reset(
+        new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
+    m_pipelineCreators[SHADOWMAP].reset(
+        new PipelineCreatorShadowMap(*this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
+    m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
+        *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 1u, m_pushConstantRange));
+    m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv", false,
+                                                                false, 0u, m_pushConstantRange));
+#ifndef NDEBUG
+    for (auto i = 0; i < Pipelines::MAX; ++i) {
+        if (m_pipelineCreators[i] == nullptr) {
+            Utils::printLog(ERROR_PARAM, "nullptr pipeline");
+            return;
+        }
+    }
+#endif
 
-    m_pipelineCreators.emplace_back(
-        new PipelineCreatorSkyBox(*this, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
+    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()), 10U));
+    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "grass1.jpg",
+                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()), Z_FAR));
+
     const std::array<std::string_view, 6> skyBoxTextures{"dark_ft.png", "dark_bk.png", "dark_dn.png",
                                                          "dark_up.png", "dark_lt.png", "dark_rt.png"};
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
-                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators.back().get())));
-
-    m_pipelineCreators.emplace_back(new PipelineCreatorQuad(*this, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true,
-                                                            true, 1u, m_pushConstantRange));
-    m_pipelineCreators.emplace_back(
-        new PipelineCreatorQuad(*this, "vert_fxaa.spv", "frag_fxaa.spv", false, false, 0u, m_pushConstantRange));
-
-    m_pipelineCreators.emplace_back(new PipelineCreatorShadowMap(*this, "vert_shadowMap.spv", "frag_shadowMap.spv"));
+                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -178,6 +185,8 @@ void VulkanRenderer::calculateLightThings() {
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     assert(_ubo.buffersMemory.size() > currentImage);
 
+    const auto objectsAmount = m_models.size();
+
     const auto& cameraViewProj = mCamera.viewProjMat();
     const auto& model = mCamera.targetModelMat();
 
@@ -193,7 +202,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
     // Copy Model data
-    for (size_t i = 1u; i < MAX_OBJECTS; i++) {
+    for (size_t i = 1u; i < objectsAmount; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->model = glm::mat4(1.0f);
         pModel->MVP = viewProj.viewProj * pModel->model;
@@ -209,8 +218,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     // pModel->MVP = viewProj.viewProj * pModel->model;
 
     // Map the list of model data
-    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * MAX_OBJECTS, 0, &data);
-    memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * MAX_OBJECTS);
+    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * objectsAmount, 0, &data);
+    memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * objectsAmount);
     vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
 }
 
@@ -224,8 +233,8 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     // Calculate alignment of model matrix data
     _modelUniformAlignment = (sizeof(Model) + minUniformBufferOffset - 1) & ~(minUniformBufferOffset - 1);
 
-    // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds MAX_OBJECTS
-    mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * MAX_OBJECTS, _modelUniformAlignment);
+    // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds m_models.size()
+    mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * m_models.size(), _modelUniformAlignment);
 }
 
 void VulkanRenderer::createDescriptorPool() {
@@ -281,7 +290,7 @@ void VulkanRenderer::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(ViewProj);
 
     // Model buffer size
-    VkDeviceSize modelBufferSize = _modelUniformAlignment * MAX_OBJECTS;
+    VkDeviceSize modelBufferSize = _modelUniformAlignment * m_models.size();
 
     /**
      * We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -352,7 +361,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     // draw shadow of each object
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-        m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[4].get(), _cmdBufs[currentImage], currentImage,
+        m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);
     }
 
@@ -399,7 +408,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     /// quad subpass
     {
-        const auto& pipelineCreator = m_pipelineCreators[2];  // TODO get rid of direct indexing
+        const auto& pipelineCreator = m_pipelineCreators[POST_LIGHTING];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
 
@@ -439,7 +448,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
-        const auto& pipelineCreator = m_pipelineCreators[3];  // TODO get rid of direct indexing
+        const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
@@ -875,10 +884,7 @@ void VulkanRenderer::createRenderPass() {
 }
 
 void VulkanRenderer::createFramebuffer() {
-    m_fbs.resize(_swapChain.images.size());
-
     VkResult res;
-
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 5> attachments = {
             _colorBuffer.colorBufferImageView[i], _gPassBuffer.normal.colorBufferImageView[i],
@@ -903,8 +909,6 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO FXAA
-    m_fbsFXAA.resize(_swapChain.images.size());
-
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
         if (Utils::VulkanCreateImageView(_core.getDevice(), _swapChain.images[i], _core.getSurfaceFormat().format,
                                          VK_IMAGE_ASPECT_COLOR_BIT, _swapChain.views[i]) != VK_SUCCESS) {
@@ -928,8 +932,6 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SHADOW MAP
-    m_fbsShadowMap.resize(_swapChain.images.size());
-
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
         VkImageView attachment = _shadowMapBuffer.depthImageView;
 
@@ -950,10 +952,6 @@ void VulkanRenderer::createFramebuffer() {
 }
 
 void VulkanRenderer::createSemaphores() {
-    m_presentCompleteSem.resize(MAX_FRAMES_IN_FLIGHT);
-    m_renderCompleteSem.resize(MAX_FRAMES_IN_FLIGHT);
-    m_drawFences.resize(MAX_FRAMES_IN_FLIGHT);
-
     // Semaphore creation information
     VkSemaphoreCreateInfo semaphoreCreateInfo = {};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -973,11 +971,9 @@ void VulkanRenderer::createSemaphores() {
 }
 
 void VulkanRenderer::createPipeline() {
-    m_pipelineCreators[0].get()->recreate(m_renderPass);
-    m_pipelineCreators[1].get()->recreate(m_renderPass);
-    m_pipelineCreators[2].get()->recreate(m_renderPass);
-    m_pipelineCreators[3].get()->recreate(m_renderPassFXAA);
-    m_pipelineCreators[4].get()->recreate(m_renderPassShadowMap);
+    for (auto& pipelineCreator : m_pipelineCreators) {
+        pipelineCreator->recreate();
+    }
 }
 
 void VulkanRenderer::createDepthResources() {

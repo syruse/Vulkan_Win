@@ -13,8 +13,9 @@
 
 class VulkanRenderer : public VulkanState {
 public:
-    static constexpr uint16_t MAX_OBJECTS = 3;  // TODO setting it automatically
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
+
+    enum Pipelines { GPASS = 0, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, MAX };
 
     VulkanRenderer(std::string_view appName, size_t width, size_t height);
 
@@ -55,23 +56,23 @@ private:
     VkRenderPass m_renderPass{nullptr};
     VkPushConstantRange m_pushConstantRange{};
 
-    std::vector<VkFramebuffer> m_fbs{};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbs{};
 
-    std::vector<std::unique_ptr<PipelineCreatorBase>> m_pipelineCreators{};
+    std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
 
-    std::vector<VkSemaphore> m_presentCompleteSem{};
-    std::vector<VkSemaphore> m_renderCompleteSem{};
-    std::vector<VkFence> m_drawFences{};
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_presentCompleteSem{nullptr};
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_renderCompleteSem{nullptr};
+    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_drawFences{};
 
     // intermediate buffer being served for transferring data to gpu memory
     Model* mp_modelTransferSpace{nullptr};
 
     VkRenderPass m_renderPassFXAA{nullptr};
-    std::vector<VkFramebuffer> m_fbsFXAA{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT > m_fbsFXAA{nullptr};
 
     VkRenderPass m_renderPassShadowMap{nullptr};
-    std::vector<VkFramebuffer> m_fbsShadowMap{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsShadowMap{nullptr};
     glm::mat4 m_lightProj{1.0f};
 
     /// smart ptr for taking over responsibility for lazy init and early removal

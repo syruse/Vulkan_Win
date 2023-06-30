@@ -3,9 +3,9 @@
 #include "I3DModel.h"
 #include "Utils.h"
 
-void PipelineCreatorShadowMap::createPipeline(VkRenderPass renderPass) {
+void PipelineCreatorShadowMap::createPipeline() {
     assert(m_descriptorSetLayout);
-    assert(renderPass);
+    assert(m_renderPass);
     assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
@@ -28,7 +28,7 @@ void PipelineCreatorShadowMap::createPipeline(VkRenderPass renderPass) {
     rasterInfo.cullMode = VK_CULL_MODE_NONE;
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), renderPass, m_vkState._core.getDevice(),
+                                                         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
                                                          m_subpassAmount, m_pushConstantRange);
     assert(m_pipeline);
 }

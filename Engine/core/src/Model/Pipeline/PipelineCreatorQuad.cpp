@@ -2,9 +2,9 @@
 #include <assert.h>
 #include "Utils.h"
 
-void PipelineCreatorQuad::createPipeline(VkRenderPass renderPass) {
+void PipelineCreatorQuad::createPipeline() {
     assert(m_descriptorSetLayout);
-    assert(renderPass);
+    assert(m_renderPass);
     assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
@@ -21,7 +21,7 @@ void PipelineCreatorQuad::createPipeline(VkRenderPass renderPass) {
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;  // as a simple set with two triangles for quad drawing
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), renderPass, m_vkState._core.getDevice(),
+                                                         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
                                                          m_subpassAmount, m_pushConstantRange);
 
     assert(m_pipeline);
