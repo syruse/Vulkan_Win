@@ -26,6 +26,8 @@ private:
     void createPipeline() override;
     void createDescriptorSetLayout() override;
 
+    uint32_t getInputBindingsAmount() const;
+
 private:
     bool m_isDepthNeeded{false};
     bool m_isGPassNeeded{false};

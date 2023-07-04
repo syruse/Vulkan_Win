@@ -48,7 +48,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv", false,
                                                                 false, 0u, m_pushConstantRange));
 #ifndef NDEBUG
-    for (auto i = 0; i < Pipelines::MAX; ++i) {
+    for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
             Utils::printLog(ERROR_PARAM, "nullptr pipeline");
             return;

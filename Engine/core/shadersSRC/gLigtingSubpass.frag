@@ -2,12 +2,12 @@
 
 precision highp float;
 
-layout(input_attachment_index = 0, set = 0, binding = 1) uniform subpassInput inputGPassNormal;
-layout(input_attachment_index = 1, set = 0, binding = 2) uniform subpassInput inputGPassColor;
-layout(input_attachment_index = 2, set = 0, binding = 3) uniform subpassInput inputDepth;
-layout(binding = 4) uniform sampler2D inputShadowMap;
+layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput inputGPassNormal;
+layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput inputGPassColor;
+layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inputDepth;
+layout(binding = 3) uniform sampler2D inputShadowMap;
 
-layout(set = 0, binding = 5) uniform UBOViewProjectionObject {
+layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
     mat4 lightViewProj;

@@ -27,6 +27,12 @@ void PipelineCreatorQuad::createPipeline() {
     assert(m_pipeline);
 }
 
+uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
+    uint32_t amount = (m_isGPassNeeded ? (m_vkState._gPassBuffer.size + 1 /*shadowMap*/ + 1 /*ubo*/) : 1 /*singleColorInput*/) +
+                      (m_isDepthNeeded ? 1 : 0);
+    return amount;
+}
+
 void PipelineCreatorQuad::createDescriptorSetLayout() {
     // CREATE INPUT ATTACHMENT
 
@@ -37,21 +43,22 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
     colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     // Array of input attachment bindings
-    auto inputBindingsSize =
-        1 + (m_isGPassNeeded ? (m_vkState._gPassBuffer.size + 1 /*shadowMap*/) : 0) + (m_isDepthNeeded ? 1 : 0);
+    auto inputBindingsSize = getInputBindingsAmount();
     std::vector<VkDescriptorSetLayoutBinding> inputBindings(inputBindingsSize, colourInputLayoutBinding);
     for (size_t i = 0u; i < inputBindings.size(); ++i) {
         inputBindings[i].binding = i;
     }
 
-    // UboViewProjection Binding Info
-    VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = inputBindings.size();
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.pImmutableSamplers = nullptr;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    inputBindings.push_back(uboLayoutBinding);
+    if (m_isGPassNeeded) {
+        // UboViewProjection Binding Info
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = inputBindings.size() - 1u;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.pImmutableSamplers = nullptr;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        inputBindings.back() = uboLayoutBinding;
+    }
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -93,8 +100,20 @@ void PipelineCreatorQuad::createDescriptorPool() {
     gPassColorInputPoolSize.descriptorCount =
         static_cast<uint32_t>(m_vkState._gPassBuffer.size * m_vkState._gPassBuffer.normal.colorBufferImageView.size());
 
-    std::vector<VkDescriptorPoolSize> inputPoolSizes = {uboPoolSize, gPassColorInputPoolSize, colorInputPoolSize,
-                                                        depthInputPoolSize, shadowMapInputPoolSize};
+    std::vector<VkDescriptorPoolSize> inputPoolSizes;
+    inputPoolSizes.reserve(getInputBindingsAmount());
+
+    if (m_isGPassNeeded) {
+        inputPoolSizes.push_back(gPassColorInputPoolSize);
+        inputPoolSizes.push_back(shadowMapInputPoolSize);
+        inputPoolSizes.push_back(uboPoolSize);
+    } else {
+        inputPoolSizes.push_back(colorInputPoolSize);
+    }
+
+    if (m_isDepthNeeded) {
+        inputPoolSizes.push_back(depthInputPoolSize);
+    }
 
     // Create input attachment pool
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
@@ -113,7 +132,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
     auto descriptorSetLayout = *m_descriptorSetLayout.get();
     std::array<VkDescriptorSetLayout, VulkanState::MAX_FRAMES_IN_FLIGHT> layouts{descriptorSetLayout, descriptorSetLayout,
                                                                                  descriptorSetLayout};
-
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -125,26 +143,12 @@ void PipelineCreatorQuad::recreateDescriptors() {
     VkResult result = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, m_descriptorSets.data());
     CHECK_VULKAN_ERROR("Failed to allocate Input Attachment Descriptor Sets %d", result);
 
+    const auto attachmentsAmount = getInputBindingsAmount();
     // Update each descriptor set with input attachment
     for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
-        // Color Attachment Descriptor
-        VkDescriptorImageInfo colorAttachmentDescriptor = {};
-        colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        colorAttachmentDescriptor.imageView = m_vkState._colorBuffer.colorBufferImageView[i];
-        colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-
-        // Color Attachment Descriptor Write
-        VkWriteDescriptorSet colorWrite = {};
-        colorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        colorWrite.dstSet = m_descriptorSets[i];
-        colorWrite.dstBinding = 0;
-        colorWrite.dstArrayElement = 0;
-        colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        colorWrite.descriptorCount = 1;
-        colorWrite.pImageInfo = &colorAttachmentDescriptor;
-
         // List of input descriptor set writes
-        std::vector<VkWriteDescriptorSet> setWrites = {colorWrite};
+        std::vector<VkWriteDescriptorSet> setWrites;
+        setWrites.reserve(attachmentsAmount);
 
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
@@ -157,7 +161,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             VkWriteDescriptorSet colorWrite = {};
             colorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             colorWrite.dstSet = m_descriptorSets[i];
-            colorWrite.dstBinding = 1;
+            colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
             colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             colorWrite.descriptorCount = 1;
@@ -167,7 +171,24 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
             VkDescriptorImageInfo colorAttachmentDescriptor = normalAttachmentDescriptor;
             colorAttachmentDescriptor.imageView = m_vkState._gPassBuffer.color.colorBufferImageView[i];
-            colorWrite.dstBinding = 2;
+            colorWrite.dstBinding = setWrites.size();
+            colorWrite.pImageInfo = &colorAttachmentDescriptor;
+            setWrites.push_back(colorWrite);
+        } else {
+            // Color Attachment Descriptor
+            VkDescriptorImageInfo colorAttachmentDescriptor = {};
+            colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            colorAttachmentDescriptor.imageView = m_vkState._colorBuffer.colorBufferImageView[i];
+            colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+
+            // Color Attachment Descriptor Write
+            VkWriteDescriptorSet colorWrite = {};
+            colorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            colorWrite.dstSet = m_descriptorSets[i];
+            colorWrite.dstBinding = setWrites.size();
+            colorWrite.dstArrayElement = 0;
+            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
             setWrites.push_back(colorWrite);
         }
@@ -192,15 +213,13 @@ void PipelineCreatorQuad::recreateDescriptors() {
             setWrites.push_back(depthWrite);
         }
 
-        // shadow map
         if (m_isGPassNeeded) {
-            // Depth Attachment Descriptor
+            // Shadow Map
             VkDescriptorImageInfo depthAttachmentDescriptor{};
             depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
             depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
-            // Depth Attachment Descriptor Write
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             depthWrite.dstSet = m_descriptorSets[i];
@@ -211,26 +230,26 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.pImageInfo = &depthAttachmentDescriptor;
 
             setWrites.push_back(depthWrite);
+
+            // View Projection UBO Descriptor
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = m_vkState._ubo.buffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(VulkanState::ViewProj);
+
+            VkWriteDescriptorSet uboDescriptorWrite{};
+            uboDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            uboDescriptorWrite.dstSet = m_descriptorSets[i];
+            uboDescriptorWrite.dstBinding = setWrites.size();
+            uboDescriptorWrite.dstArrayElement = 0;
+            uboDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            uboDescriptorWrite.descriptorCount = 1;
+            uboDescriptorWrite.pBufferInfo = &bufferInfo;
+            uboDescriptorWrite.pImageInfo = nullptr;
+            uboDescriptorWrite.pTexelBufferView = nullptr;
+
+            setWrites.push_back(uboDescriptorWrite);
         }
-
-        // View Projection UBO Descriptor
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_vkState._ubo.buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(VulkanState::ViewProj);
-
-        VkWriteDescriptorSet uboDescriptorWrite{};
-        uboDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboDescriptorWrite.dstSet = m_descriptorSets[i];
-        uboDescriptorWrite.dstBinding = setWrites.size();
-        uboDescriptorWrite.dstArrayElement = 0;
-        uboDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboDescriptorWrite.descriptorCount = 1;
-        uboDescriptorWrite.pBufferInfo = &bufferInfo;
-        uboDescriptorWrite.pImageInfo = nullptr;
-        uboDescriptorWrite.pTexelBufferView = nullptr;
-
-        setWrites.push_back(uboDescriptorWrite);
 
         // Update descriptor sets
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,
