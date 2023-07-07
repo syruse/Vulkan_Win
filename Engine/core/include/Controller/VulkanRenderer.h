@@ -15,7 +15,7 @@ class VulkanRenderer : public VulkanState {
 public:
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
-    enum Pipelines { GPASS = 0, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, MAX };
+    enum Pipelines { GPASS = 0, TERRAIN, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, MAX };
 
     VulkanRenderer(std::string_view appName, size_t width, size_t height);
 

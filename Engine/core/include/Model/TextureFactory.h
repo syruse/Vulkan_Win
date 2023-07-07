@@ -27,18 +27,16 @@ public:
                                              bool is_flippingVertically = true);
     std::weak_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true,
                                            bool is_flippingVertically = true);
+    std::weak_ptr<Texture> create2DArrayTexture(std::vector<std::string>&& textureFileNames, bool is_miplevelsEnabling = true,
+                                                bool is_flippingVertically = true);
     VkSampler getTextureSampler(uint32_t mipLevels);
 
 private:
     /// <param name="is_flippingVertically"> keep it in 'true' by default since texture applies from top to bottom in
     /// Vulkan</param>
-    VkResult VulkanCreateTextureImage(TextureFactory::Texture& outTexture, std::string_view pTextureFileName, VkDevice device,
-                                      VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                      bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
-
-    VkResult VulkanCreateCubeTextureImage(TextureFactory::Texture& outTexture, const std::array<std::string, 6>& textureFileNames,
-                                          VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
-                                          VkCommandPool cmdBufPool, bool is_flippingVertically = true);
+    VkResult loadImages(TextureFactory::Texture& outTexture, const std::vector<std::string>& textureFileNames, VkDevice device,
+                        VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+                        bool is_miplevelsEnabling = true, bool is_flippingVertically = true);
 
 private:
     const VulkanState& m_vkState;

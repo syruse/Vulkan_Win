@@ -109,11 +109,6 @@ void main()
     vec3 lightDir   = normalize(pushConstant.lightPos - world);
     vec3 viewDir    = normalize(pushConstant.cameraPos - world);
     
-    // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
-    // the bias based on dot product of normal and lightDir will solve this issue
-    float bias = max(0.7 * (1.0 - dot(normal, lightDir)), 0.01);
-    float shading = max(getShading(world, bias), softShadingFactor);
-    
     vec3 specInputDir = vec3(0.0);
     if (is_blinnPhong) {
         vec3 reflectDir = reflect(-lightDir, normal);
@@ -125,6 +120,11 @@ void main()
         specInputDir = halfwayDir;
     }
     float spec = pow(max(dot(normal, specInputDir), 0.0), shiness);
+    
+    // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
+    // the bias based on dot product of normal and lightDir will solve this issue
+    float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
+    float shading = max(getShading(world, bias), softShadingFactor);
     
     vec3 res_color = (shading * albedo.rgb) + (spec * albedo.rgb);
 

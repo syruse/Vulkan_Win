@@ -12,4 +12,7 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/shadowMap.vert -o shaders/vert_shadowMap.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/shadowMap.frag -o shaders/frag_shadowMap.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.vert -o shaders/vert_terrain.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.frag -o shaders/frag_terrain.spv
 pause

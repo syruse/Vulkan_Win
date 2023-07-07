@@ -16,17 +16,19 @@ void Terrain::init() {
     auto p_devide = m_vkState._core.getDevice();
     assert(p_devide);
     assert(m_pipelineCreatorTextured);
-    assert(!m_textureFileName.empty());
+    assert(!m_textureFileName1.empty() && !m_textureFileName2.empty() && !m_noiseTextureFileName.empty());
 
-    if (auto texture = m_textureFactory.create2DTexture(m_textureFileName).lock()) {
-        m_realMaterialId =
-            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels));
+    auto texture = m_textureFactory.create2DArrayTexture({m_noiseTextureFileName.data(), m_textureFileName1.data(), 
+                                                          m_textureFileName2.data()}).lock();
+
+    if (texture) {
+        m_realMaterialId = m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels));
 
         float factor = static_cast<float>(m_vertexMagnitudeMultiplier);
         for (auto& vertex : _vertices) {
             vertex.pos = factor * vertex.pos;
             // repetition factor can be calculated more precisely
-            vertex.texCoord = 50.0f * (factor / texture->width) * vertex.texCoord;
+            vertex.texCoord = 30.0f * (factor / texture->width) * vertex.texCoord;
         }
     }
 

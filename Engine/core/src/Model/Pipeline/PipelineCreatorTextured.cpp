@@ -25,12 +25,13 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     // Texture
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorCount = m_texturesAmount;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = {dynamicUBOLayoutBinding, samplerLayoutBinding};
+    std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding};
+
     // Create Descriptor Set Layout with given bindings
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -47,18 +48,16 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
 void PipelineCreatorTextured::createDescriptorPool() {
     // Type of descriptors + how many Descriptors needed to be allocated in pool
 
-    // Dynamic UBO Pool
-    VkDescriptorPoolSize dynamicUBOPoolSize = {};
-    dynamicUBOPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    dynamicUBOPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    VkDescriptorPoolSize uboPoolSize = {};
+    uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    uboPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
 
-    // Texture
-    VkDescriptorPoolSize texturePoolSize = {};
+    VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    texturePoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    texturePoolSize.descriptorCount *= m_texturesAmount;
 
     // List of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptorPoolSizes{dynamicUBOPoolSize, texturePoolSize};
+    std::array<VkDescriptorPoolSize, 2> descriptorPoolSizes{uboPoolSize, texturePoolSize};
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -72,14 +71,15 @@ void PipelineCreatorTextured::createDescriptorPool() {
     }
 }
 
-uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
+uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture,
+                                                   VkSampler sampler) {
     assert(m_vkState._core.getDevice());
-    auto& descriptorSetData = DescriptorSetData::instance(m_vkState);
 
     assert(m_descriptorSetLayout);
-    assert(!texture.expired());
+    auto sharedPtrTexture = texture.lock();
+    assert(sharedPtrTexture);
 
-    descriptorSetData.m_materialId++;
+    m_curMaterialId++;
 
     std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
     VkDescriptorSetAllocateInfo allocInfo{};
@@ -94,14 +94,13 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
     material.descriptorSetLayout = *m_descriptorSetLayout.get();
 
     auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &allocInfo, material.descriptorSets.data());
-    if (status != VK_SUCCESS && texture.expired()) {
+    if (status != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
     } else {
-        descriptorSetData.m_descriptorSets.try_emplace(descriptorSetData.m_materialId, material);
+        m_descriptorSets.try_emplace(m_curMaterialId, material);
     }
 
     // connect the descriptors with buffer when binding
-
     for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
         // Dynamic UBO DESCRIPTOR
         VkDescriptorBufferInfo DUBOInfo = {};
@@ -121,7 +120,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         // Texture
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = texture.lock()->m_textureImageView;
+        imageInfo.imageView = sharedPtrTexture->m_textureImageView;
         imageInfo.sampler = sampler;
 
         VkWriteDescriptorSet textureSetWrite = {};
@@ -130,30 +129,30 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         textureSetWrite.dstBinding = 1;
         textureSetWrite.dstArrayElement = 0;
         textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        textureSetWrite.descriptorCount = 1;
+        textureSetWrite.descriptorCount = m_texturesAmount;
         textureSetWrite.pImageInfo = &imageInfo;
 
         // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites = {dynamicUBOSetWrite, textureSetWrite};
+        std::array<VkWriteDescriptorSet, 2> setWrites{dynamicUBOSetWrite, textureSetWrite};
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,
                                nullptr);
     }
 
-    return descriptorSetData.m_materialId;
+    return m_curMaterialId;
 }
 
 const VkDescriptorSet* PipelineCreatorTextured::getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId) const {
-    auto& descriptorSetData = DescriptorSetData::instance(m_vkState);
-    return &descriptorSetData.m_descriptorSets[materialId].descriptorSets[descriptorSetsIndex];
+    assert(m_descriptorSets.find(materialId) != m_descriptorSets.cend());
+    assert(m_descriptorSets.at(materialId).descriptorSets.size() > descriptorSetsIndex);
+    return &m_descriptorSets.at(materialId).descriptorSets.at(descriptorSetsIndex);
 }
 
 void PipelineCreatorTextured::recreateDescriptors() {
-    auto& descriptorSetData = DescriptorSetData::instance(m_vkState);
-    descriptorSetData.m_materialId = 0u;
-    auto descriptorSets(std::move(descriptorSetData.m_descriptorSets));
+    m_curMaterialId = 0u;
+    auto descriptorSets(std::move(m_descriptorSets));
     for (auto& material : descriptorSets) {
-        createDescriptor(material.second.texture, material.second.sampler);
+        createDescriptor(std::move(material.second.texture), material.second.sampler);
     }
 }

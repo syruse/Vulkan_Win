@@ -38,6 +38,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pushConstantRange.size = sizeof(PushConstant);
 
     assert(m_pipelineCreators.size() == Pipelines::MAX);
+    m_pipelineCreators[TERRAIN].reset(
+        new PipelineCreatorTextured(*this, m_renderPass, "vert_terrain.spv", "frag_terrain.spv"));
     m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
     m_pipelineCreators[SKYBOX].reset(
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
@@ -58,8 +60,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()), 10U));
-    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "grass1.jpg",
-                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()), Z_FAR));
+    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
+                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
     const std::array<std::string_view, 6> skyBoxTextures{"dark_ft.png", "dark_bk.png", "dark_dn.png",
                                                          "dark_up.png", "dark_lt.png", "dark_rt.png"};
@@ -387,7 +389,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassInfo.pClearValues = clearValues.data();
     renderPassInfo.framebuffer = m_fbs[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_core.getDevice(), _queue, _cmdBufPool, _colorBuffer.colorBufferImage[currentImage],
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
                                     _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                     VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
@@ -440,7 +442,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
     renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_core.getDevice(), _queue, _cmdBufPool, _colorBuffer.colorBufferImage[currentImage],
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
                                     _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
                                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
@@ -461,14 +463,14 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-    res = vkEndCommandBuffer(_cmdBufs[currentImage]);
-    CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
-
-    Utils::VulkanImageMemoryBarrier(_core.getDevice(), _queue, _cmdBufPool, _colorBuffer.colorBufferImage[currentImage],
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
                                     _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
                                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+
+    res = vkEndCommandBuffer(_cmdBufs[currentImage]);
+    CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
 }
 
 void VulkanRenderer::createColorBufferImage() {

@@ -6,30 +6,11 @@
 
 class PipelineCreatorTextured : public PipelineCreatorBase {
 public:
-    // each part of model has own descriptorSet since has unique ImageView binding
-    class DescriptorSetData {
-        friend PipelineCreatorTextured;
-
-    private:
-        DescriptorSetData(const VulkanState& vkState) : m_vkState(vkState) {
-        }
-        DescriptorSetData(DescriptorSetData&&) = delete;  // copy ctor gets removed as well
-
-        static DescriptorSetData& instance(const VulkanState& vkState) {
-            static DescriptorSetData descriptorSetData{vkState};
-            return descriptorSetData;
-        }
-
-    private:
-        const VulkanState& m_vkState;
-        uint32_t m_materialId{0u};
-        std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
-    };
-
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                            std::string_view fragShader, uint32_t subpass = 0u,
+                            std::string_view fragShader, uint32_t texturesAmount = 1u, uint32_t subpass = 0u,
                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
+        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
+          m_texturesAmount(texturesAmount) {
     }
 
     void createDescriptorPool() override;
@@ -50,5 +31,8 @@ private:
     void createPipeline() override;
 
 private:
+    uint32_t m_texturesAmount{1u};
     uint32_t m_maxObjectsCount{0u};
+    uint32_t m_curMaterialId{0u};
+    std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
 };

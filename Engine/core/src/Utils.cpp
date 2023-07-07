@@ -313,7 +313,7 @@ VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uin
     imageInfo.usage = usage;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (arrayLayers > 1U) {
+    if (arrayLayers == 6u) {
         imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
 
@@ -341,13 +341,11 @@ VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uin
 
     return res;
 }
-// TO FIX combine it with VulkanTransitionImageLayout
-void VulkanImageMemoryBarrier(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
-                              VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels,
-                              uint32_t layersCount, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask,
-                              VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage) {
-    VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
+void VulkanImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout,
+                              VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels, uint32_t layersCount,
+                              VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags sourceStage,
+                              VkPipelineStageFlags destinationStage) {
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -429,7 +427,7 @@ void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBu
 }
 
 void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat imageFormat,
-                           int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
+                           int16_t texWidth, int16_t texHeight, uint8_t mipLevels, uint8_t layersAmount) {
     VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
     VkImageMemoryBarrier barrier{};
@@ -439,7 +437,7 @@ void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufP
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.layerCount = layersAmount;
     barrier.subresourceRange.levelCount = 1;
 
     int32_t mipWidth = texWidth;
@@ -461,13 +459,13 @@ void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufP
         blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         blit.srcSubresource.mipLevel = i - 1;
         blit.srcSubresource.baseArrayLayer = 0;
-        blit.srcSubresource.layerCount = 1;
+        blit.srcSubresource.layerCount = layersAmount;
         blit.dstOffsets[0] = {0, 0, 0};
         blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1};
         blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         blit.dstSubresource.mipLevel = i;
         blit.dstSubresource.baseArrayLayer = 0;
-        blit.dstSubresource.layerCount = 1;
+        blit.dstSubresource.layerCount = layersAmount;
 
         vkCmdBlitImage(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                        &blit, VK_FILTER_LINEAR);

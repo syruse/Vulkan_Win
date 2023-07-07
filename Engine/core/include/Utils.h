@@ -72,12 +72,12 @@ VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uin
                            VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U, uint32_t arrayLayers = 1U);
 
 void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat imageFormat,
-                           int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+                           int16_t texWidth, int16_t texHeight, uint8_t mipLevels, uint8_t layersAmount = 1u);
 
-void VulkanImageMemoryBarrier(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
-                              VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels,
-                              uint32_t layersCount, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask,
-                              VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage);
+void VulkanImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout,
+                              VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels, uint32_t layersCount,
+                              VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags sourceStage,
+                              VkPipelineStageFlags destinationStage);
 
 void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
                                  VkImageLayout oldLayout, VkImageLayout newLayout,

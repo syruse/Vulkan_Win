@@ -41,7 +41,7 @@ void Skybox::init() {
 	auto texture = m_textureFactory.createCubeTexture(m_textureFileNames);
 	if (!texture.expired()) {
 		m_realMaterialId =
-			m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
+            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
 	}
 
 	Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices,
