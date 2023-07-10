@@ -29,7 +29,8 @@ layout(location = 0) out vec4 out_color;
 
 const bool is_blinnPhong = true;
 const float shiness = 8.5;
-const float softShadingFactor = 0.35; // soft shading by minimum factor limitation
+const float softShadingFactor = 0.5; // soft shading by minimum factor limitation
+const float brightness = 1.75;
 
 float getShading(vec3 world, float bias)
 {
@@ -123,10 +124,11 @@ void main()
     
     // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
     // the bias based on dot product of normal and lightDir will solve this issue
-    float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
-    float shading = max(getShading(world, bias), softShadingFactor);
+    // float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
+    float bias = 0.025;
+    float shading = clamp(getShading(world, bias), softShadingFactor, 1.0);
     
-    vec3 res_color = (shading * albedo.rgb) + (spec * albedo.rgb);
+    vec3 res_color = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
 
     // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
     // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color

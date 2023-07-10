@@ -179,7 +179,7 @@ void VulkanRenderer::recreateDescriptorSets() {
 
 void VulkanRenderer::calculateLightThings() {
     float aspectRatio = static_cast<float>(_height) / _width;
-    m_lightProj = glm::ortho(-Z_FAR, Z_FAR, -Z_FAR * aspectRatio, Z_FAR * aspectRatio, 1.0f, Z_FAR) *
+    m_lightProj = glm::ortho(-Z_FAR, Z_FAR, -Z_FAR * aspectRatio, Z_FAR * aspectRatio, -Z_FAR, Z_FAR) *
                   glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightProj[1][1] *= -1;
 }
