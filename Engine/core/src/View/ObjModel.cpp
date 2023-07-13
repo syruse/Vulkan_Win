@@ -44,6 +44,10 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
     Vertex vertex{};
 
+    glm::vec3 edge1{0.0f}, edge2{0.0f}, tangent{0.0f}, bitangent{0.0f};
+    glm::vec2 deltaUV1{0.0f}, deltaUV2{0.0f};
+    bool isBumpMappingValid{false};
+
     std::size_t indexAmount = 0u;
     for (const auto& shape : shapes) {
         indexAmount += shape.mesh.indices.size();
@@ -61,8 +65,13 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
         uint16_t materialId = shape.mesh.material_ids[0];
         uint16_t realMaterialId = 0u;
 
-        if (materialsMap.count(materialId) == 0) {
-            auto texture = m_textureFactory.create2DTexture(materials[materialId].diffuse_texname.c_str());
+        isBumpMappingValid = materials[materialId].bump_texname.empty() ? false : true;
+
+        if (materialsMap.find(materialId) == materialsMap.end()) {
+            auto texture = m_textureFactory.create2DArrayTexture(
+                isBumpMappingValid
+                    ? std::vector<std::string>{materials[materialId].diffuse_texname, materials[materialId].bump_texname}
+                    : std::vector<std::string>{materials[materialId].diffuse_texname});
             if (!texture.expired()) {
                 realMaterialId = m_pipelineCreatorTextured->createDescriptor(
                     texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
@@ -74,7 +83,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
             realMaterialId = materialsMap[materialId];
         }
 
-        for (const auto& index : shape.mesh.indices) {
+        for (std::size_t i = 0u; i < shape.mesh.indices.size(); ++i) {
+            const auto& index = shape.mesh.indices[i];
             vertex.pos = {attrib.vertices[3 * index.vertex_index + 0] * m_vertexMagnitudeMultiplier,
                           attrib.vertices[3 * index.vertex_index + 1] * m_vertexMagnitudeMultiplier,
                           attrib.vertices[3 * index.vertex_index + 2] * m_vertexMagnitudeMultiplier};
@@ -85,13 +95,44 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
                              attrib.normals[3 * index.normal_index + 2]};
 
             /// Note: Obj format doesn't care about vertices reusing, let's take it on ourself
-            if (uniqueVertices.count(vertex) == 0) {
+            if (uniqueVertices.find(vertex) == uniqueVertices.end()) {
                 uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
                 vertices.push_back(vertex);
             }
 
             indices.push_back(uniqueVertices[vertex]);
+
+            if ((isBumpMappingValid) && ((i + 1u) % 3u == 0u)) {
+                assert((static_cast<int>(indices.size()) - 3) >= 0);
+                vertex.tangent.w = 1.0f; // enabling bump-mapping
+                auto& vert3 = vertices[indices[indices.size() - 1u]];
+                auto& vert2 = vertices[indices[indices.size() - 2u]];
+                auto& vert1 = vertices[indices[indices.size() - 3u]];
+                edge1 = vert2.pos - vert1.pos;
+                edge2 = vert3.pos - vert1.pos;
+                deltaUV1 = vert2.texCoord - vert1.texCoord;
+                deltaUV2 = vert3.texCoord - vert1.texCoord;
+
+                float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+                tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+                tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+                tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+                tangent = glm::normalize(tangent);
+                vert1.tangent = glm::vec4(glm::normalize(glm::vec3(vert1.tangent) + tangent), 1.0f);
+                vert2.tangent = glm::vec4(glm::normalize(glm::vec3(vert2.tangent) + tangent), 1.0f);
+                vert3.tangent = glm::vec4(glm::normalize(glm::vec3(vert3.tangent) + tangent), 1.0f);
+
+                bitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+                bitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+                bitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+                bitangent = glm::normalize(bitangent);
+                vert1.bitangent = glm::normalize(vert1.bitangent + bitangent);
+                vert2.bitangent = glm::normalize(vert2.bitangent + bitangent);
+                vert3.bitangent = glm::normalize(vert3.bitangent + bitangent);
+            }
         }
+
         /// Note: each subobject keeps index offset
         subOjectsMap.emplace(materialId, SubObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset)});
         indecesOffset = indices.size();

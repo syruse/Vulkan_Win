@@ -11,6 +11,7 @@ Ni 1.000000
 d 1.000000
 illum 2
 map_Kd PzVI_Tiger_I_track.png
+map_Bump PzVI_Tiger_I_track_NM.png
 
 newmtl Material_1.003
 Ns 96.078431
@@ -22,3 +23,4 @@ Ni 1.000000
 d 1.000000
 illum 2
 map_Kd PzVl_Tiger_I.png
+map_Bump PzVI_Tiger_I_NM.png

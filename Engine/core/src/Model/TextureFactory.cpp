@@ -130,7 +130,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 }
 
 VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels) {
-    if (m_samplers.count(mipLevels) == 0) {
+    if (m_samplers.find(mipLevels) == m_samplers.end()) {
         VkSampler sampler = nullptr;
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
