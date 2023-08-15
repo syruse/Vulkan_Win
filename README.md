@@ -3,8 +3,8 @@
 <body>
 
 <h1>The game engine powered by Vulkan</h1>
-</br> Platforms: Windows/Unix
-</br> Technologies: C++ 17, Vulkan Api, SDL2(user input), CMake, WinApi, XCB
+</br> <b>Platforms:</b> Windows/Unix
+</br> <b>Technologies:</b> C++ 17, Vulkan Api, SDL2(user input), CMake, WinApi, XCB
 <p><img src="demo.png" width="30%" height="30%"></p>
 <p>This is simple game engine based on own engine run by Vulkan API, SDL2 (user input)
 the developing is ongoing currently it supports such features as
@@ -19,6 +19,19 @@ the developing is ongoing currently it supports such features as
   <li>FXAA(separate pass for anti aliasing)</li>
   <li>WASD camera manipulation by quaternions</li>
 </ol></p>
-<p>TODO: instancing for grass drawing, particles system, fonts, several command buffers, separate thread for resources loading, LODs, oct tree, polishing architecture of the engine</p>
+<p><b>HOWTO BUILD:</b>
+</br>
+for WIN platform
+</br>
+set variable SDL pointing to include directory
+and ensure that VULKAN_SDK variable is set
+</br>
+<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 16 2019"</i></b>
+</br>
+<b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
+</p>
+<p><b>TODO:</b>
+</br>
+instancing for grass drawing, particles system, fonts, several command buffers, separate thread for resources loading, LODs, oct tree, polishing architecture of the engine</p>
 </body>
 </html>

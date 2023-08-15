@@ -1,6 +1,0 @@
-for WIN platform
-set variable SDL to point include directory
-and ensure that VULKAN_SDK variable is set
-
-cmake.exe ..\Engine\core\ -G "Visual Studio 16 2019"
-cmake --target "ALL_BUILD" --config "Release"
