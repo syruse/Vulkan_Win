@@ -19,5 +19,7 @@ void main() {
     vec3 vert = 0.5 * pushConstant.windowSize.z * vec3(inPosition.x, 0.15 * inPosition.y + 0.15, inPosition.z); // y coord [-1;1] -> [0; 0.3]
     gl_Position = dynamicUBO.MVP * vec4(vert, 1.0f);
     fragTexCoord = inPosition;
-    fragTexCoord.xy *= -1;
+    fragTexCoord.xy *= -1; // inverting since we inside cube
+    // Note: cut off terrain part of images
+    fragTexCoord.y = clamp(fragTexCoord.y, -1, 0.3);
 }

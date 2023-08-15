@@ -63,8 +63,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
-    const std::array<std::string_view, 6> skyBoxTextures{"dark_ft.png", "dark_bk.png", "dark_dn.png",
-                                                         "dark_up.png", "dark_lt.png", "dark_rt.png"};
+    const std::array<std::string_view, 6> skyBoxTextures{"sky_ft.png", "sky_bk.png", "sky_dn.png",
+                                                         "sky_up.png", "sky_lt.png", "sky_rt.png"};
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 }
