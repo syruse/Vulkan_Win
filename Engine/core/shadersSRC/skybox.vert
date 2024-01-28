@@ -20,6 +20,4 @@ void main() {
     gl_Position = dynamicUBO.MVP * vec4(vert, 1.0f);
     fragTexCoord = inPosition;
     fragTexCoord.xy *= -1; // inverting since we inside cube
-    // Note: cut off terrain part of images
-    fragTexCoord.y = clamp(fragTexCoord.y, -1, 0.3);
 }

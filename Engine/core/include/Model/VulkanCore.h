@@ -57,5 +57,4 @@ private:
     // Internal stuff
     int m_gfxDevIndex = -1;
     int m_gfxQueueFamily = -1;
-    ;
 };

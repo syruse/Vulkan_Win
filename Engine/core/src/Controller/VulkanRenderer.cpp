@@ -203,8 +203,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     memcpy(data, &viewProj, sizeof(viewProj));
     vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
-    // Copy Model data
-    for (size_t i = 1u; i < objectsAmount; i++) {
+    // Copy Model data except skybox
+    for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->model = glm::mat4(1.0f);
         pModel->MVP = viewProj.viewProj * pModel->model;
@@ -215,9 +215,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     pModel->MVP = viewProj.viewProj * pModel->model;
 
     // move skybox to get unreachable
-    // pModel = (Model*)((uint64_t)mp_modelTransferSpace + _modelUniformAlignment);
-    // pModel->model = glm::translate(glm::mat4(1.0f), mCamera.targetPos());
-    // pModel->MVP = viewProj.viewProj * pModel->model;
+    pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
+    pModel->model = glm::translate(glm::mat4(1.0f), mCamera.targetPos());
+    pModel->MVP = viewProj.viewProj * pModel->model;
 
     // Map the list of model data
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * objectsAmount, 0, &data);
@@ -250,7 +250,6 @@ void VulkanRenderer::createSwapChain() {
 
     assert(SurfaceCaps.currentExtent.width != -1);
 
-    assert(MAX_FRAMES_IN_FLIGHT >= SurfaceCaps.minImageCount);
     // maxImageCount: value of 0 means that there is no limit on the number of images
     if (SurfaceCaps.maxImageCount) {
         assert(MAX_FRAMES_IN_FLIGHT <= SurfaceCaps.maxImageCount);
@@ -280,9 +279,9 @@ void VulkanRenderer::createSwapChain() {
     uint32_t NumSwapChainImages = 0;
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, nullptr);
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
-    assert(MAX_FRAMES_IN_FLIGHT == NumSwapChainImages);
-    Utils::printLog(INFO_PARAM, "Number of images ", NumSwapChainImages);
-
+    assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
+    Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
+    NumSwapChainImages = MAX_FRAMES_IN_FLIGHT; // queried number of presentable images
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
 }
