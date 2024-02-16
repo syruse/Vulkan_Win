@@ -23,4 +23,5 @@ void PipelineCreatorBase::destroyDescriptorPool() {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorPool);
     vkDestroyDescriptorPool(m_vkState._core.getDevice(), m_descriptorPool, nullptr);
+    m_descriptorPool = nullptr;
 }

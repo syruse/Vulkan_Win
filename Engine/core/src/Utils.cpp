@@ -2,6 +2,7 @@
 #include "Constants.h"
 /// declaration for template instatiation
 #include "I3DModel.h"
+#include "Particle.h"
 #include "Skybox.h"
 
 #include <assert.h>
@@ -582,5 +583,10 @@ template void createGeneralBuffer<Skybox::Vertex>(VkDevice device, VkPhysicalDev
                                                   VkQueue queue, const std::vector<uint32_t>& indices,
                                                   const std::vector<Skybox::Vertex>& vertices, VkDeviceSize& verticesBufferOffset,
                                                   VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
+template void createGeneralBuffer<Particle::Instance>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
+                                                      VkQueue queue, const std::vector<uint32_t>& indices,
+                                                      const std::vector<Particle::Instance>& vertices,
+                                                      VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
+                                                      VkDeviceMemory& generalBufferMemory);
 
 }  // namespace Utils

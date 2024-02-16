@@ -67,6 +67,20 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const {
     return m_physDevices.m_surfaceFormats[m_gfxDevIndex][0];
 }
 
+VkPresentModeKHR VulkanCore::getPresentMode() const {
+    assert(m_gfxDevIndex >= 0);
+    for (const auto& availablePresentMode : m_physDevices.m_presentModes[m_gfxDevIndex]) {
+        /** checking presence of the most eficient one with vsync
+            (it doesn't block app if the queue is full and none is rendered yet
+             we simply replace that one in queue with just prepared newest swap image) */
+        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            return availablePresentMode;
+        }
+    }
+    // returning common one (with vsync but blocks app untill gpu releases swap image)
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
 const VkSurfaceCapabilitiesKHR& VulkanCore::getSurfaceCaps() const {
     assert(m_gfxDevIndex >= 0);
 
@@ -99,6 +113,11 @@ void VulkanCore::selectPhysicalDevice() {
                 m_gfxDevIndex = i;
                 m_gfxQueueFamily = j;
                 INFO_FORMAT("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
+
+                if (m_physDevices.m_devProps[i].deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                    INFO_FORMAT("DISCRETE GPU FOUND!\n");
+                    return;
+                }
             }
         }
     }
@@ -125,7 +144,7 @@ void VulkanCore::createInstance() {
         VK_KHR_SURFACE_EXTENSION_NAME, m_winController->getVulkanWindowSurfaceExtension().data()};
 
 #ifdef _DEBUG
-    const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation", "VK_LAYER_RENDERDOC_Capture"};
+    const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
 #endif
 
     VkInstanceCreateInfo instInfo = {};

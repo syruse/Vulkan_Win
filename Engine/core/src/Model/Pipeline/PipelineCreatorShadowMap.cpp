@@ -26,6 +26,8 @@ void PipelineCreatorShadowMap::createPipeline() {
     // draw both faces for plane line objects with single face
     auto& rasterInfo = Pipeliner::getInstance().getRasterizationInfo();
     rasterInfo.cullMode = VK_CULL_MODE_NONE;
+    rasterInfo.depthClampEnable =
+        VK_TRUE;  // fragments that are beyond the near and far planes are clamped to them as opposed to discarding them
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),

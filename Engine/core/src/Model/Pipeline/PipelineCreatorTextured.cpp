@@ -46,6 +46,7 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
 }
 
 void PipelineCreatorTextured::createDescriptorPool() {
+    assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
     // Type of descriptors + how many Descriptors needed to be allocated in pool
 
     VkDescriptorPoolSize uboPoolSize = {};
@@ -63,16 +64,18 @@ void PipelineCreatorTextured::createDescriptorPool() {
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(descriptorPoolSizes.size());
     poolInfo.pPoolSizes = descriptorPoolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
-                                             10);  // Maximum number of Descriptor Sets that can be created from pool
+    poolInfo.maxSets = static_cast<uint32_t>(
+        VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
+        10);  // Maximum number of Descriptor Sets that can be created from pool (it's because 3d model may consist of subobjects)
 
     if (vkCreateDescriptorPool(m_vkState._core.getDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor pool!");
     }
+
+    m_curMaterialId = 0u;
 }
 
-uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture,
-                                                   VkSampler sampler) {
+uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
     assert(m_vkState._core.getDevice());
 
     assert(m_descriptorSetLayout);
@@ -150,7 +153,10 @@ const VkDescriptorSet* PipelineCreatorTextured::getDescriptorSet(uint32_t descri
 }
 
 void PipelineCreatorTextured::recreateDescriptors() {
-    m_curMaterialId = 0u;
+    // if the counter is bigger than 0 -> no need to create descriptorSets twice
+    if (m_curMaterialId > 0u) {
+        return;
+    }
     auto descriptorSets(std::move(m_descriptorSets));
     for (auto& material : descriptorSets) {
         createDescriptor(std::move(material.second.texture), material.second.sampler);

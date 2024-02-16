@@ -1,5 +1,7 @@
 #include "VulkanRenderer.h"
 #include "ObjModel.h"
+#include "Particle.h"
+#include "PipelineCreatorParticle.h"
 #include "PipelineCreatorQuad.h"
 #include "PipelineCreatorShadowMap.h"
 #include "PipelineCreatorSkyBox.h"
@@ -38,8 +40,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pushConstantRange.size = sizeof(PushConstant);
 
     assert(m_pipelineCreators.size() == Pipelines::MAX);
-    m_pipelineCreators[TERRAIN].reset(
-        new PipelineCreatorTextured(*this, m_renderPass, "vert_terrain.spv", "frag_terrain.spv"));
+    m_pipelineCreators[TERRAIN].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_terrain.spv", "frag_terrain.spv"));
     m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
     m_pipelineCreators[SKYBOX].reset(
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
@@ -49,6 +50,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 1u, m_pushConstantRange));
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv", false,
                                                                 false, 0u, m_pushConstantRange));
+    m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
+                                                                   "frag_particle.spv", 0u, m_pushConstantRange));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -67,6 +70,10 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                          "sky_up.png", "sky_lt.png", "sky_rt.png"};
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
+
+    m_bush = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
+                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 10000u,
+                                        0.7f * Z_FAR, 10);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -122,17 +129,20 @@ void VulkanRenderer::cleanupSwapChain() {
         vkFreeMemory(_core.getDevice(), _gPassBuffer.color.colorBufferImageMemory[i], nullptr);
     }
 
-    for (auto framebuffer : m_fbs) {
+    for (auto& framebuffer : m_fbs) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
-    for (auto framebuffer : m_fbsFXAA) {
+    for (auto& framebuffer : m_fbsFXAA) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
-    for (auto framebuffer : m_fbsShadowMap) {
+    for (auto& framebuffer : m_fbsSemiTrans) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
+    for (auto& framebuffer : m_fbsShadowMap) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
 
-    for (auto imageView : _swapChain.views) {
+    for (auto& imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
     }
 
@@ -141,6 +151,7 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyRenderPass(_core.getDevice(), m_renderPass, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassShadowMap, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassSemiTrans, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
@@ -247,6 +258,7 @@ void VulkanRenderer::createDescriptorPool() {
 
 void VulkanRenderer::createSwapChain() {
     const VkSurfaceCapabilitiesKHR& SurfaceCaps = _core.getSurfaceCaps();
+    static const VkPresentModeKHR presentMode = _core.getPresentMode();
 
     assert(SurfaceCaps.currentExtent.width != -1);
 
@@ -267,7 +279,7 @@ void VulkanRenderer::createSwapChain() {
     SwapChainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     SwapChainCreateInfo.imageArrayLayers = 1;
     SwapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    SwapChainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    SwapChainCreateInfo.presentMode = presentMode;
     SwapChainCreateInfo.clipped = VK_TRUE;
     SwapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
@@ -281,7 +293,7 @@ void VulkanRenderer::createSwapChain() {
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
     assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
-    NumSwapChainImages = MAX_FRAMES_IN_FLIGHT; // queried number of presentable images
+    NumSwapChainImages = MAX_FRAMES_IN_FLIGHT;  // queried number of presentable images
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
 }
@@ -388,8 +400,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassInfo.pClearValues = clearValues.data();
     renderPassInfo.framebuffer = m_fbs[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
-                                    _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                     VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
@@ -424,6 +436,39 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     //---------------------------------------------------------------------------------------------//
+    /// SEMI-TRANSPARENT OBJECTS render pass
+
+    std::array<VkClearValue, 2> semiTransClearValues{};
+    semiTransClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    semiTransClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    VkRenderPassBeginInfo renderPassSemiTransInfo = {};
+    renderPassSemiTransInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassSemiTransInfo.renderPass = m_renderPassSemiTrans;
+    renderPassSemiTransInfo.renderArea.offset.x = 0;
+    renderPassSemiTransInfo.renderArea.offset.y = 0;
+    renderPassSemiTransInfo.renderArea.extent.width = _width;
+    renderPassSemiTransInfo.renderArea.extent.height = _height;
+    renderPassSemiTransInfo.clearValueCount = semiTransClearValues.size();
+    renderPassSemiTransInfo.pClearValues = semiTransClearValues.data();
+    renderPassSemiTransInfo.framebuffer = m_fbsSemiTrans[currentImage];
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+
+    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSemiTransInfo, VK_SUBPASS_CONTENTS_INLINE);
+    {
+        const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        m_bush->draw(_cmdBufs[currentImage], currentImage);
+    }
+    vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+    //---------------------------------------------------------------------------------------------//
     /// FXAA render pass
 
     std::array<VkClearValue, 2> fxaaClearValues{};
@@ -441,11 +486,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
     renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
-                                    _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
@@ -462,9 +507,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
-                                    _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
                                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
@@ -493,7 +537,9 @@ void VulkanRenderer::createColorBufferImage() {
 
     for (size_t i = 0; i < _swapChain.images.size(); ++i) {
         // By keeping G Pass buffers on-tile only (VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT), we can save a lot of bandwidth and
-        // memory. In this sample, only _colorBuffer needs to be written out to memory and be used out of subpasses
+        // memory. we don't need to write the g-buffer data out to memory let's leave everything in tile memory,
+        // do the lighting pass within the tile (you read them as input attachments), and then forget them
+        // In this sample, only _colorBuffer needs to be written out to memory and be used out of subpasses
 
         // Create Color Buffer Image
         Utils::VulkanCreateImage(
@@ -534,6 +580,8 @@ void VulkanRenderer::loadModels() {
     for (auto& model : m_models) {
         model->init();
     }
+
+    m_bush->init();
 
     // for first pair the calling can be skipped since it's already called in model->init()
     for (auto& pipelineCreator : m_pipelineCreators) {
@@ -780,6 +828,62 @@ void VulkanRenderer::createRenderPass() {
     Utils::printLog(INFO_PARAM, "Created a render pass G-PASS");
 
     //-------------------------------------------------------//
+    // Create info for Render Pass for Semi Transparent particles
+    VkAttachmentDescription colorAttachmentSemiTrans = colorAttachment;
+    colorAttachmentSemiTrans.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription depthAttachmentSemiTrans = depthAttachment;
+    depthAttachmentSemiTrans.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthAttachmentSemiTrans.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference colorAttachmentSemiTransReference = {};
+    colorAttachmentSemiTransReference.attachment = 0;
+    colorAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentSemiTransReference;
+    depthAttachmentSemiTransReference.attachment = 1;
+    depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+
+    VkSubpassDescription subpassSemiTrans{};
+    subpassSemiTrans.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassSemiTrans.colorAttachmentCount = 1;
+    subpassSemiTrans.pColorAttachments = &colorAttachmentSemiTransReference;
+    subpassSemiTrans.inputAttachmentCount = 1;
+    subpassSemiTrans.pInputAttachments = &depthAttachmentSemiTransReference;
+    // subpassSemiTrans.pDepthStencilAttachment = &depthAttachmentSemiTransReference;
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsSemiTrans = {colorAttachmentSemiTrans, depthAttachmentSemiTrans};
+
+    VkSubpassDependency dependencySemiTrans;
+
+    dependencySemiTrans.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencySemiTrans.dstSubpass = 0;
+    dependencySemiTrans.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencySemiTrans.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySemiTrans.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dependencySemiTrans.dstAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoSemiTrans = {};
+    renderPassCreateInfoSemiTrans.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoSemiTrans.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsSemiTrans.size());
+    renderPassCreateInfoSemiTrans.pAttachments = renderPassAttachmentsSemiTrans.data();
+    renderPassCreateInfoSemiTrans.subpassCount = 1;
+    renderPassCreateInfoSemiTrans.pSubpasses = &subpassSemiTrans;
+    renderPassCreateInfoSemiTrans.dependencyCount = 1;
+    renderPassCreateInfoSemiTrans.pDependencies = &dependencySemiTrans;
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoSemiTrans, nullptr, &m_renderPassSemiTrans);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass for SEMI-TRANSPARENT OBJECTS");
+
+    //-------------------------------------------------------//
     // Create info for Render Pass FXAA
     VkAttachmentDescription colorAttachmentFXAA = {};
     colorAttachmentFXAA.format = _core.getSurfaceFormat().format;         // Format to use for attachment
@@ -929,6 +1033,24 @@ void VulkanRenderer::createFramebuffer() {
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFXAA[i]);
         CHECK_VULKAN_ERROR("vkCreateFramebuffer FXAA error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO SEMI-TRANSPARENT OBJECTS
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassSemiTrans;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsSemiTrans[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer SEMI-TRANSPARENT OBJECTS error %d\n", res);
     }
 
     //-------------------------------------------------------//

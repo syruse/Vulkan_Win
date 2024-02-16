@@ -15,7 +15,7 @@ class VulkanRenderer : public VulkanState {
 public:
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
-    enum Pipelines { GPASS = 0, TERRAIN, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, MAX };
+    enum Pipelines { GPASS = 0, TERRAIN, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, PARTICLE, MAX };
 
     VulkanRenderer(std::string_view appName, size_t width, size_t height);
 
@@ -69,14 +69,19 @@ private:
     Model* mp_modelTransferSpace{nullptr};
 
     VkRenderPass m_renderPassFXAA{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT > m_fbsFXAA{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFXAA{nullptr};
 
     VkRenderPass m_renderPassShadowMap{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsShadowMap{nullptr};
     glm::mat4 m_lightProj{1.0f};
 
+    VkRenderPass m_renderPassSemiTrans{nullptr};  // semi-transparent objects will be drawn at the end due to g-pass
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSemiTrans{nullptr};
+
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
+
+    std::unique_ptr<I3DModel> m_bush;
 
     Camera mCamera;
 };

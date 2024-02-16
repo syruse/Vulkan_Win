@@ -18,6 +18,8 @@ public:
 
     const VkSurfaceFormatKHR& getSurfaceFormat() const;
 
+    VkPresentModeKHR getPresentMode() const;
+
     const VkSurfaceCapabilitiesKHR& getSurfaceCaps() const;
 
     VkSurfaceKHR getSurface() const {
