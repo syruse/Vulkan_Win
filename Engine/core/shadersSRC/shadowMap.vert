@@ -4,6 +4,8 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
     mat4 lightViewProj;
+    mat4 proj;
+    mat4 view;
 } uboViewProjection;
 
 layout(set = 0, binding = 1) uniform DynamicUBO {

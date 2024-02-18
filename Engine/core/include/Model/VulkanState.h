@@ -23,6 +23,8 @@ struct VulkanState {
         alignas(16) glm::mat4 viewProj;
         alignas(16) glm::mat4 viewProjInverse;
         alignas(16) glm::mat4 lightViewProj;
+        alignas(16) glm::mat4 proj;
+        alignas(16) glm::mat4 view;
     };
 
     struct PushConstant {

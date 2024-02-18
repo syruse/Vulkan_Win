@@ -11,6 +11,8 @@ layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
     mat4 lightViewProj;
+    mat4 proj;
+    mat4 view;
 } uboViewProjection;
 
 layout(push_constant) uniform PushConstant {

@@ -4,6 +4,7 @@ layout(binding = 1) uniform sampler2D inputTexture;
 layout(binding = 2) uniform sampler2D inputDepth;
 
 layout(location = 0) in vec2 fragTexCoord;
+layout(location = 1) in float fragDepth;
 
 layout(location = 0) out vec4 out_Color;
 
@@ -23,9 +24,9 @@ void main() {
   float farPlane = pushConstant.windowSize.z;
   vec2 texCoord = vec2(gl_FragCoord.x / pushConstant.windowSize.x, gl_FragCoord.y / pushConstant.windowSize.y);
   float cachedDepth = texture(inputDepth, texCoord).r;
-  // applying depth test by itself since we have gpass and draw semi-transparent objects at the end 
+  // applying depth test by itself since we have g-pass and have to draw semi-transparent objects at the end of scene
   // taking into accound depth texture of all previously rendered objects
-  if (linearizeDepth(gl_FragCoord.z, nearPlane, farPlane) > linearizeDepth(cachedDepth, nearPlane, farPlane))
+  if (linearizeDepth(fragDepth, nearPlane, farPlane) > linearizeDepth(cachedDepth, nearPlane, farPlane))
   {
       discard;
   }

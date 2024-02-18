@@ -72,8 +72,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
     m_bush = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
-                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 10000u,
-                                        0.7f * Z_FAR, 10);
+                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 5000u,
+                                        0.7f * Z_FAR, 15);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -207,6 +207,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     viewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
     viewProj.viewProjInverse = glm::inverse(viewProj.viewProj);
     viewProj.lightViewProj = m_lightProj;
+    viewProj.proj = cameraViewProj.proj;
+    viewProj.view = cameraViewProj.view;
 
     // Copy VP data
     void* data;
