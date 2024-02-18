@@ -19,6 +19,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE  /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
 
 static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
@@ -71,9 +72,15 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    m_bush = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
-                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 5000u,
-                                        0.7f * Z_FAR, 15);
+    m_bushes[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
+                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 5000u,
+                                             0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
+    m_bushes[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
+                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 20000u,
+                                             0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
+    m_bushes[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
+                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 2000u,
+                                             0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -229,7 +236,10 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
 
     // move skybox to get unreachable
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
-    pModel->model = glm::translate(glm::mat4(1.0f), mCamera.targetPos());
+    static float skyboxRotationDegree = 0.0f;
+    skyboxRotationDegree += 0.001f;  // TODO some delta time must take part
+    glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
+    pModel->model = glm::translate(rotMat, mCamera.targetPos());
     pModel->MVP = viewProj.viewProj * pModel->model;
 
     // Map the list of model data
@@ -466,7 +476,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
-        m_bush->draw(_cmdBufs[currentImage], currentImage);
+        for (auto& bush : m_bushes) {
+            bush->draw(_cmdBufs[currentImage], currentImage);
+        }
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
@@ -583,7 +595,9 @@ void VulkanRenderer::loadModels() {
         model->init();
     }
 
-    m_bush->init();
+    for (auto& bush : m_bushes) {
+        bush->init();
+    }
 
     // for first pair the calling can be skipped since it's already called in model->init()
     for (auto& pipelineCreator : m_pipelineCreators) {
@@ -606,7 +620,7 @@ bool VulkanRenderer::renderScene() {
     auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;
 
-    if (windowQueueMSG.isResized) {
+    if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
         mCamera.resetPerspective({65.0f, (float)windowQueueMSG.width / windowQueueMSG.height, 0.01f, 1000.0f});
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
         return ret_status;

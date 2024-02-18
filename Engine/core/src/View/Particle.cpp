@@ -15,8 +15,7 @@ void Particle::init() {
     auto texture = m_textureFactory.create2DTexture(m_textureFileName).lock();
 
     if (texture) {
-        auto ptr = static_cast<PipelineCreatorParticle*>(m_pipelineCreatorTextured);
-        ptr->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels));
+        m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels));
     }
 
     std::vector<Particle::Instance> instances(m_instancesAmount, Particle::Instance{});
@@ -44,16 +43,15 @@ void Particle::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe
     assert(m_pipelineCreatorTextured);
     assert(m_pipelineCreatorTextured->getPipeline().get());
 
-    auto ptr = static_cast<PipelineCreatorParticle*>(m_pipelineCreatorTextured);
-
-    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, ptr->getPipeline().get()->pipeline);
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = {m_generalBuffer};
     VkDeviceSize offsets[] = {m_verticesBufferOffset};
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
 
-    vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, ptr->getPipeline().get()->pipelineLayout, 0, 1,
-                            ptr->getDescriptorSet(descriptorSetIndex), 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
+                            m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex), 0, VK_NULL_HANDLE);
     /// Note: designed for VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
     vkCmdDraw(cmdBuf, 4, m_instancesAmount, 0, 0);
 }

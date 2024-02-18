@@ -17,7 +17,7 @@ public:
     void recreateDescriptors() override;
     const VkDescriptorSet* getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId = 0u) const override;
 
-    uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
+    virtual uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
 
     /// <summary>
     /// it must be called for every 3d model instancing

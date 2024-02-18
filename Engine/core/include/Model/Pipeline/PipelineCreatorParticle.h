@@ -13,7 +13,7 @@ public:
         : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, 1u, subpass, pushConstantRange) {
     }
 
-    bool createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
+    uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler) override;
 
     void createDescriptorPool() override;
     void recreateDescriptors() override;

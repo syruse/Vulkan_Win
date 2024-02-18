@@ -81,7 +81,7 @@ private:
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
-    std::unique_ptr<I3DModel> m_bush;
+    std::array<std::unique_ptr<I3DModel>, 3u> m_bushes;
 
     Camera mCamera;
 };

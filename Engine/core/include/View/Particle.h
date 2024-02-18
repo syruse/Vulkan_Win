@@ -9,7 +9,7 @@ class Particle : public I3DModel {
 public:
     struct Instance {
         glm::vec3 pos{0.0f};
-        float scale{1.0f};
+        glm::vec3 scale{1.0f};
     };
 
     static const VkVertexInputBindingDescription& getBindingDescription() {
@@ -29,7 +29,7 @@ public:
 
         attributeDescriptions[1].binding = 0;
         attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32_SFLOAT;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Instance, scale);
         return attributeDescriptions;
     }
@@ -37,7 +37,7 @@ public:
     // for filling z plane with particles (bushes etc)
     Particle(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view textureFileName,
              PipelineCreatorTextured* pipelineCreatorTextured, uint32_t instancesAmount, float zFar = 1.0f,
-             uint32_t scale = 1u) noexcept(true)
+             const glm::vec3& scale = glm::vec3(1.0f)) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured),
           m_textureFileName(textureFileName),
           m_instancesAmount{instancesAmount},
@@ -52,5 +52,5 @@ private:
     std::string_view m_textureFileName{};
     uint32_t m_instancesAmount{1u};
     float m_zFar{1.0f};
-    uint32_t m_scale{1u};
+    glm::vec3 m_scale{1.0f};
 };

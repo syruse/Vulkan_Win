@@ -105,7 +105,8 @@ void PipelineCreatorParticle::createDescriptorPool() {
     m_material.descriptorSets[2] = nullptr;
 }
 
-bool PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
+// return 0 if success
+uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
     auto sharedPtrTexture = texture.lock();
@@ -113,7 +114,7 @@ bool PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Tex
 
     if (m_material.descriptorSets[0]) {
         Utils::printLog(INFO_PARAM, "No need to allocate DescriptorSets again!");
-        return false;
+        return -1;
     }
 
     std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
@@ -132,7 +133,7 @@ bool PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Tex
     auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, m_material.descriptorSets.data());
     if (status != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
-        return false;
+        return -1;
     }
 
     // Update each descriptor set with input attachment
@@ -188,7 +189,7 @@ bool PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Tex
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);
     }
 
-    return true;
+    return 0;
 }
 
 void PipelineCreatorParticle::recreateDescriptors() {
