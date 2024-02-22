@@ -876,20 +876,26 @@ void VulkanRenderer::createRenderPass() {
     subpassSemiTrans.pColorAttachments = &colorAttachmentSemiTransReference;
     subpassSemiTrans.inputAttachmentCount = 1;
     subpassSemiTrans.pInputAttachments = &depthAttachmentSemiTransReference;
-    // subpassSemiTrans.pDepthStencilAttachment = &depthAttachmentSemiTransReference;
 
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsSemiTrans = {colorAttachmentSemiTrans, depthAttachmentSemiTrans};
 
-    VkSubpassDependency dependencySemiTrans;
+    std::array<VkSubpassDependency, 2u> dependencySemiTrans;
+    // color dependancy
+    dependencySemiTrans[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencySemiTrans[0].dstSubpass = 0;
+    dependencySemiTrans[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySemiTrans[0].srcAccessMask = 0;
+    dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySemiTrans[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    dependencySemiTrans.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencySemiTrans.dstSubpass = 0;
-    dependencySemiTrans.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencySemiTrans.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencySemiTrans.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    dependencySemiTrans.dstAccessMask =
-        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencySemiTrans.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    // depth dependency (depth attachment cannot be used before previous renderpasses have finished using it)
+    dependencySemiTrans[1].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencySemiTrans[1].dstSubpass = 0;
+    dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencySemiTrans[1].srcAccessMask = 0;
+    dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencySemiTrans[1].dstAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // in this case we need only read mode (depth is read in shader)
 
     VkRenderPassCreateInfo renderPassCreateInfoSemiTrans = {};
     renderPassCreateInfoSemiTrans.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -897,8 +903,8 @@ void VulkanRenderer::createRenderPass() {
     renderPassCreateInfoSemiTrans.pAttachments = renderPassAttachmentsSemiTrans.data();
     renderPassCreateInfoSemiTrans.subpassCount = 1;
     renderPassCreateInfoSemiTrans.pSubpasses = &subpassSemiTrans;
-    renderPassCreateInfoSemiTrans.dependencyCount = 1;
-    renderPassCreateInfoSemiTrans.pDependencies = &dependencySemiTrans;
+    renderPassCreateInfoSemiTrans.dependencyCount = static_cast<uint32_t>(dependencySemiTrans.size());
+    renderPassCreateInfoSemiTrans.pDependencies = dependencySemiTrans.data();
 
     res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoSemiTrans, nullptr, &m_renderPassSemiTrans);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);

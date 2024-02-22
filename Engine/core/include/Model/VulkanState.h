@@ -25,7 +25,13 @@ struct VulkanState {
         anyway the driver may execute some final operations before completly releasing subsequant buffer
         to avoid wasting time we can use really idle buffer by triple buffering involvement
     */
-    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 5;  /// triple buffering to maximize performance
+    /** triple buffering maximize performance but we can run into cpu stuttering if gpu is not able to process 3 frames in time
+        5 is available on most platforms (WIN, Linux, Android) in this case we don't need gamble with VK_PRESENT_MODE_MAILBOX_KHR
+        which evicts pending frame from the gpu presenting queue and doesn't force cpu to wait available one
+        and the same time it provides swapImage index in random order but our logic expects incremental m_currentFrame 
+        for available semaphores and fences it may cause unexpected issues
+    */
+    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 5;
 
     struct Model {
         alignas(16) glm::mat4 model;

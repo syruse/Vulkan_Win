@@ -35,12 +35,16 @@ for LINUX platform
 install sdl2
 sudo apt install libsdl2-dev libsdl2-2.0-0 -y;
 </br>
-install vulkan
-visit https://vulkan.lunarg.com/sdk/home
+install vulkan (visit https://vulkan.lunarg.com/sdk/home)
+</br>
 wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+</br>
 sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.275-focal.list https://packages.lunarg.com/vulkan/1.3.275/lunarg-vulkan-1.3.275-focal.list
+</br>
 sudo apt update
+</br>
 sudo apt install vulkan-sdk
+</br>
 run vkconfig to set validation
 </br>
 you have to open "vulkan_win/engine/core" folder(with cmake file) over Visual Code
@@ -48,6 +52,6 @@ and run build over cmake extension
 </p>
 <p><b>TODO:</b>
 </br>
-instancing for grass drawing, particles system, fonts, several command buffers, separate thread for resources loading, LODs, oct tree, polishing architecture of the engine</p>
+instancing for grass drawing, particles system, fonts, several command buffers, separate thread for resources loading, quad-tree\oct tree</p>
 </body>
 </html>

@@ -69,15 +69,21 @@ const VkSurfaceFormatKHR& VulkanCore::getSurfaceFormat() const {
 
 VkPresentModeKHR VulkanCore::getPresentMode() const {
     assert(m_gfxDevIndex >= 0);
-    for (const auto& availablePresentMode : m_physDevices.m_presentModes[m_gfxDevIndex]) {
-        /** checking presence of the most eficient one with vsync
-            (it doesn't block app if the queue is full and none is rendered yet
-             we simply replace that one in queue with just prepared newest swap image) */
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-            return availablePresentMode;
-        }
-    }
-    // returning common one (with vsync but blocks app untill gpu releases swap image)
+    /** checking presence of the most eficient one with vsync
+    (it doesn't block app if the queue is full and none is rendered yet
+     we simply replace that one in queue with just prepared newest swap image) */
+    /** it may expose us to some risks since it provides image indeces in random order
+    *   see comment for MAX_FRAMES_IN_FLIGHT
+    * 
+    *   for (const auto& availablePresentMode : m_physDevices.m_presentModes[m_gfxDevIndex]) {
+    *   
+    *       if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+    *           return availablePresentMode;
+    *       }
+    *   }
+    */
+    // returning common one (with vsync but it may block app untill gpu releases swap image)
+    // but very unlikely since we have 5 frames in swap chain
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
