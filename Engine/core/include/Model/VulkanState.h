@@ -7,12 +7,25 @@
 #include <array>
 #include "VulkanCore.h"
 
+#ifdef _WIN32
+#include "Win32Control.h"
+/// already included 'windows.h' with own implementations of aligned_alloc...
+#elif __linux__
+#include <stdlib.h>  // aligned_alloc/free
+#include <cstring>   // memcpy
+#include "XCBControl.h"
+#define _aligned_free free
+#define _aligned_malloc aligned_alloc
+#else
+/// other OS
+#endif
+
 struct VulkanState {
     /** Using double buffering and vsync locks rendering to an integer fraction of the vsync rate.
         anyway the driver may execute some final operations before completly releasing subsequant buffer
         to avoid wasting time we can use really idle buffer by triple buffering involvement
     */
-    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;  /// triple buffering to maximize performance
+    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 5;  /// triple buffering to maximize performance
 
     struct Model {
         alignas(16) glm::mat4 model;

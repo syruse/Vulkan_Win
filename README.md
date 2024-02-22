@@ -29,6 +29,22 @@ and ensure that VULKAN_SDK variable is set
 <b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 16 2019"</i></b>
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
+</br>
+for LINUX platform
+</br>
+install sdl2
+sudo apt install libsdl2-dev libsdl2-2.0-0 -y;
+</br>
+install vulkan
+visit https://vulkan.lunarg.com/sdk/home
+wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.275-focal.list https://packages.lunarg.com/vulkan/1.3.275/lunarg-vulkan-1.3.275-focal.list
+sudo apt update
+sudo apt install vulkan-sdk
+run vkconfig to set validation
+</br>
+you have to open "vulkan_win/engine/core" folder(with cmake file) over Visual Code
+and run build over cmake extension
 </p>
 <p><b>TODO:</b>
 </br>

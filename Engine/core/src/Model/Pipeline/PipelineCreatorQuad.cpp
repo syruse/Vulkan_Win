@@ -90,9 +90,10 @@ void PipelineCreatorQuad::createDescriptorPool() {
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
     depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputPoolSize.descriptorCount = 1;  // common depth buffer used in each swapchain
+    depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
+    shadowMapInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     // GPass Color Attachment Pool Size
     VkDescriptorPoolSize gPassColorInputPoolSize = {};
@@ -130,8 +131,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
 void PipelineCreatorQuad::recreateDescriptors() {
     // Fill array of layouts ready for set creation
     auto descriptorSetLayout = *m_descriptorSetLayout.get();
-    std::array<VkDescriptorSetLayout, VulkanState::MAX_FRAMES_IN_FLIGHT> layouts{descriptorSetLayout, descriptorSetLayout,
-                                                                                 descriptorSetLayout};
+    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -150,9 +150,10 @@ void PipelineCreatorQuad::recreateDescriptors() {
         std::vector<VkWriteDescriptorSet> setWrites;
         setWrites.reserve(attachmentsAmount);
 
+        VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, depthAttachmentDescriptor,
+            depthShadowAttachmentDescriptor;
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
-            VkDescriptorImageInfo normalAttachmentDescriptor{};
             normalAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             normalAttachmentDescriptor.imageView = m_vkState._gPassBuffer.normal.colorBufferImageView[i];
             normalAttachmentDescriptor.sampler = VK_NULL_HANDLE;
@@ -169,14 +170,13 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
             setWrites.push_back(colorWrite);
 
-            VkDescriptorImageInfo colorAttachmentDescriptor = normalAttachmentDescriptor;
+            colorAttachmentDescriptor = normalAttachmentDescriptor;
             colorAttachmentDescriptor.imageView = m_vkState._gPassBuffer.color.colorBufferImageView[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
             setWrites.push_back(colorWrite);
         } else {
             // Color Attachment Descriptor
-            VkDescriptorImageInfo colorAttachmentDescriptor = {};
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             colorAttachmentDescriptor.imageView = m_vkState._colorBuffer.colorBufferImageView[i];
             colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
@@ -195,7 +195,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         if (m_isDepthNeeded) {
             // Depth Attachment Descriptor
-            VkDescriptorImageInfo depthAttachmentDescriptor{};
             depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._depthBuffer.depthImageView;
             depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
@@ -215,10 +214,9 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         if (m_isGPassNeeded) {
             // Shadow Map
-            VkDescriptorImageInfo depthAttachmentDescriptor{};
-            depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-            depthAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
-            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+            depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+            depthShadowAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
+            depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -227,7 +225,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstArrayElement = 0;
             depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             depthWrite.descriptorCount = 1;
-            depthWrite.pImageInfo = &depthAttachmentDescriptor;
+            depthWrite.pImageInfo = &depthShadowAttachmentDescriptor;
 
             setWrites.push_back(depthWrite);
 

@@ -92,8 +92,7 @@ void PipelineCreatorShadowMap::createDescriptorPool() {
 
 void PipelineCreatorShadowMap::recreateDescriptors() {
     auto descriptorSetLayout = *m_descriptorSetLayout.get();
-    std::array<VkDescriptorSetLayout, VulkanState::MAX_FRAMES_IN_FLIGHT> layouts{descriptorSetLayout, descriptorSetLayout,
-                                                                                 descriptorSetLayout};
+    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;

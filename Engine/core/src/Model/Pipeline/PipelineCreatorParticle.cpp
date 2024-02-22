@@ -85,9 +85,8 @@ void PipelineCreatorParticle::createDescriptorPool() {
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
-    VkDescriptorPoolSize depthInputPoolSize = {};
+    VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
     depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputPoolSize.descriptorCount = 1;
 
     std::array<VkDescriptorPoolSize, 3> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize};
 

@@ -101,8 +101,13 @@ void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCom
 #define ARRAY_SIZE_IN_ELEMENTS(a) (sizeof(a) / sizeof(a[0]))
 #define INFO_PARAM false, "\nin file: ", __FILE__, " at line: ", __LINE__, " from function: ", __FUNCTION__, " \n "
 #define ERROR_PARAM true, "\nin file: ", __FILE__, " at line: ", __LINE__, " from function: ", __FUNCTION__, " \n "
+#ifdef _WIN32
 #define INFO_FORMAT(msg, ...) Utils::printInfoF(__FILE__, __LINE__, __FUNCTION__, msg, __VA_ARGS__)
 #define ERROR_FORMAT(msg, ...) Utils::printErrorF(__FILE__, __LINE__, __FUNCTION__, msg, __VA_ARGS__)
+#else  //__linux__ if __VA_ARGS__  is empty then preceding comma will be deleted to avoid error compilation
+#define INFO_FORMAT(msg, ...) Utils::printInfoF(__FILE__, __LINE__, __FUNCTION__, msg, ##__VA_ARGS__)
+#define ERROR_FORMAT(msg, ...) Utils::printErrorF(__FILE__, __LINE__, __FUNCTION__, msg, ##__VA_ARGS__)
+#endif
 #define CHECK_VULKAN_ERROR(msg, res) \
     if (res != VK_SUCCESS) {         \
         ERROR_FORMAT(msg, res);      \

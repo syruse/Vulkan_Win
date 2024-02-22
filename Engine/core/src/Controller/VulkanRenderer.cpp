@@ -9,7 +9,14 @@
 #include "Skybox.h"
 #include "Terrain.h"
 
+#ifdef __linux__
+#include <SDL2/SDL.h>
+#elif _WIN32
 #include <SDL.h>
+#else
+#include <SDL.h>
+#endif
+
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
@@ -305,7 +312,6 @@ void VulkanRenderer::createSwapChain() {
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
     assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
-    NumSwapChainImages = MAX_FRAMES_IN_FLIGHT;  // queried number of presentable images
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
 }

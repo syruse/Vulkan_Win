@@ -5,7 +5,6 @@
 #include <wchar.h>
 #include <cassert>
 #include "Utils.h"
-#include "vulkan/vk_sdk_platform.h"
 #include "vulkan/vulkan_xcb.h"
 
 static constexpr const wchar_t* WIN_CLASS_NAME = L"XCBControl";
