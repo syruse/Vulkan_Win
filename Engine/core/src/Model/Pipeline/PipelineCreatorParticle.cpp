@@ -83,9 +83,11 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
 
 void PipelineCreatorParticle::createDescriptorPool() {
     assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
+    uint32_t descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount;
+
     VkDescriptorPoolSize uboPoolSize{};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    uboPoolSize.descriptorCount = descriptorCount;
 
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -99,7 +101,7 @@ void PipelineCreatorParticle::createDescriptorPool() {
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    inputPoolCreateInfo.maxSets = m_vkState._swapChain.images.size() * m_maxObjectsCount;
+    inputPoolCreateInfo.maxSets = descriptorCount;
     inputPoolCreateInfo.poolSizeCount = poolSize.size();
     inputPoolCreateInfo.pPoolSizes = poolSize.data();
 

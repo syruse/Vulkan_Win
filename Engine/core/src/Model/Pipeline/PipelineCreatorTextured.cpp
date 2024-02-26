@@ -48,10 +48,12 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
 void PipelineCreatorTextured::createDescriptorPool() {
     assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
     // Type of descriptors + how many Descriptors needed to be allocated in pool
-
+    uint32_t descriptorCount =
+        VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
+        10;  // Maximum number of Descriptor Sets that can be created from pool (it's because 3d model may consist of subobjects)
     VkDescriptorPoolSize uboPoolSize = {};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    uboPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    uboPoolSize.descriptorCount = descriptorCount;
 
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -64,9 +66,7 @@ void PipelineCreatorTextured::createDescriptorPool() {
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(descriptorPoolSizes.size());
     poolInfo.pPoolSizes = descriptorPoolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(
-        VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
-        10);  // Maximum number of Descriptor Sets that can be created from pool (it's because 3d model may consist of subobjects)
+    poolInfo.maxSets = descriptorCount;
 
     if (vkCreateDescriptorPool(m_vkState._core.getDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor pool!");
