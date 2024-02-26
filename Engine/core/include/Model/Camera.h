@@ -41,6 +41,10 @@ public:
         return mTarget + mFromTargetToEye;
     }
 
+    bool isInterpolationFinished() {
+        return mInterpolationK == 1.0f;
+    }
+
     void update(float deltaTime);
     void move(EDirection dir);
 

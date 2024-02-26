@@ -69,14 +69,17 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
         glm::vec3 up{0.0f, 1.0f, 0.0f};
         std::random_device rd;
         std::mt19937 gen(rd());                                 // seed the generator
-        std::uniform_real_distribution<float> distr(0.0, 1.0);  // define the range
+        std::uniform_real_distribution<float> distr(0.1, 1.0);  // define the range
         for (std::size_t i = 0u; i < m_instances.size(); ++i) {
             auto& instance = m_instances[i];
             float random = distr(gen);
-            glm::mat3 rotMat1 = glm::mat3(glm::rotate(glm::radians(10.0f * random), glm::vec3(0.0f, 0.0f, 1.0f)));
-            glm::mat3 rotMat2 = glm::mat3(glm::rotate(glm::radians(10.0f * random), glm::vec3(1.0f, 0.0f, 0.0f)));
-            instance.acceleration = up * rotMat1 * rotMat2;   // some offset
+            // matrix for spreading non linear way
+            //glm::mat3 rotMat1 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(0.0f, 0.0f, 1.0f)));
+            //glm::mat3 rotMat2 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(1.0f, 0.0f, 0.0f)));
+            instance.acceleration = up;// *rotMat1* rotMat2;
             instance.lifeDuration = distr(gen) * 3000000.0f;  // max is 3s
+            instance.speedK = glm::mix(60, 100, distr(gen));
+            instance.alphaK = distr(gen);
         }
         return true;
     });

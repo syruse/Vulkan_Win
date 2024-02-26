@@ -25,6 +25,8 @@ public:
         glm::vec3 pos{0.0f};
         glm::vec3 acceleration{0.0f};
         float lifeDuration{1.0f};  // ms allocated for life of particle
+        float speedK{1.0f};
+        float alphaK{1.0f};
     };
 
     static const std::array<VkVertexInputBindingDescription, 2u>& getBindingDescription() {
@@ -38,8 +40,8 @@ public:
         return bindingDescriptions;
     }
 
-    static const std::array<VkVertexInputAttributeDescription, 8u>& getAttributeDescription() {
-        static std::array<VkVertexInputAttributeDescription, 8u> attributeDescriptions{};
+    static const std::array<VkVertexInputAttributeDescription, 10u>& getAttributeDescription() {
+        static std::array<VkVertexInputAttributeDescription, 10u> attributeDescriptions{};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -73,6 +75,14 @@ public:
         attributeDescriptions[7].location = 7;
         attributeDescriptions[7].format = VK_FORMAT_R32_SFLOAT;
         attributeDescriptions[7].offset = offsetof(Instance, lifeDuration);
+        attributeDescriptions[8].binding = 1;
+        attributeDescriptions[8].location = 8;
+        attributeDescriptions[8].format = VK_FORMAT_R32_SFLOAT;
+        attributeDescriptions[8].offset = offsetof(Instance, speedK);
+        attributeDescriptions[9].binding = 1;
+        attributeDescriptions[9].location = 9;
+        attributeDescriptions[9].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions[9].offset = offsetof(Instance, alphaK);
         return attributeDescriptions;
     }
 

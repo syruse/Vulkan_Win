@@ -19,6 +19,8 @@ layout (location = 4) in int mode;  // '0' regular particles effect(parallel to 
 layout (location = 5) in vec3 inPos;
 layout (location = 6) in vec3 acceleration;
 layout (location = 7) in float lifeDuration;
+layout (location = 8) in float speedK;
+layout (location = 9) in float alphaK;
 
 // Array for triangle that represents the quad
 vec2 quadPos[4] = vec2[](
@@ -39,16 +41,18 @@ layout(location = 0) out vec2 fragTexCoord;
 layout(location = 1) out float fragDepth;
 layout(location = 2) out float kFading;
 layout(location = 3) flat out int isGradientEnabled;
+layout(location = 4) out float alpha;
 
 void main()
 {
     vec3 posOrigin = inPos;
     vec3 scale = scaleMax;
     if (mode == 0) {
-        kFading = fract(pushConstant.particle.w / lifeDuration); // [0.0 - 1.0]
-        float time = 30.0 * kFading;
-        posOrigin = inPosOrigin + /*time * velocity + */time * acceleration;
-        scale = mix(scaleMin, scaleMax, kFading);
+        kFading = fract((speedK * pushConstant.particle.w) / lifeDuration); // [0.0 - 1.0]
+        float time = 5 * kFading;
+        posOrigin = inPosOrigin + time * velocity + time *  time * acceleration;
+        scale = alphaK * mix(scaleMin, scaleMax, kFading);
+        alpha = alphaK;
         isGradientEnabled = 1;
     } else {
         posOrigin = inPos;

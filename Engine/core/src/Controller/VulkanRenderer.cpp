@@ -79,18 +79,18 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
+    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
                                              static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
                                              0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
     m_particles[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
                                              static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
                                              0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
-    m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
+    m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
                                              static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
                                              0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
     m_particles[3] = std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 1000u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(8.0f));
+                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 200u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(6.0f));
 }
 
 VulkanRenderer::~VulkanRenderer() {

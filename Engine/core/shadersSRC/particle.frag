@@ -8,6 +8,7 @@ layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in float fragDepth;
 layout(location = 2) in float kFading;
 layout(location = 3) flat in int isGradientEnabled;
+layout(location = 4) in float alpha;
 
 layout(location = 0) out vec4 out_Color;
 
@@ -38,6 +39,6 @@ void main() {
   {
       vec4 diffColor = texture(inputTexture, fragTexCoord);
       // if gradient enabled then we multiply the color by gradient color
-      out_Color = mix(diffColor, diffColor * vec4(texture(inputGradient, fragTexCoord).rgb, 1.0 - kFading), isGradientEnabled);
+      out_Color = mix(diffColor, diffColor * vec4(texture(inputGradient, fragTexCoord).rgb, alpha*(1.0 - kFading)), isGradientEnabled);
   }
 }

@@ -199,7 +199,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
 
         VkWriteDescriptorSet textureGradientSetWrite = textureSetWrite;
         textureSetWrite.dstBinding = 3;
-        textureSetWrite.pImageInfo = &imageInfo;
+        textureSetWrite.pImageInfo = &imageGradientInfo;
 
         std::array<VkWriteDescriptorSet, 4u> descriptorSets{uboDescriptorWrite, textureSetWrite, depthWrite,
                                                             textureGradientSetWrite};
