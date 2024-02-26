@@ -26,8 +26,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
     vertices.clear();
     indices.clear();
 
-    std::unordered_map<uint16_t, uint16_t> materialsMap{};  /// pair: local materialID: real materialID
-    std::multimap<uint16_t, SubObject> subOjectsMap{};      /// For Sorting by material, keeps pair: local materialID: SubObject
+    std::unordered_map<uint32_t, uint32_t> materialsMap{};  /// pair: local materialID: real materialID
+    std::multimap<uint32_t, SubObject> subOjectsMap{};      /// For Sorting by material, keeps pair: local materialID: SubObject
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -62,8 +62,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
 
     for (const auto& shape : shapes) {
         assert(shape.mesh.material_ids.size() && materials.size());
-        uint16_t materialId = shape.mesh.material_ids[0];
-        uint16_t realMaterialId = 0u;
+        uint32_t materialId = shape.mesh.material_ids[0];
+        uint32_t realMaterialId = 0u;
 
         isBumpMappingValid = materials[materialId].bump_texname.empty() ? false : true;
 

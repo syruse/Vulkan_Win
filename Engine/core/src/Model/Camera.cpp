@@ -25,9 +25,10 @@ void Camera::resetPerspective(const Perstective& perstective) {
 }
 
 void Camera::update(float deltaTime) {
+    float kDelay = deltaTime / 33.3;  // camera updating for 30 fps
     glm::quat interpolatedQuat{};
     if (mInterpolationK < 1.0f) {
-        mInterpolationK += 50.0f * deltaTime;
+        mInterpolationK += 0.01f * kDelay;
     } else {
         mInterpolationK = 1.0f;
     }

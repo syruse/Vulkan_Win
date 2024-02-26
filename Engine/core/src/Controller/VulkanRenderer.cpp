@@ -79,15 +79,18 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    m_bushes[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 5000u,
+    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
+                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
                                              0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
-    m_bushes[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 20000u,
+    m_particles[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
+                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
                                              0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
-    m_bushes[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
-                                             static_cast<PipelineCreatorTextured*>(m_pipelineCreators[PARTICLE].get()), 2000u,
+    m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
+                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
                                              0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
+    m_particles[3] = std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 1000u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(8.0f));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -209,8 +212,9 @@ void VulkanRenderer::calculateLightThings() {
     m_lightProj[1][1] *= -1;
 }
 
-void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
+void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     assert(_ubo.buffersMemory.size() > currentImage);
+    float kDelay = deltaMS / 33.3;  // skebox updating aligned to 30 fps
 
     const auto objectsAmount = m_models.size();
 
@@ -244,7 +248,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage) {
     // move skybox to get unreachable
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
-    skyboxRotationDegree += 0.001f;  // TODO some delta time must take part
+    skyboxRotationDegree += 0.001f * kDelay;
     glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
     pModel->model = glm::translate(rotMat, mCamera.targetPos());
     pModel->MVP = viewProj.viewProj * pModel->model;
@@ -482,8 +486,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
-        for (auto& bush : m_bushes) {
-            bush->draw(_cmdBufs[currentImage], currentImage);
+        for (auto& particle : m_particles) {
+            particle->draw(_cmdBufs[currentImage], currentImage);
         }
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -601,8 +605,8 @@ void VulkanRenderer::loadModels() {
         model->init();
     }
 
-    for (auto& bush : m_bushes) {
-        bush->init();
+    for (auto& particle : m_particles) {
+        particle->init();
     }
 
     // for first pair the calling can be skipped since it's already called in model->init()
@@ -618,8 +622,8 @@ bool VulkanRenderer::renderScene() {
     assert(winController);
 
     static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float deltaTime = std::chrono::duration<float, std::chrono::milliseconds::period>(currentTime - startTime).count();
+    static auto endTime = std::chrono::high_resolution_clock::now();
+    static float deltaTime = 0.0f;
 
     mCamera.update(deltaTime);
 
@@ -661,6 +665,7 @@ bool VulkanRenderer::renderScene() {
     }
 
     _pushConstant.cameraPos = mCamera.cameraPosition();
+    _pushConstant.particle.w += deltaTime;
 
     // -- GET NEXT IMAGE --
     // Wait for given fence to signal (open) from last draw before continuing
@@ -685,7 +690,7 @@ bool VulkanRenderer::renderScene() {
     submitInfo.signalSemaphoreCount = 1;
 
     recordCommandBuffers(ImageIndex);  /// added here since now comand buffer resets after each vkBegin command
-    updateUniformBuffer(ImageIndex);
+    updateUniformBuffer(ImageIndex, deltaTime);
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
     CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
@@ -708,7 +713,9 @@ bool VulkanRenderer::renderScene() {
     // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
     m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
 
-    startTime = std::chrono::high_resolution_clock::now();
+    endTime = std::chrono::high_resolution_clock::now();
+    deltaTime = std::chrono::duration<float, std::chrono::milliseconds::period>(endTime - startTime).count();
+    startTime = endTime;
 
     return ret_status;
 }

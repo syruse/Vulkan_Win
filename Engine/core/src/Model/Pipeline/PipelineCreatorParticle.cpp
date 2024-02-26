@@ -11,8 +11,8 @@ void PipelineCreatorParticle::createPipeline() {
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     const auto& bindingDescription = Particle::getBindingDescription();
     const auto& attributeDescriptions = Particle::getAttributeDescription();
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescription.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescription.data();
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
@@ -60,7 +60,12 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
     depthInputLayoutBinding.descriptorCount = 1;
     depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> inputBindings{UBOLayoutBinding, samplerLayoutBinding, depthInputLayoutBinding};
+    // Texture Gradient
+    VkDescriptorSetLayoutBinding samplerGradientLayoutBinding = samplerLayoutBinding;
+    samplerGradientLayoutBinding.binding = 3;
+
+    std::array<VkDescriptorSetLayoutBinding, 4u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, depthInputLayoutBinding,
+                                                               samplerGradientLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -85,36 +90,36 @@ void PipelineCreatorParticle::createDescriptorPool() {
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
+    VkDescriptorPoolSize textureGradientPoolSize = texturePoolSize;
+
     VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
     depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 
-    std::array<VkDescriptorPoolSize, 3> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize};
+    std::array<VkDescriptorPoolSize, 4u> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize, textureGradientPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    inputPoolCreateInfo.maxSets = m_vkState._swapChain.images.size();
+    inputPoolCreateInfo.maxSets = m_vkState._swapChain.images.size() * m_maxObjectsCount;
     inputPoolCreateInfo.poolSizeCount = poolSize.size();
     inputPoolCreateInfo.pPoolSizes = poolSize.data();
 
     if (vkCreateDescriptorPool(m_vkState._core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to create descriptor pool for second pass!");
     }
-    m_material.descriptorSets[0] = nullptr;
-    m_material.descriptorSets[1] = nullptr;
-    m_material.descriptorSets[2] = nullptr;
+    m_curMaterialId = 0u;
 }
 
-// return 0 if success
-uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
+uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture,
+                                                   VkSampler particleSampler,
+                                                   std::weak_ptr<TextureFactory::Texture> gradientTexture,
+                                                   VkSampler gradientSampler) {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
-    auto sharedPtrTexture = texture.lock();
-    assert(sharedPtrTexture);
+    auto sharedPtrTexture = particleTexture.lock();
+    auto sharedPtrTextureGradient = gradientTexture.lock();
+    assert(sharedPtrTexture && sharedPtrTextureGradient);
 
-    if (m_material.descriptorSets[0]) {
-        Utils::printLog(INFO_PARAM, "No need to allocate DescriptorSets again!");
-        return -1;
-    }
+    ++m_curMaterialId;
 
     std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
     // Input Attachment Descriptor Set Allocation Info
@@ -124,16 +129,21 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
     setAllocInfo.descriptorSetCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
     setAllocInfo.pSetLayouts = layouts.data();
 
-    m_material.sampler = sampler;
-    m_material.texture = texture;
-    m_material.descriptorSetLayout = *m_descriptorSetLayout.get();
+    Material material;
+    material.samplerParticle = particleSampler;
+    material.textureParticle = particleTexture;
+    material.textureGradient = gradientTexture;
+    material.samplerGradient = gradientSampler;
+    material.descriptorSetLayout = *m_descriptorSetLayout.get();
 
     // Allocate Descriptor Sets
-    auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, m_material.descriptorSets.data());
+    auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, material.descriptorSets.data());
     if (status != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
         return -1;
     }
+
+    m_descriptorSets.try_emplace(m_curMaterialId, material);
 
     // Update each descriptor set with input attachment
     for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -145,7 +155,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
 
         VkWriteDescriptorSet uboDescriptorWrite{};
         uboDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboDescriptorWrite.dstSet = m_material.descriptorSets[i];
+        uboDescriptorWrite.dstSet = material.descriptorSets[i];
         uboDescriptorWrite.dstBinding = 0;
         uboDescriptorWrite.dstArrayElement = 0;
         uboDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -156,11 +166,11 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = sharedPtrTexture->m_textureImageView;
-        imageInfo.sampler = sampler;
+        imageInfo.sampler = particleSampler;
 
         VkWriteDescriptorSet textureSetWrite = {};
         textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        textureSetWrite.dstSet = m_material.descriptorSets[i];
+        textureSetWrite.dstSet = material.descriptorSets[i];
         textureSetWrite.dstBinding = 1;
         textureSetWrite.dstArrayElement = 0;
         textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -175,22 +185,47 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
 
         VkWriteDescriptorSet depthWrite{};
         depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        depthWrite.dstSet = m_material.descriptorSets[i];
+        depthWrite.dstSet = material.descriptorSets[i];
         depthWrite.dstBinding = 2;
         depthWrite.dstArrayElement = 0;
         depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         depthWrite.descriptorCount = 1;
         depthWrite.pImageInfo = &depthAttachmentInfo;
 
-        std::array<VkWriteDescriptorSet, 3> descriptorSets{uboDescriptorWrite, textureSetWrite, depthWrite};
+        // Texture Gradient
+        VkDescriptorImageInfo imageGradientInfo = imageInfo;
+        imageGradientInfo.imageView = sharedPtrTextureGradient->m_textureImageView;
+        imageGradientInfo.sampler = gradientSampler;
+
+        VkWriteDescriptorSet textureGradientSetWrite = textureSetWrite;
+        textureSetWrite.dstBinding = 3;
+        textureSetWrite.pImageInfo = &imageInfo;
+
+        std::array<VkWriteDescriptorSet, 4u> descriptorSets{uboDescriptorWrite, textureSetWrite, depthWrite,
+                                                            textureGradientSetWrite};
 
         // Update descriptor sets
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);
     }
 
-    return 0;
+    return m_curMaterialId;
+}
+
+const VkDescriptorSet* PipelineCreatorParticle::getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId) const {
+    assert(m_descriptorSets.find(materialId) != m_descriptorSets.cend());
+    assert(m_descriptorSets.at(materialId).descriptorSets.size() > descriptorSetsIndex);
+    return &m_descriptorSets.at(materialId).descriptorSets.at(descriptorSetsIndex);
 }
 
 void PipelineCreatorParticle::recreateDescriptors() {
-    createDescriptor(m_material.texture, m_material.sampler);
+    // if the counter is bigger than 0 -> no need to create descriptorSets twice
+    if (m_curMaterialId > 0u) {
+        return;
+    }
+    auto descriptorSets(std::move(m_descriptorSets));
+    m_descriptorSets.clear();
+    for (auto& material : descriptorSets) {
+        createDescriptor(material.second.textureParticle, material.second.samplerParticle, material.second.textureGradient,
+                         material.second.samplerGradient);
+    }
 }

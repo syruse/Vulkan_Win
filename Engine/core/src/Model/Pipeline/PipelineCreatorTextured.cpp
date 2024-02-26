@@ -158,7 +158,8 @@ void PipelineCreatorTextured::recreateDescriptors() {
         return;
     }
     auto descriptorSets(std::move(m_descriptorSets));
+    m_descriptorSets.clear();
     for (auto& material : descriptorSets) {
-        createDescriptor(std::move(material.second.texture), material.second.sampler);
+        createDescriptor(material.second.texture, material.second.sampler);
     }
 }

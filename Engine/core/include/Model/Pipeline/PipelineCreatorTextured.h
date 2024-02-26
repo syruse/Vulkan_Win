@@ -19,9 +19,7 @@ public:
 
     virtual uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler);
 
-    /// <summary>
-    /// it must be called for every 3d model instancing
-    /// </summary>
+    /// it must be called for every 3d model instancing to know how big pool needed
     void increaseUsageCounter() {
         ++m_maxObjectsCount;
     }

@@ -34,7 +34,7 @@ private:
     void createUniformBuffers();
     void createCommandPool();
     void createCommandBuffer();
-    void updateUniformBuffer(uint32_t currentImage);
+    void updateUniformBuffer(uint32_t currentImage, float deltaMS);
     void createRenderPass();
     void createPushConstantRange();
     void allocateDynamicBufferTransferSpace();
@@ -81,7 +81,7 @@ private:
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
-    std::array<std::unique_ptr<I3DModel>, 3u> m_bushes;
+    std::array<std::unique_ptr<I3DModel>, 4u> m_particles;
 
     Camera mCamera;
 };
