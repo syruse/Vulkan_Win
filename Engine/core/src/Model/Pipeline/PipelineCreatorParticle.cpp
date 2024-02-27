@@ -56,7 +56,7 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
     // Depth attachment
     VkDescriptorSetLayoutBinding depthInputLayoutBinding{};
     depthInputLayoutBinding.binding = 2;
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputLayoutBinding.descriptorCount = 1;
     depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -86,7 +86,7 @@ void PipelineCreatorParticle::createDescriptorPool() {
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     std::array<VkDescriptorPoolSize, 3> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize};
 
@@ -171,14 +171,14 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
         VkDescriptorImageInfo depthAttachmentInfo{};
         depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         depthAttachmentInfo.imageView = m_vkState._depthBuffer.depthImageView;
-        depthAttachmentInfo.sampler = VK_NULL_HANDLE;
+        depthAttachmentInfo.sampler = m_textureFactory.getTextureSampler(1);
 
         VkWriteDescriptorSet depthWrite{};
         depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         depthWrite.dstSet = m_material.descriptorSets[i];
         depthWrite.dstBinding = 2;
         depthWrite.dstArrayElement = 0;
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthWrite.descriptorCount = 1;
         depthWrite.pImageInfo = &depthAttachmentInfo;
 

@@ -49,6 +49,18 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
         inputBindings[i].binding = i;
     }
 
+    if (inputBindingsSize == 1) {
+        inputBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
+
+    if (inputBindingsSize > 2) {
+        inputBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
+
+    if (m_isDepthNeeded) {
+        inputBindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
+
     if (m_isGPassNeeded) {
         // UboViewProjection Binding Info
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -89,7 +101,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
@@ -179,7 +191,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Color Attachment Descriptor
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             colorAttachmentDescriptor.imageView = m_vkState._colorBuffer.colorBufferImageView[i];
-            colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+            colorAttachmentDescriptor.sampler = m_textureFactory.getTextureSampler(0);
 
             // Color Attachment Descriptor Write
             VkWriteDescriptorSet colorWrite = {};
@@ -187,7 +199,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.dstSet = m_descriptorSets[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
-            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
             setWrites.push_back(colorWrite);
@@ -197,7 +209,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Depth Attachment Descriptor
             depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._depthBuffer.depthImageView;
-            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+            depthAttachmentDescriptor.sampler = m_textureFactory.getTextureSampler(1);
 
             // Depth Attachment Descriptor Write
             VkWriteDescriptorSet depthWrite{};
@@ -205,7 +217,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentDescriptor;
 
@@ -216,14 +228,14 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Shadow Map
             depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
             depthShadowAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
-            depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+            depthShadowAttachmentDescriptor.sampler = m_textureFactory.getTextureSampler(1);
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthShadowAttachmentDescriptor;
 

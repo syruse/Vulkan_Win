@@ -54,12 +54,13 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[SHADOWMAP].reset(
         new PipelineCreatorShadowMap(*this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
-    m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
-        *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 1u, m_pushConstantRange));
-    m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv", false,
-                                                                false, 0u, m_pushConstantRange));
-    m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
-                                                                   "frag_particle.spv", 0u, m_pushConstantRange));
+    m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(*mTextureFactory, *this, m_renderPass,
+                                                                    "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true,
+                                                                    true, 1u, m_pushConstantRange));
+    m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*mTextureFactory, *this, m_renderPassFXAA, "vert_fxaa.spv",
+                                                                "frag_fxaa.spv", false, false, 0u, m_pushConstantRange));
+    m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(
+        *mTextureFactory, *this, m_renderPassSemiTrans, "vert_particle.spv", "frag_particle.spv", 0u, m_pushConstantRange));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -564,8 +565,8 @@ void VulkanRenderer::createColorBufferImage() {
         // Create Color Buffer Image
         Utils::VulkanCreateImage(
             _core.getDevice(), _core.getPhysDevice(), _width, _height, _colorBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            _colorBuffer.colorBufferImage[i], _colorBuffer.colorBufferImageMemory[i]);
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _colorBuffer.colorBufferImage[i], _colorBuffer.colorBufferImageMemory[i]);
 
         // Create Color Buffer Image View
         Utils::VulkanCreateImageView(_core.getDevice(), _colorBuffer.colorBufferImage[i], _colorBuffer.colorFormat,
@@ -623,7 +624,7 @@ bool VulkanRenderer::renderScene() {
 
     mCamera.update(deltaTime);
 
-    auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
+    /*auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;
 
     if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
@@ -658,7 +659,7 @@ bool VulkanRenderer::renderScene() {
                 break;
             }
         };
-    }
+    }*/
 
     _pushConstant.cameraPos = mCamera.cameraPosition();
 
@@ -1136,17 +1137,17 @@ void VulkanRenderer::createDepthResources() {
     }
 
     _shadowMapBuffer.depthFormat = _depthBuffer.depthFormat;
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
+    Utils::VulkanCreateImage(
+        _core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
+    Utils::VulkanCreateImage(
+        _core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthBuffer.depthImage, _depthBuffer.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
                                  _depthBuffer.depthImageView);
 }

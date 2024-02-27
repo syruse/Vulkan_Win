@@ -1,15 +1,17 @@
 #pragma once
 
 #include "PipelineCreatorBase.h"
+#include "TextureFactory.h"
 
 class PipelineCreatorQuad : public PipelineCreatorBase {
 public:
     using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
 
-    PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                        std::string_view fragShader, bool isDepthNeeded = false, bool isGPassNeeded = false,
-                        uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+    PipelineCreatorQuad(TextureFactory& textureFactory, const VulkanState& vkState, VkRenderPass& renderPass,
+                        std::string_view vertShader, std::string_view fragShader, bool isDepthNeeded = false,
+                        bool isGPassNeeded = false, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
+          m_textureFactory(textureFactory),
           m_isDepthNeeded(isDepthNeeded),
           m_isGPassNeeded(isGPassNeeded) {
     }
@@ -29,6 +31,7 @@ private:
     uint32_t getInputBindingsAmount() const;
 
 private:
+    TextureFactory& m_textureFactory;
     bool m_isDepthNeeded{false};
     bool m_isGPassNeeded{false};
     descriptorSets m_descriptorSets{};
