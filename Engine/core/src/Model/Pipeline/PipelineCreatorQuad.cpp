@@ -195,7 +195,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         if (m_isDepthNeeded) {
             // Depth Attachment Descriptor
-            depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+            depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._depthBuffer.depthImageView;
             depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
@@ -214,7 +214,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         if (m_isGPassNeeded) {
             // Shadow Map
-            depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+            depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthShadowAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
             depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 

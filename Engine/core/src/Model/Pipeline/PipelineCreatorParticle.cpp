@@ -181,7 +181,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
 
         // Depth Attachment
         VkDescriptorImageInfo depthAttachmentInfo{};
-        depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         depthAttachmentInfo.imageView = m_vkState._depthBuffer.depthImageView;
         depthAttachmentInfo.sampler = VK_NULL_HANDLE;
 

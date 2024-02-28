@@ -532,7 +532,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
                                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
@@ -860,13 +861,13 @@ void VulkanRenderer::createRenderPass() {
     // Create info for Render Pass for Semi Transparent particles
     VkAttachmentDescription colorAttachmentSemiTrans = colorAttachment;
     colorAttachmentSemiTrans.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription depthAttachmentSemiTrans = depthAttachment;
-    depthAttachmentSemiTrans.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthAttachmentSemiTrans.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachmentSemiTrans.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentSemiTransReference = {};
@@ -892,15 +893,15 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[0].dstSubpass = 0;
     dependencySemiTrans[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencySemiTrans[0].srcAccessMask = 0;
-    dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencySemiTrans[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     // depth dependency (depth attachment cannot be used before previous renderpasses have finished using it)
     dependencySemiTrans[1].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySemiTrans[1].dstSubpass = 0;
-    dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencySemiTrans[1].srcAccessMask = 0;
-    dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencySemiTrans[1].dstAccessMask =
         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // in this case we need only read mode (depth is read in shader)
 
@@ -930,7 +931,7 @@ void VulkanRenderer::createRenderPass() {
 
     // Framebuffer data will be stored as an image, but images can be given different data layouts
     // to give optimal use for certain operations
-    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;      // Image data layout before render pass starts
+    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // Image data layout before render pass starts
     colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // Image data layout after render pass (to change to)
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
@@ -990,23 +991,15 @@ void VulkanRenderer::createRenderPass() {
     subpassesShadowMap.pDepthStencilAttachment = &depthAttachmentShadowMapRef;
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 2> dependencies;
+    VkSubpassDependency dependency;
 
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-    dependencies[1].srcSubpass = 0;
-    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoShadowMap = {};
     renderPassCreateInfoShadowMap.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1014,8 +1007,8 @@ void VulkanRenderer::createRenderPass() {
     renderPassCreateInfoShadowMap.pAttachments = &shadowMapAttachment;
     renderPassCreateInfoShadowMap.subpassCount = 1;
     renderPassCreateInfoShadowMap.pSubpasses = &subpassesShadowMap;
-    renderPassCreateInfoShadowMap.dependencyCount = dependencies.size();
-    renderPassCreateInfoShadowMap.pDependencies = dependencies.data();
+    renderPassCreateInfoShadowMap.dependencyCount = 1;
+    renderPassCreateInfoShadowMap.pDependencies = &dependency;
 
     res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoShadowMap, nullptr, &m_renderPassShadowMap);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
