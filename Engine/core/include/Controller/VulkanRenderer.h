@@ -7,7 +7,7 @@
 #include <array>
 
 #include "Camera.h"
-#include "I3DModel.h"
+#include "Particle.h"
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
@@ -81,7 +81,7 @@ private:
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
-    std::array<std::unique_ptr<I3DModel>, 4u> m_particles;
+    std::array<std::unique_ptr<Particle>, 5u> m_particles;
 
     Camera mCamera;
 };

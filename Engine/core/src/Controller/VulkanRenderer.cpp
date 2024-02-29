@@ -80,17 +80,22 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
-                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
-                                             0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
+                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
+                                                0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
     m_particles[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
-                                             0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
+                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
+                                                0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
     m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                             static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
-                                             0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
-    m_particles[3] = std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 200u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(6.0f));
+                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
+                                                0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
+    m_particles[3] =
+        std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
+    m_particles[4] =
+        std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -214,7 +219,17 @@ void VulkanRenderer::calculateLightThings() {
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     assert(_ubo.buffersMemory.size() > currentImage);
-    float kDelay = deltaMS / 33.3;  // skebox updating aligned to 30 fps
+    float kDelay = deltaMS / 33.3;  // skybox updating aligned to 30 fps
+
+    glm::vec4 velocity = mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+    glm::vec4 exhaustPipePos1 =
+        mCamera.targetModelMat() *
+        glm::vec4(-4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcorded position of pipe in our model!!!
+    m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, velocity);
+    glm::vec4 exhaustPipePos2 =
+        mCamera.targetModelMat() *
+        glm::vec4(4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcorded position of pipe in our model!!!
+    m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, velocity);
 
     const auto objectsAmount = m_models.size();
 
@@ -533,9 +548,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
     res = vkEndCommandBuffer(_cmdBufs[currentImage]);
     CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
@@ -666,7 +680,7 @@ bool VulkanRenderer::renderScene() {
     }
 
     _pushConstant.cameraPos = mCamera.cameraPosition();
-    _pushConstant.particle.w += deltaTime;
+    _pushConstant.windDirElapsedTimeMS.w += deltaTime;
 
     // -- GET NEXT IMAGE --
     // Wait for given fence to signal (open) from last draw before continuing
@@ -690,7 +704,7 @@ bool VulkanRenderer::renderScene() {
     submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
     submitInfo.signalSemaphoreCount = 1;
 
-    recordCommandBuffers(ImageIndex);  /// added here since now comand buffer resets after each vkBegin command
+    recordCommandBuffers(ImageIndex);
     updateUniformBuffer(ImageIndex, deltaTime);
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);

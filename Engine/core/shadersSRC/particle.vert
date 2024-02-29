@@ -8,19 +8,23 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
     mat4 view;
 } uboViewProjection;
 
+layout(set = 0, binding = 4) uniform UBOParticleObject {
+    vec4 dynamicPos;
+    vec4 velocity;
+    int mode; // '0' regular particles effect(parallel to user face) and '1' spreading along z-plane(which perpendicular to z-plane)
+} uboParticle;
+
 // Instance attributes
 
 layout (location = 0) in vec3 inPosOrigin;
 layout (location = 1) in vec3 scaleMin;
 layout (location = 2) in vec3 scaleMax;
-layout (location = 3) in vec3 velocity;
-layout (location = 4) in int mode;  // '0' regular particles effect(parallel to user face) and '1' spreading along z-plane(which perpendicular to z-plane)
 
-layout (location = 5) in vec3 inPos;
-layout (location = 6) in vec3 acceleration;
-layout (location = 7) in float lifeDuration;
-layout (location = 8) in float speedK;
-layout (location = 9) in float alphaK;
+layout (location = 3) in vec3 inPos;
+layout (location = 4) in vec3 acceleration;
+layout (location = 5) in float lifeDuration;
+layout (location = 6) in float speedK;
+layout (location = 7) in float alphaK;
 
 // Array for triangle that represents the quad
 vec2 quadPos[4] = vec2[](
@@ -34,7 +38,7 @@ layout(push_constant) uniform PushConstant {
     vec4 windowSize;
     vec3 lightPos;
     vec3 cameraPos;
-    vec4 particle; // xyz is wind dir, w is elapsedMS
+    vec4 windDirElapsedTimeMS; // xyz is wind dir, w is elapsedMS
 } pushConstant;
 
 layout(location = 0) out vec2 fragTexCoord;
@@ -47,10 +51,10 @@ void main()
 {
     vec3 posOrigin = inPos;
     vec3 scale = scaleMax;
-    if (mode == 0) {
-        kFading = fract((speedK * pushConstant.particle.w) / lifeDuration); // [0.0 - 1.0]
+    if (uboParticle.mode == 0) {
+        kFading = fract((speedK * pushConstant.windDirElapsedTimeMS.w) / lifeDuration); // [0.0 - 1.0]
         float time = 5 * kFading;
-        posOrigin = inPosOrigin + time * velocity + time *  time * acceleration;
+        posOrigin = uboParticle.dynamicPos.xyz + inPosOrigin + time * uboParticle.velocity.xyz + time *  time * acceleration;
         scale = alphaK * mix(scaleMin, scaleMax, kFading);
         alpha = alphaK;
         isGradientEnabled = 1;

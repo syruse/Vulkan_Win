@@ -1,6 +1,6 @@
 #pragma once
 
-#include "I3DModel.h"
+#include "Particle.h"
 #include "PipelineCreatorTextured.h"
 
 class PipelineCreatorParticle : public PipelineCreatorTextured {
@@ -10,6 +10,7 @@ public:
         VkSampler samplerParticle;
         std::weak_ptr<TextureFactory::Texture> textureGradient;
         VkSampler samplerGradient;
+        Particle::UBOParticle* uboParticle{nullptr};
         VkDescriptorSetLayout descriptorSetLayout;
         std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
     };
@@ -21,7 +22,8 @@ public:
     }
 
     uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture, VkSampler particleSampler,
-                              std::weak_ptr<TextureFactory::Texture> gradientTexture, VkSampler gradientSampler);
+                              std::weak_ptr<TextureFactory::Texture> gradientTexture, VkSampler gradientSampler, 
+                              Particle::UBOParticle* uboParticle);
 
     void createDescriptorPool() override;
     void recreateDescriptors() override;

@@ -6,6 +6,13 @@
 #include "PipelineCreatorParticle.h"
 #include "Utils.h"
 
+Particle::~Particle() {
+    for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroyBuffer(m_vkState._core.getDevice(), m_uboParticle.buffers[i], nullptr);
+        vkFreeMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i], nullptr);
+    }
+}
+
 Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view textureFileName,
                    PipelineCreatorParticle* pipelineCreatorTextured, uint32_t instancesAmount, float zFar,
                    const glm::vec3& scale) noexcept(true)
@@ -23,7 +30,6 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
 
     m_verticesPreparedFuture = std::async(std::launch::async, [this] {
         for (auto& vertex : m_vertices) {
-            vertex.mode = static_cast<int32_t>(m_mode);
             vertex.scaleMax = m_maxScale;
             vertex.scaleMin = m_maxScale;
         }
@@ -56,13 +62,11 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
       m_mode{ParticleMode::DEFAULT} {
     pipelineCreatorTextured->increaseUsageCounter();
     m_instances.resize(m_instanceCount, Particle::Instance{});
-
+    m_uboParticle.params.velocity = glm::vec4(velocity, 1.0f);
     m_verticesPreparedFuture = std::async(std::launch::async, [this, positionOrigin, vel = glm::normalize(velocity)] {
         for (auto& vertex : m_vertices) {
-            vertex.mode = static_cast<int32_t>(m_mode);
             vertex.scaleMax = m_maxScale;
             vertex.scaleMin = m_minScale;
-            vertex.velocity = vel;
             vertex.pos = positionOrigin;
         }
 
@@ -74,9 +78,9 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
             auto& instance = m_instances[i];
             float random = distr(gen);
             // matrix for spreading non linear way
-            //glm::mat3 rotMat1 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(0.0f, 0.0f, 1.0f)));
-            //glm::mat3 rotMat2 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(1.0f, 0.0f, 0.0f)));
-            instance.acceleration = up;// *rotMat1* rotMat2;
+            // glm::mat3 rotMat1 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(0.0f, 0.0f, 1.0f)));
+            // glm::mat3 rotMat2 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(1.0f, 0.0f, 0.0f)));
+            instance.acceleration = up;                       // *rotMat1* rotMat2;
             instance.lifeDuration = distr(gen) * 3000000.0f;  // max is 3s
             instance.speedK = glm::mix(60, 100, distr(gen));
             instance.alphaK = distr(gen);
@@ -91,16 +95,31 @@ void Particle::init() {
     assert(m_pipelineCreatorTextured);
     assert(!m_textureFileName.empty());
 
+    m_uboParticle.params.mode = static_cast<int32_t>(m_mode);
+    VkDeviceSize uboBufSize = sizeof(UBOParticle::Params);
+    void* data;
+    for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+        Utils::VulkanCreateBuffer(m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), uboBufSize,
+                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                  m_uboParticle.buffers[i], m_uboParticle.buffersMemory[i]);
+
+        vkMapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i], 0, uboBufSize, 0, &data);
+        memcpy(data, &m_uboParticle.params, uboBufSize);
+        vkUnmapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i]);
+    }
+
     auto texture = m_textureFactory.create2DTexture(m_textureFileName).lock();
     if (m_mode == ParticleMode::DEFAULT) {
         auto textureGradient =
             m_textureFactory.create2DTexture(m_textureGradientFileName, false, true).lock();  // without mip levels
-        mMaterialId = m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels),
-                                                                  textureGradient,
-                                                                  m_textureFactory.getTextureSampler(textureGradient->mipLevels));
+        mMaterialId = m_pipelineCreatorTextured->createDescriptor(
+            texture, m_textureFactory.getTextureSampler(texture->mipLevels), textureGradient,
+            m_textureFactory.getTextureSampler(textureGradient->mipLevels), &m_uboParticle);
     } else {  // without gradient for bushes ...
-        mMaterialId = m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels),
-                                                                  texture, m_textureFactory.getTextureSampler(0u));
+        mMaterialId =
+            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels), texture,
+                                                        m_textureFactory.getTextureSampler(0u), &m_uboParticle);
     }
 
     if (m_verticesPreparedFuture.get()) {
@@ -131,6 +150,16 @@ void Particle::init() {
         vkDestroyBuffer(p_devide, stagingBuffer, nullptr);
         vkFreeMemory(p_devide, stagingBufferMemory, nullptr);
     }
+}
+
+void Particle::update(uint32_t currentImage, float deltaMS, const glm::vec4& offsetPosition, const glm::vec4& velocity) {
+    static VkDeviceSize uboBufSize = sizeof(UBOParticle::Params);
+    void* data;
+    m_uboParticle.params.dynamicPos = offsetPosition;
+    m_uboParticle.params.velocity = velocity;
+    vkMapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[currentImage], 0, uboBufSize, 0, &data);
+    memcpy(data, &m_uboParticle.params, uboBufSize);
+    vkUnmapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[currentImage]);
 }
 
 void Particle::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset) const {

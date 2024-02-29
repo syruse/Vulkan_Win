@@ -64,8 +64,12 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding samplerGradientLayoutBinding = samplerLayoutBinding;
     samplerGradientLayoutBinding.binding = 3;
 
-    std::array<VkDescriptorSetLayoutBinding, 4u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, depthInputLayoutBinding,
-                                                               samplerGradientLayoutBinding};
+    // UBO Binding Info Particle
+    VkDescriptorSetLayoutBinding UBOParticleLayoutBinding = UBOLayoutBinding;
+    UBOParticleLayoutBinding.binding = 4;
+
+    std::array<VkDescriptorSetLayoutBinding, 5u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, depthInputLayoutBinding,
+                                                               samplerGradientLayoutBinding, UBOParticleLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -97,7 +101,10 @@ void PipelineCreatorParticle::createDescriptorPool() {
     VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
     depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 
-    std::array<VkDescriptorPoolSize, 4u> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize, textureGradientPoolSize};
+    VkDescriptorPoolSize uboParticlePoolSize = uboPoolSize;
+
+    std::array<VkDescriptorPoolSize, 5u> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize, textureGradientPoolSize,
+                                                  uboParticlePoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -114,9 +121,10 @@ void PipelineCreatorParticle::createDescriptorPool() {
 uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture,
                                                    VkSampler particleSampler,
                                                    std::weak_ptr<TextureFactory::Texture> gradientTexture,
-                                                   VkSampler gradientSampler) {
+                                                   VkSampler gradientSampler, Particle::UBOParticle* uboParticle) {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
+    assert(uboParticle);
     auto sharedPtrTexture = particleTexture.lock();
     auto sharedPtrTextureGradient = gradientTexture.lock();
     assert(sharedPtrTexture && sharedPtrTextureGradient);
@@ -136,6 +144,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
     material.textureParticle = particleTexture;
     material.textureGradient = gradientTexture;
     material.samplerGradient = gradientSampler;
+    material.uboParticle = uboParticle;
     material.descriptorSetLayout = *m_descriptorSetLayout.get();
 
     // Allocate Descriptor Sets
@@ -203,8 +212,23 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
         textureSetWrite.dstBinding = 3;
         textureSetWrite.pImageInfo = &imageGradientInfo;
 
-        std::array<VkWriteDescriptorSet, 4u> descriptorSets{uboDescriptorWrite, textureSetWrite, depthWrite,
-                                                            textureGradientSetWrite};
+        // UBO Particle DESCRIPTOR
+        VkDescriptorBufferInfo bufferParticleInfo{};
+        bufferParticleInfo.buffer = material.uboParticle->buffers[i];
+        bufferParticleInfo.offset = 0;
+        bufferParticleInfo.range = sizeof(Particle::UBOParticle::Params);
+
+        VkWriteDescriptorSet uboParticleDescriptorWrite{};
+        uboParticleDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uboParticleDescriptorWrite.dstSet = material.descriptorSets[i];
+        uboParticleDescriptorWrite.dstBinding = 4;
+        uboParticleDescriptorWrite.dstArrayElement = 0;
+        uboParticleDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboParticleDescriptorWrite.descriptorCount = 1;
+        uboParticleDescriptorWrite.pBufferInfo = &bufferParticleInfo;
+
+        std::array<VkWriteDescriptorSet, 5u> descriptorSets{uboDescriptorWrite, textureSetWrite, depthWrite,
+                                                            textureGradientSetWrite, uboParticleDescriptorWrite};
 
         // Update descriptor sets
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);
@@ -228,6 +252,6 @@ void PipelineCreatorParticle::recreateDescriptors() {
     m_descriptorSets.clear();
     for (auto& material : descriptorSets) {
         createDescriptor(material.second.textureParticle, material.second.samplerParticle, material.second.textureGradient,
-                         material.second.samplerGradient);
+                         material.second.samplerGradient, material.second.uboParticle);
     }
 }
