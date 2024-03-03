@@ -5,7 +5,7 @@
 <h1>The game engine powered by Vulkan</h1>
 </br> <b>Platforms:</b> Windows/Unix
 </br> <b>Technologies:</b> C++ 17, Vulkan Api, SDL2(user input), CMake, WinApi, XCB
-<p><img src="demo.png" width="30%" height="30%"></p>
+<p><img src="BushInstancing&ParticleSystem.png" width="60%" height="60%"></p>
 <p>This is simple game engine based on own engine run by Vulkan API, SDL2 (user input)
 the developing is ongoing currently it supports such features as
 <ol>
@@ -15,9 +15,12 @@ the developing is ongoing currently it supports such features as
   <li>Skybox(cubic map)</li>
   <li>Shadows(separate depth pass with point of view from light source)</li>
   <li>G-Pass(separate pass with storing depth, normal (using normal mapping) and color to textures and its vulkan subpass for immidiate using produced pixel from main pass to calculate Blinn-Phong lighing, shadow, final color)
-  <p><img src="CompositionOfRTT.png" width="45%" height="35%"></p></li>
+  <p><img src="CompositionOfRTT.png" width="45%" height="45%"></p></li>
   <li>FXAA(separate pass for anti aliasing)</li>
   <li>WASD camera manipulation by quaternions</li>
+  <li>Instancing applying & Semi-transparent quads drawing on top of G-Pass for bushes drawing(2.5D) which are always perpendicular to camera direction
+  <li>Particles System for smoke spawning by exhaust pipes 
+  <p><img src="BushInstancing&ParticleSystem.png" width="45%" height="45%"></p></li>
 </ol></p>
 <p><b>HOWTO BUILD:</b>
 </br>
@@ -52,6 +55,6 @@ and run build over cmake extension
 </p>
 <p><b>TODO:</b>
 </br>
-instancing for grass drawing, particles system, fonts, several command buffers, separate thread for resources loading, quad-tree\oct tree</p>
+fonts, several command buffers, separate thread for resources loading, quad-tree\oct tree, panzer traces</p>
 </body>
 </html>
