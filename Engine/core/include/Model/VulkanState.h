@@ -61,7 +61,7 @@ struct VulkanState {
     };
 
     struct ColorBuffer {
-        VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        VkFormat colorFormat{VK_FORMAT_UNDEFINED};
         std::array<VkImage, MAX_FRAMES_IN_FLIGHT> colorBufferImage{nullptr};
         std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> colorBufferImageMemory{nullptr};
         std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> colorBufferImageView{nullptr};
@@ -104,6 +104,7 @@ struct VulkanState {
     DepthBuffer _depthBuffer{};
     DepthBuffer _shadowMapBuffer{};
     ColorBuffer _colorBuffer{};
+    std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};
 };

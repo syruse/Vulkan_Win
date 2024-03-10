@@ -21,6 +21,8 @@ the developing is ongoing currently it supports such features as
   <li>Instancing applying & Semi-transparent quads drawing on top of G-Pass for bushes drawing(2.5D) which are always perpendicular to camera direction
   <li>Particles System for smoke spawning by exhaust pipes 
   <p><img src="BushInstancing&ParticleSystem.png" width="45%" height="45%"></p></li>
+  <li>Bllom effect based on two ping-pong hdr textures wich goes through Gauss X\Y blurring sequentially
+  <p><img src="Bloom.png" width="45%" height="45%"></p></li>
 </ol></p>
 <p><b>HOWTO BUILD:</b>
 </br>

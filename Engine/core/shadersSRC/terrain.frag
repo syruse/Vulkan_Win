@@ -17,9 +17,9 @@ void main() {
   // avoiding repetition effect for texture oversampling
   float noiseFactor = texture(texSampler, vec3(outTexCoordNormalized, 0.0)).x;
   vec4 color1OverSampled = texture(texSampler, vec3(0.7 * outTexCoord, 1.0));
-  vec4 color1 = texture(texSampler, vec3(outTexCoordNormalized, 1.0));
+  vec4 color1 = 0.4 * texture(texSampler, vec3(outTexCoordNormalized, 1.0));
   color1 = mix(color1OverSampled, color1, 0.25);
-  vec4 color2OverSampled = texture(texSampler, vec3(1.2 * outTexCoord, 2.0));
+  vec4 color2OverSampled = 0.4 * texture(texSampler, vec3(1.2 * outTexCoord, 2.0));
   vec4 color2 = texture(texSampler, vec3(outTexCoordNormalized, 2.0));
   color2 = mix(color2OverSampled, color2, 0.25);
   out_GPass[1] = mix(color1, color2, noiseFactor);

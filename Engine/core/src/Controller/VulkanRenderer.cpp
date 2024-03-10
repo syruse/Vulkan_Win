@@ -56,10 +56,16 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         new PipelineCreatorShadowMap(*this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
     m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 1u, m_pushConstantRange));
-    m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv", false,
-                                                                false, 0u, m_pushConstantRange));
+    m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
+                                                                &this->_colorBuffer, false, false, m_pushConstantRange));
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
                                                                    "frag_particle.spv", 0u, m_pushConstantRange));
+    m_pipelineCreators[GAUSS_X_BLUR].reset(
+        new PipelineCreatorQuad(*this, m_renderPassXBlur, "vert_gaussXBlur.spv", "frag_gaussXBlur.spv", &this->_bloomBuffer[0]));
+    m_pipelineCreators[GAUSS_Y_BLUR].reset(
+        new PipelineCreatorQuad(*this, m_renderPassYBlur, "vert_gaussYBlur.spv", "frag_gaussYBlur.spv", &this->_bloomBuffer[1]));
+    m_pipelineCreators[BLOOM].reset(
+        new PipelineCreatorQuad(*this, m_renderPassBloom, "vert_bloom.spv", "frag_bloom.spv", &this->_bloomBuffer[0], true));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -149,6 +155,12 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImageView(_core.getDevice(), _gPassBuffer.color.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _gPassBuffer.color.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _gPassBuffer.color.colorBufferImageMemory[i], nullptr);
+
+        for (auto& buf : _bloomBuffer) {
+            vkDestroyImageView(_core.getDevice(), buf.colorBufferImageView[i], nullptr);
+            vkDestroyImage(_core.getDevice(), buf.colorBufferImage[i], nullptr);
+            vkFreeMemory(_core.getDevice(), buf.colorBufferImageMemory[i], nullptr);
+        }
     }
 
     for (auto& framebuffer : m_fbs) {
@@ -163,6 +175,15 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& framebuffer : m_fbsShadowMap) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
+    for (auto& framebuffer : m_fbsXBlur) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
+    for (auto& framebuffer : m_fbsYBlur) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
+    for (auto& framebuffer : m_fbsBloom) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
 
     for (auto& imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
@@ -174,6 +195,9 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassShadowMap, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassSemiTrans, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassXBlur, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassYBlur, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassBloom, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
@@ -421,10 +445,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     /// G pass
     VkClearValue clearValue;
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
-    std::vector<VkClearValue> clearValues(5, clearValue);
+    std::vector<VkClearValue> clearValues(6, clearValue);
     clearValues[3] = VkClearValue{};  // TODO make it flexible
     clearValues[3].depthStencil.depth = 1.0f;
-    clearValues[4] = clearValues[3];
+    clearValues[5] = clearValue;
 
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -473,6 +497,103 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     //---------------------------------------------------------------------------------------------//
+    // 3 times gauss blurring
+    for (int32_t t = 0; t < 3; ++t) {
+        /// GAUSS X Bloom render pass
+        std::array<VkClearValue, 2> gaussXBloomClearValues{};
+        gaussXBloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+        gaussXBloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        VkRenderPassBeginInfo renderPassGaussXBloomInfo = {};
+        renderPassGaussXBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassGaussXBloomInfo.renderPass = m_renderPassXBlur;
+        renderPassGaussXBloomInfo.renderArea.offset.x = 0;
+        renderPassGaussXBloomInfo.renderArea.offset.y = 0;
+        renderPassGaussXBloomInfo.renderArea.extent.width = _width;
+        renderPassGaussXBloomInfo.renderArea.extent.height = _height;
+        renderPassGaussXBloomInfo.clearValueCount = gaussXBloomClearValues.size();
+        renderPassGaussXBloomInfo.pClearValues = gaussXBloomClearValues.data();
+        renderPassGaussXBloomInfo.framebuffer = m_fbsXBlur[currentImage];
+
+        vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassGaussXBloomInfo, VK_SUBPASS_CONTENTS_INLINE);
+        {
+            const auto& pipelineCreator = m_pipelineCreators[GAUSS_X_BLUR];
+            vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+            vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                    pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+        }
+
+        vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+
+        vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+        /// GAUSS Y Bloom render pass
+        std::array<VkClearValue, 2> gaussYBloomClearValues{};
+        gaussYBloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+        gaussYBloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        VkRenderPassBeginInfo renderPassGaussYBloomInfo = {};
+        renderPassGaussYBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassGaussYBloomInfo.renderPass = m_renderPassYBlur;
+        renderPassGaussYBloomInfo.renderArea.offset.x = 0;
+        renderPassGaussYBloomInfo.renderArea.offset.y = 0;
+        renderPassGaussYBloomInfo.renderArea.extent.width = _width;
+        renderPassGaussYBloomInfo.renderArea.extent.height = _height;
+        renderPassGaussYBloomInfo.clearValueCount = gaussYBloomClearValues.size();
+        renderPassGaussYBloomInfo.pClearValues = gaussYBloomClearValues.data();
+        renderPassGaussYBloomInfo.framebuffer = m_fbsYBlur[currentImage];
+
+        vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassGaussYBloomInfo, VK_SUBPASS_CONTENTS_INLINE);
+        {
+            const auto& pipelineCreator = m_pipelineCreators[GAUSS_Y_BLUR];
+            vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+            vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                    pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+        }
+
+        vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+
+        vkCmdEndRenderPass(_cmdBufs[currentImage]);
+    }
+    //---------------------------------------------------------------------------------------------//
+    /// BLOOM
+
+    std::array<VkClearValue, 2> bloomClearValues{};
+    bloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    bloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    VkRenderPassBeginInfo renderPassBloomInfo = {};
+    renderPassBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBloomInfo.renderPass = m_renderPassBloom;
+    renderPassBloomInfo.renderArea.offset.x = 0;
+    renderPassBloomInfo.renderArea.offset.y = 0;
+    renderPassBloomInfo.renderArea.extent.width = _width;
+    renderPassBloomInfo.renderArea.extent.height = _height;
+    renderPassBloomInfo.clearValueCount = bloomClearValues.size();
+    renderPassBloomInfo.pClearValues = bloomClearValues.data();
+    renderPassBloomInfo.framebuffer = m_fbsBloom[currentImage];
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassBloomInfo, VK_SUBPASS_CONTENTS_INLINE);
+    {
+        const auto& pipelineCreator = m_pipelineCreators[BLOOM];
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+    }
+
+    vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+
+    vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+    //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
 
     std::array<VkClearValue, 2> semiTransClearValues{};
@@ -491,10 +612,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
     renderPassSemiTransInfo.framebuffer = m_fbsSemiTrans[currentImage];
 
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);  // since we use depth (bound to color output) and we
+                                                                           // can process color a bit early than bloom
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSemiTransInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
@@ -574,6 +696,12 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
 
+    auto HDRFormat = VK_FORMAT_UNDEFINED;
+    if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT},
+                                          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, HDRFormat)) {
+        Utils::printLog(ERROR_PARAM, "failed to find supported format!");
+    }
+
     for (size_t i = 0; i < _swapChain.images.size(); ++i) {
         // By keeping G Pass buffers on-tile only (VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT), we can save a lot of bandwidth and
         // memory. we don't need to write the g-buffer data out to memory let's leave everything in tile memory,
@@ -609,6 +737,18 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _gPassBuffer.color.colorBufferImage[i], _gPassBuffer.color.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _gPassBuffer.color.colorBufferImageView[i]);
+
+        // HDR render targets for Bloom effect
+        for (auto& buf : _bloomBuffer) {
+            buf.colorFormat = HDRFormat;
+            Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, buf.colorFormat,
+                                     VK_IMAGE_TILING_OPTIMAL,
+                                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buf.colorBufferImage[i], buf.colorBufferImageMemory[i]);
+
+            Utils::VulkanCreateImageView(_core.getDevice(), buf.colorBufferImage[i], buf.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT,
+                                         buf.colorBufferImageView[i]);
+        }
     }
 }
 
@@ -662,11 +802,14 @@ bool VulkanRenderer::renderScene() {
             case SDL_KEYDOWN: {
                 if (e.key.keysym.sym == SDLK_w) {
                     mCamera.move(Camera::EDirection::Forward);
-                } else if (e.key.keysym.sym == SDLK_a) {
+                }
+                if (e.key.keysym.sym == SDLK_a) {
                     mCamera.move(Camera::EDirection::Left);
-                } else if (e.key.keysym.sym == SDLK_d) {
+                }
+                if (e.key.keysym.sym == SDLK_d) {
                     mCamera.move(Camera::EDirection::Right);
-                } else if (e.key.keysym.sym == SDLK_s) {
+                }
+                if (e.key.keysym.sym == SDLK_s) {
                     mCamera.move(Camera::EDirection::Back);
                 }
                 break;
@@ -751,6 +894,9 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription hdrBloomAttachment = colorAttachment;
+    hdrBloomAttachment.format = _bloomBuffer[0].colorFormat;
+
     VkAttachmentDescription gPassNormalAttachment = colorAttachment;
     gPassNormalAttachment.format = _gPassBuffer.normal.colorFormat;
     gPassNormalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // not needed after subpasses completed, for performance
@@ -804,9 +950,13 @@ void VulkanRenderer::createRenderPass() {
     inputReferences[3].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
 
     // Set up Subpass 2
+    VkAttachmentReference hdrAttachmentRef{};
+    hdrAttachmentRef.attachment = 5;
+    hdrAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    std::array<VkAttachmentReference, 2u> colorAndHdrAttachmentRef{colorAttachmentRef, hdrAttachmentRef};
     subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpasses[1].colorAttachmentCount = 1;
-    subpasses[1].pColorAttachments = &colorAttachmentRef;
+    subpasses[1].colorAttachmentCount = colorAndHdrAttachmentRef.size();
+    subpasses[1].pColorAttachments = colorAndHdrAttachmentRef.data();
     subpasses[1].inputAttachmentCount = static_cast<uint32_t>(inputReferences.size());
     subpasses[1].pInputAttachments = inputReferences.data();
 
@@ -853,8 +1003,8 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[2].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    std::array<VkAttachmentDescription, 5> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment,
-                                                                    depthAttachment, shadowMapAttachment};
+    std::array<VkAttachmentDescription, 6> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment,
+                                                                    depthAttachment, shadowMapAttachment,   hdrBloomAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -934,19 +1084,196 @@ void VulkanRenderer::createRenderPass() {
     Utils::printLog(INFO_PARAM, "Created a render pass for SEMI-TRANSPARENT OBJECTS");
 
     //-------------------------------------------------------//
+    // Create info for Render Pass Gauss X Blurring for Bloom effect
+    // the first preinitialized hdr texture will be blured by gauss x axis and stored into the second hdr texture
+    VkAttachmentDescription colorAttachment1BlurX = {};
+    colorAttachment1BlurX.format = _bloomBuffer[0].colorFormat;
+    colorAttachment1BlurX.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment1BlurX.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment1BlurX.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment1BlurX.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment1BlurX.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment1BlurX.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment1BlurX.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkAttachmentDescription colorAttachment2BlurX = colorAttachment1BlurX;
+    colorAttachment2BlurX.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment2BlurX.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2BlurX.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference bloomHdrAttachmentReferenceBlurX = {};
+    bloomHdrAttachmentReferenceBlurX.attachment = 0;
+    bloomHdrAttachmentReferenceBlurX.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // References to attachments that subpass will take input from
+    VkAttachmentReference inputBloomHdrReferenceBlurX;
+    inputBloomHdrReferenceBlurX.attachment = 1;
+    inputBloomHdrReferenceBlurX.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkSubpassDescription subpassBlurX{};
+    subpassBlurX.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassBlurX.colorAttachmentCount = 1;
+    subpassBlurX.pColorAttachments = &bloomHdrAttachmentReferenceBlurX;
+    subpassBlurX.inputAttachmentCount = 1;
+    subpassBlurX.pInputAttachments = &inputBloomHdrReferenceBlurX;
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurX = {colorAttachment1BlurX, colorAttachment2BlurX};
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 1u> dependencyBlurX;
+
+    dependencyBlurX[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBlurX[0].dstSubpass = 0;
+    dependencyBlurX[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyBlurX[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurX[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dependencyBlurX[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBlurX[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoBlurX = {};
+    renderPassCreateInfoBlurX.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoBlurX.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsBlurX.size());
+    renderPassCreateInfoBlurX.pAttachments = renderPassAttachmentsBlurX.data();
+    renderPassCreateInfoBlurX.subpassCount = 1;
+    renderPassCreateInfoBlurX.pSubpasses = &subpassBlurX;
+    renderPassCreateInfoBlurX.dependencyCount = dependencyBlurX.size();
+    renderPassCreateInfoBlurX.pDependencies = dependencyBlurX.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoBlurX, nullptr, &m_renderPassXBlur);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass gauss x blurring");
+
+    //-------------------------------------------------------//
+    // Create info for Render Pass Gauss Y Blurring for Bloom effect
+    // the previously blurred hdr texture will be blurred by y axis and stored into another hdr texture
+    VkAttachmentDescription colorAttachment1BlurY = {};
+    colorAttachment1BlurY.format = _bloomBuffer[0].colorFormat;
+    colorAttachment1BlurY.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment1BlurY.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment1BlurY.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment1BlurY.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment1BlurY.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment1BlurY.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment1BlurY.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkAttachmentDescription colorAttachment2BlurY = colorAttachment1BlurY;
+    colorAttachment2BlurY.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment2BlurY.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2BlurY.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference bloomHdrAttachmentReferenceBlurY = {};
+    bloomHdrAttachmentReferenceBlurY.attachment = 0;
+    bloomHdrAttachmentReferenceBlurY.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // References to attachments that subpass will take input from
+    VkAttachmentReference inputBloomHdrReferenceBlurY;
+    inputBloomHdrReferenceBlurY.attachment = 1;
+    inputBloomHdrReferenceBlurY.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkSubpassDescription subpassBlurY{};
+    subpassBlurY.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassBlurY.colorAttachmentCount = 1;
+    subpassBlurY.pColorAttachments = &bloomHdrAttachmentReferenceBlurY;
+    subpassBlurY.inputAttachmentCount = 1;
+    subpassBlurY.pInputAttachments = &inputBloomHdrReferenceBlurY;
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurY = {colorAttachment1BlurY, colorAttachment2BlurY};
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 1u> dependencyBlurY;
+
+    dependencyBlurY[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBlurY[0].dstSubpass = 0;
+    dependencyBlurY[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyBlurY[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurY[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dependencyBlurY[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBlurY[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoBlurY = {};
+    renderPassCreateInfoBlurY.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoBlurY.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsBlurY.size());
+    renderPassCreateInfoBlurY.pAttachments = renderPassAttachmentsBlurY.data();
+    renderPassCreateInfoBlurY.subpassCount = 1;
+    renderPassCreateInfoBlurY.pSubpasses = &subpassBlurY;
+    renderPassCreateInfoBlurY.dependencyCount = dependencyBlurY.size();
+    renderPassCreateInfoBlurY.pDependencies = dependencyBlurY.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoBlurY, nullptr, &m_renderPassYBlur);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass gauss y blurring");
+
+    //-------------------------------------------------------//
+    // Bloom effect
+    // we use previously blurred hdr texture and main color output attachment
+    VkAttachmentDescription colorAttachment1Bloom = {};
+    colorAttachment1Bloom.format = _core.getSurfaceFormat().format;
+    colorAttachment1Bloom.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment1Bloom.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment1Bloom.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment1Bloom.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment1Bloom.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment1Bloom.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment1Bloom.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkAttachmentDescription colorAttachment2Bloom = colorAttachment1Bloom;
+    colorAttachment2Bloom.format = _bloomBuffer[0].colorFormat;
+    colorAttachment2Bloom.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2Bloom.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference bloomHdrAttachmentReferenceBloom = {};
+    bloomHdrAttachmentReferenceBloom.attachment = 0;
+    bloomHdrAttachmentReferenceBloom.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // References to attachments that subpass will take input from
+    VkAttachmentReference inputBloomHdrReferenceBloom;
+    inputBloomHdrReferenceBloom.attachment = 1;
+    inputBloomHdrReferenceBloom.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkSubpassDescription subpassBloom{};
+    subpassBloom.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassBloom.colorAttachmentCount = 1;
+    subpassBloom.pColorAttachments = &bloomHdrAttachmentReferenceBloom;
+    subpassBloom.inputAttachmentCount = 1;
+    subpassBloom.pInputAttachments = &inputBloomHdrReferenceBloom;
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsBloom = {colorAttachment1Bloom, colorAttachment2Bloom};
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 1u> dependencyBloom;
+
+    dependencyBloom[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBloom[0].dstSubpass = 0;
+    dependencyBloom[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBloom[0].srcAccessMask = 0;
+    dependencyBloom[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBloom[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoBloom = {};
+    renderPassCreateInfoBloom.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoBloom.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsBloom.size());
+    renderPassCreateInfoBloom.pAttachments = renderPassAttachmentsBloom.data();
+    renderPassCreateInfoBloom.subpassCount = 1;
+    renderPassCreateInfoBloom.pSubpasses = &subpassBloom;
+    renderPassCreateInfoBloom.dependencyCount = dependencyBloom.size();
+    renderPassCreateInfoBloom.pDependencies = dependencyBloom.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoBloom, nullptr, &m_renderPassBloom);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass for bloom");
+
+    //-------------------------------------------------------//
     // Create info for Render Pass FXAA
     VkAttachmentDescription colorAttachmentFXAA = {};
-    colorAttachmentFXAA.format = _core.getSurfaceFormat().format;         // Format to use for attachment
-    colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;                  // Number of samples to write for multisampling
-    colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;              // Describes what to do with attachment before rendering
-    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;           // Describes what to do with attachment after rendering
-    colorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // Describes what to do with stencil before rendering
-    colorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // Describes what to do with stencil after rendering
+    colorAttachmentFXAA.format = _core.getSurfaceFormat().format;
+    colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
-    // Framebuffer data will be stored as an image, but images can be given different data layouts
-    // to give optimal use for certain operations
-    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // Image data layout before render pass starts
-    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // Image data layout after render pass (to change to)
+    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
     VkAttachmentReference swapchainColorAttachmentReferenceFXAA = {};
@@ -1033,9 +1360,12 @@ void VulkanRenderer::createRenderPass() {
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        std::array<VkImageView, 5> attachments = {
-            _colorBuffer.colorBufferImageView[i], _gPassBuffer.normal.colorBufferImageView[i],
-            _gPassBuffer.color.colorBufferImageView[i], _depthBuffer.depthImageView, _shadowMapBuffer.depthImageView};
+        std::array<VkImageView, 6> attachments = {_colorBuffer.colorBufferImageView[i],
+                                                  _gPassBuffer.normal.colorBufferImageView[i],
+                                                  _gPassBuffer.color.colorBufferImageView[i],
+                                                  _depthBuffer.depthImageView,
+                                                  _shadowMapBuffer.depthImageView,
+                                                  _bloomBuffer[0].colorBufferImageView[i]};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -1052,6 +1382,62 @@ void VulkanRenderer::createFramebuffer() {
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbs[i]);
         CHECK_VULKAN_ERROR("vkCreateFramebuffer error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO Gauss x blurring for bloom effect
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        std::array<VkImageView, 2> attachments = {_bloomBuffer[1].colorBufferImageView[i],
+                                                  _bloomBuffer[0].colorBufferImageView[i]};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassXBlur;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsXBlur[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer Gauss x blurring error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO Gauss y blurring for bloom effect
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        std::array<VkImageView, 2> attachments = {_bloomBuffer[0].colorBufferImageView[i],
+                                                  _bloomBuffer[1].colorBufferImageView[i]};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassYBlur;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsYBlur[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer Gauss y blurring error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO for bloom effect
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _bloomBuffer[0].colorBufferImageView[i]};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassBloom;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsBloom[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer Bloom error %d\n", res);
     }
 
     //-------------------------------------------------------//

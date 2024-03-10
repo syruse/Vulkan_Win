@@ -15,7 +15,19 @@ class VulkanRenderer : public VulkanState {
 public:
     static constexpr std::string_view MODEL_PATH{"Tank.obj"};
 
-    enum Pipelines { GPASS = 0, TERRAIN, SKYBOX, SHADOWMAP, POST_LIGHTING, POST_FXAA, PARTICLE, MAX };
+    enum Pipelines {
+        GPASS = 0,
+        TERRAIN,
+        SKYBOX,
+        SHADOWMAP,
+        POST_LIGHTING,
+        POST_FXAA,
+        PARTICLE,
+        GAUSS_X_BLUR, 
+        GAUSS_Y_BLUR,
+        BLOOM,
+        MAX
+    };
 
     VulkanRenderer(std::string_view appName, size_t width, size_t height);
 
@@ -53,10 +65,7 @@ private:
 private:
     uint16_t m_currentFrame = 0u;
 
-    VkRenderPass m_renderPass{nullptr};
     VkPushConstantRange m_pushConstantRange{};
-
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbs{};
 
     std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
@@ -68,6 +77,10 @@ private:
     // intermediate buffer being served for transferring data to gpu memory
     Model* mp_modelTransferSpace{nullptr};
 
+    // the main renderpass based on G-Pass
+    VkRenderPass m_renderPass{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbs{};
+
     VkRenderPass m_renderPassFXAA{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFXAA{nullptr};
 
@@ -77,6 +90,15 @@ private:
 
     VkRenderPass m_renderPassSemiTrans{nullptr};  // semi-transparent objects will be drawn at the end due to g-pass
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSemiTrans{nullptr};
+
+    VkRenderPass m_renderPassXBlur{nullptr}; // Gauss x blurring for bloom effect
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsXBlur{nullptr};
+
+    VkRenderPass m_renderPassYBlur{nullptr};  // Gauss y blurring for bloom effect
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsYBlur{nullptr};
+
+    VkRenderPass m_renderPassBloom{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsBloom{nullptr};
 
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};

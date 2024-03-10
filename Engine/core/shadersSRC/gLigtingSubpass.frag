@@ -24,6 +24,7 @@ layout(push_constant) uniform PushConstant {
 layout(location = 0) in vec2 in_uv;
 
 layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec4 out_hdr;
 
 // uncomment if you need draw attachment content
 // #define DEBUG_DEPTH 1
@@ -32,7 +33,7 @@ layout(location = 0) out vec4 out_color;
 const bool is_blinnPhong = true;
 const float shiness = 8.5;
 const float softShadingFactor = 0.5; // soft shading by minimum factor limitation
-const float brightness = 1.75;
+const float brightness = 3.2;
 
 float getShading(vec3 world, float bias)
 {
@@ -134,6 +135,13 @@ void main()
 
     // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
     // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-    out_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
+    vec4 final_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
+    out_color = final_color;
+    
+    // really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
+    if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
+        out_hdr = final_color;
+    else
+        out_hdr = vec4(0.0, 0.0, 0.0, 0.0);
 #endif
 }

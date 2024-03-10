@@ -17,6 +17,23 @@ void PipelineCreatorQuad::createPipeline() {
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthWriteEnable = VK_FALSE;
 
+    if (m_isBlendForBloom) {
+        auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
+        VkPipelineColorBlendAttachmentState blendAttachState = {};
+        blendAttachState.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        blendAttachState.blendEnable = VK_TRUE;
+        blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachState.colorBlendOp = VK_BLEND_OP_ADD;
+        blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+        blendAttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        blendInfo.attachmentCount = 1;
+        blendInfo.pAttachments = &blendAttachState;
+    }
+
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;  // as a simple set with two triangles for quad drawing
 
@@ -85,7 +102,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
     // Color Attachment Pool Size
     VkDescriptorPoolSize colorInputPoolSize = {};
     colorInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._colorBuffer.colorBufferImageView.size());
+    colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
@@ -178,7 +195,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
         } else {
             // Color Attachment Descriptor
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            colorAttachmentDescriptor.imageView = m_vkState._colorBuffer.colorBufferImageView[i];
+            colorAttachmentDescriptor.imageView = m_colorBuffer->colorBufferImageView[i];
             colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             // Color Attachment Descriptor Write

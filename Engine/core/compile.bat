@@ -18,4 +18,13 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/particle.vert -o shaders/vert_particle.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/particle.frag -o shaders/frag_particle.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/gaussXBlur.vert -o shaders/vert_gaussXBlur.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/gaussXBlur.frag -o shaders/frag_gaussXBlur.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/gaussYBlur.vert -o shaders/vert_gaussYBlur.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/gaussYBlur.frag -o shaders/frag_gaussYBlur.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/bloom.vert -o shaders/vert_bloom.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/bloom.frag -o shaders/frag_bloom.spv
 pause
