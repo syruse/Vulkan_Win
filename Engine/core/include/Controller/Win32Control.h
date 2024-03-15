@@ -6,6 +6,8 @@
 #include "IControl.h"
 #include "string"
 #include "vulkan/vulkan.h"
+#include <Keyboard.h>
+#include <Mouse.h>
 
 class Win32Control : public IControl {
 public:
@@ -24,8 +26,13 @@ public:
     virtual WindowQueueMSG processWindowQueueMSGs() override;
 
 private:
+    virtual void imGuiNewFrame() const override;
+
+private:
     HINSTANCE m_hinstance;
     HWND m_hwnd;
+    std::unique_ptr<DirectX::Keyboard> mKeyboard{nullptr};
+    std::unique_ptr<DirectX::Mouse> mMouse{nullptr};
 };
 
 #endif

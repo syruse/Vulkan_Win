@@ -22,10 +22,10 @@ void main() {
     gl_Position = dynamicUBO.MVP * vec4(inPosition, 1.0f);
     vec3 T = vec3(0.0, 0.0, 0.0);
     vec3 B = vec3(0.0, 0.0, 0.0);
-    vec3 N = inNormal * mat3(dynamicUBO.model);
+    vec3 N = normalize(mat3(dynamicUBO.model) * inNormal);
     if (inTangent.w > 0.0) {
-        T = inTangent.xyz * mat3(dynamicUBO.model);
-        B = inBitangent * mat3(dynamicUBO.model);
+        T = normalize(mat3(dynamicUBO.model) * inTangent.xyz);
+        B = normalize(mat3(dynamicUBO.model) * inBitangent);
     }
     vs_out.TBN = mat3(T, B, N);
     vs_out.TexCoord = inTexCoord;

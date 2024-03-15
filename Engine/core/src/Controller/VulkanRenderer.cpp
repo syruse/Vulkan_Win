@@ -9,14 +9,6 @@
 #include "Skybox.h"
 #include "Terrain.h"
 
-#ifdef __linux__
-#include <SDL2/SDL.h>
-#elif _WIN32
-#include <SDL.h>
-#else
-#include <SDL.h>
-#endif
-
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
@@ -27,6 +19,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/transform.hpp>
+
+#include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
@@ -406,7 +401,7 @@ void VulkanRenderer::createCommandBuffer() {
     Utils::printLog(INFO_PARAM, "Created command buffers");
 }
 
-void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
+void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmiRenderData) {
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
@@ -666,6 +661,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage) {
 
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
+    if (hmiRenderData) {
+        ImGui_ImplVulkan_RenderDrawData(hmiRenderData, _cmdBufs[currentImage]);
+    }
+
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
@@ -791,35 +790,18 @@ bool VulkanRenderer::renderScene() {
         return ret_status;
     }
 
-    SDL_Event e;
-    if (SDL_PollEvent(&e) != 0) {
-        switch (e.type) {
-            case SDL_QUIT: {
-                SDL_Quit();
-                ret_status = false;
-                break;
-            }
-            case SDL_KEYDOWN: {
-                if (e.key.keysym.sym == SDLK_w) {
-                    mCamera.move(Camera::EDirection::Forward);
-                }
-                if (e.key.keysym.sym == SDLK_a) {
-                    mCamera.move(Camera::EDirection::Left);
-                }
-                if (e.key.keysym.sym == SDLK_d) {
-                    mCamera.move(Camera::EDirection::Right);
-                }
-                if (e.key.keysym.sym == SDLK_s) {
-                    mCamera.move(Camera::EDirection::Back);
-                }
-                break;
-            }
-            case SDL_MOUSEMOTION: {
-                std::cout << "Motion " << e.motion.xrel;
-                std::cout << "Motion " << e.motion.yrel;
-                break;
-            }
-        };
+    // USER INPUT handling
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP) {
+        mCamera.move(Camera::EDirection::Forward);
+    }
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
+        mCamera.move(Camera::EDirection::Left);
+    }
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
+        mCamera.move(Camera::EDirection::Right);
+    }
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
+        mCamera.move(Camera::EDirection::Back);
     }
 
     _pushConstant.cameraPos = mCamera.cameraPosition();
@@ -846,8 +828,8 @@ bool VulkanRenderer::renderScene() {
     submitInfo.pWaitDstStageMask = &waitFlags;
     submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
     submitInfo.signalSemaphoreCount = 1;
-
-    recordCommandBuffers(ImageIndex);
+    
+    recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
     updateUniformBuffer(ImageIndex, deltaTime);
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
@@ -1003,8 +985,11 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[2].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    std::array<VkAttachmentDescription, 6> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment,
-                                                                    depthAttachment, shadowMapAttachment,   hdrBloomAttachment};
+    VkAttachmentDescription shadowMapLoadAttachment = depthAttachment;
+    shadowMapLoadAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+
+    std::array<VkAttachmentDescription, 6> renderPassAttachments = {colorAttachment, gPassNormalAttachment, gPassColorAttachment, depthAttachment,
+                                                                    shadowMapLoadAttachment, hdrBloomAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -1521,6 +1506,48 @@ void VulkanRenderer::createSemaphores() {
     }
 }
 
+void VulkanRenderer::createDescriptorPoolForImGui() {
+    // descriptor pool for IMGUI
+    // the size of the pool is very oversize
+    VkDescriptorPoolSize pool_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLER, 100},
+                                         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
+                                         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100},
+                                         {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100},
+                                         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100},
+                                         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100},
+                                         {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100}};
+
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 100;
+    pool_info.poolSizeCount = std::size(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+
+    VkDescriptorPool imguiPool;
+    auto res = vkCreateDescriptorPool(_core.getDevice(), &pool_info, nullptr, &imguiPool);
+    CHECK_VULKAN_ERROR("ImGui reation failed", res);
+
+    // this initializes imgui for Vulkan
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = _core.getInstance();
+    init_info.PhysicalDevice = _core.getPhysDevice();
+    init_info.Device = _core.getDevice();
+    init_info.Queue = _queue;
+    init_info.DescriptorPool = imguiPool;
+    init_info.MinImageCount = 3;
+    init_info.ImageCount = 3;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.RenderPass = m_renderPassFXAA;
+
+    ImGui_ImplVulkan_Init(&init_info);
+    ImGui_ImplVulkan_CreateFontsTexture();
+}
+
 void VulkanRenderer::createPipeline() {
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->recreate();
@@ -1569,4 +1596,5 @@ void VulkanRenderer::init() {
     createPipeline();
     loadModels();
     createSemaphores();
+    createDescriptorPoolForImGui();
 }

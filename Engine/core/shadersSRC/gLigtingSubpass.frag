@@ -72,7 +72,7 @@ void main()
     if(gl_FragCoord.x > widthHalf)
     {
         float depth = subpassLoad(inputDepth).r;
-        float nearPlane = 1.0;
+        float nearPlane = pushConstant.windowSize.w;
         float farPlane = pushConstant.windowSize.z;
         float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
         out_color = vec4(vec3(linearDepth), 1.0f);

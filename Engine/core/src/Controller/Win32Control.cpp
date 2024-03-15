@@ -4,8 +4,10 @@
 #include "Utils.h"
 
 #include <cassert>
-#include <SDL.h>
 #include <vulkan/vulkan_win32.h>
+#include <imgui/backends/imgui_impl_win32.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include <imgui/imgui.h>
 
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
@@ -60,7 +62,28 @@ void Win32Control::init() {
         Utils::printLog(ERROR_PARAM, "CreateWindowEx error %d", error);
     }
 
+    mKeyboard = std::make_unique<DirectX::Keyboard>();
+    mMouse = std::make_unique<DirectX::Mouse>();
+    mMouse->SetWindow(m_hwnd);
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplWin32_Init(m_hwnd);
+
     ShowWindow(m_hwnd, SW_SHOW);
+}
+
+void Win32Control::imGuiNewFrame() const {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
 }
 
 VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const {
@@ -95,6 +118,40 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
         }
     }
 
+    static DirectX::Keyboard::KeyboardStateTracker tracker;
+    auto kb = mKeyboard->GetState();
+    tracker.Update(kb);
+
+    static bool escPressed = false;
+
+    _windowQueueMsg.buttonFlag = 0;
+    if (tracker.pressed.Escape) {
+        escPressed = !escPressed;
+    }
+    if (kb.W || kb.Up) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::UP;
+    }
+    if (kb.A || kb.Left) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::LEFT;
+    }
+    if (kb.S || kb.Down) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::DONW;
+    }
+    if (kb.D || kb.Right) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::RIGHT;
+    }
+
+    _windowQueueMsg.mouseX = mMouse->GetState().x;
+    _windowQueueMsg.mouseY = mMouse->GetState().y;
+
+    // if menu invoked
+    _windowQueueMsg.hmiRenderData = nullptr; 
+    if (escPressed) {
+        imGuiNewFrame();
+        mUi.draw();
+        _windowQueueMsg.hmiRenderData = ImGui::GetDrawData();
+    }
+
     IControl::WindowQueueMSG windowQueueMsg(_windowQueueMsg);
     _windowQueueMsg.reset();
 
@@ -103,33 +160,45 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
-        case WM_CREATE: {
-            if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-                MessageBox(hwnd, TEXT("SDL input mechanism cannot be initialized!"), TEXT("Error!"), MB_ICONEXCLAMATION | MB_OK);
-                PostQuitMessage(0);
-            }
-            SDL_CreateWindowFrom(hwnd);
-        }
-        case WM_CLOSE: {
-            PostQuitMessage(0);
+        case WM_CREATE:
             break;
-        }
-        case WM_DESTROY: {
-            return 0;
-        }
         case WM_SIZE: {
             _windowQueueMsg.width = LOWORD(lParam);
             _windowQueueMsg.height = HIWORD(lParam);
             _windowQueueMsg.isResized = true;
             break;
         }
-        case WM_KEYDOWN: {
-            switch (wParam) {
-                case VK_ESCAPE:
-                    PostQuitMessage(0);
-                    break;
-            }
-        } break;
+        case WM_CLOSE:
+            PostQuitMessage(0);
+            break;
+        case WM_ACTIVATEAPP: {
+            DirectX::Keyboard::ProcessMessage(uMsg, wParam, lParam);
+            DirectX::Mouse::ProcessMessage(uMsg, wParam, lParam);
+            break;        
+        }
+        case WM_ACTIVATE:
+        case WM_INPUT:
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONUP:
+        case WM_MOUSEWHEEL:
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONUP:
+        case WM_MOUSEHOVER:
+            DirectX::Mouse::ProcessMessage(uMsg, wParam, lParam);
+            break;
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+            DirectX::Keyboard::ProcessMessage(uMsg, wParam, lParam);
+            break;
+        case WM_MOUSEACTIVATE:
+            // "click activating" the window to regain focus we don'g react on this, just focusing
+            return MA_ACTIVATEANDEAT;
         default: {
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
         }

@@ -5,8 +5,8 @@
 
 class Camera {
 public:
-    constexpr static float ANGLE_GAIN = 3.0f;
-    constexpr static float GAIN_MOVEMENT = 1.0f;
+    constexpr static float ANGLE_GAIN = 0.25f;
+    constexpr static float GAIN_MOVEMENT = 0.25f;
 
     enum class EDirection { Forward = 0, Left, Right, Back };
 

@@ -72,6 +72,38 @@ VkSurfaceKHR XCBControl::createSurface(VkInstance& inst) const {
 IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs() {
     m_windowQueueMsg.reset();
 
+    // todo
+    SDL_Event e;
+    if (SDL_PollEvent(&e) != 0) {
+        switch (e.type) {
+            case SDL_QUIT: {
+                SDL_Quit();
+                ret_status = false;
+                break;
+            }
+            case SDL_KEYDOWN: {
+                if (e.key.keysym.sym == SDLK_w) {
+                    mCamera.move(Camera::EDirection::Forward);
+                }
+                if (e.key.keysym.sym == SDLK_a) {
+                    mCamera.move(Camera::EDirection::Left);
+                }
+                if (e.key.keysym.sym == SDLK_d) {
+                    mCamera.move(Camera::EDirection::Right);
+                }
+                if (e.key.keysym.sym == SDLK_s) {
+                    mCamera.move(Camera::EDirection::Back);
+                }
+                break;
+            }
+            case SDL_MOUSEMOTION: {
+                std::cout << "Motion " << e.motion.xrel;
+                std::cout << "Motion " << e.motion.yrel;
+                break;
+            }
+        };
+    }
+
     if (auto e = xcb_poll_for_event(m_pXCBConn)) {
         switch (e->response_type & ~0x80) {
             case XCB_RESIZE_REQUEST: {

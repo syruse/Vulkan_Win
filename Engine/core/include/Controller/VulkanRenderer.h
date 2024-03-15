@@ -53,8 +53,9 @@ private:
     void createDescriptorPool();
     void createFramebuffer();
     void createPipeline();
-    void recordCommandBuffers(uint32_t currentImage);
+    void recordCommandBuffers(uint32_t currentImage, ImDrawData* hmiRenderData);
     void createSemaphores();
+    void createDescriptorPoolForImGui();
     void createDepthResources();
     void createColorBufferImage();
     void loadModels();
