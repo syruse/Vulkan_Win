@@ -197,6 +197,9 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
     }
+
+    vkDestroyDescriptorPool(_core.getDevice(), mImguiPool, nullptr);
+    ImGui_ImplVulkan_Shutdown();
 }
 
 void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
@@ -220,6 +223,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         createRenderPass();
         createFramebuffer();
         createPipeline();
+        createDescriptorPoolForImGui();
     }
 }
 
@@ -1528,8 +1532,8 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     pool_info.poolSizeCount = std::size(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
 
-    VkDescriptorPool imguiPool;
-    auto res = vkCreateDescriptorPool(_core.getDevice(), &pool_info, nullptr, &imguiPool);
+    VkDescriptorPool mImguiPool;
+    auto res = vkCreateDescriptorPool(_core.getDevice(), &pool_info, nullptr, &mImguiPool);
     CHECK_VULKAN_ERROR("ImGui reation failed", res);
 
     // this initializes imgui for Vulkan
@@ -1538,14 +1542,13 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     init_info.PhysicalDevice = _core.getPhysDevice();
     init_info.Device = _core.getDevice();
     init_info.Queue = _queue;
-    init_info.DescriptorPool = imguiPool;
+    init_info.DescriptorPool = mImguiPool;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.RenderPass = m_renderPassFXAA;
 
-    ImGui_ImplVulkan_Init(&init_info);
-    ImGui_ImplVulkan_CreateFontsTexture();
+    ImGui_ImplVulkan_Init(&init_info);   
 }
 
 void VulkanRenderer::createPipeline() {

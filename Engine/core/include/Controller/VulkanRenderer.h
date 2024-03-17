@@ -101,6 +101,8 @@ private:
     VkRenderPass m_renderPassBloom{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsBloom{nullptr};
 
+    VkDescriptorPool mImguiPool;
+
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
