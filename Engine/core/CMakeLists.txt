@@ -29,17 +29,6 @@ else()
    message("${CMAKE_CXX_FLAGS_DEBUG}")
 endif()
 
-file(GLOB_RECURSE HEADERS "${CMAKE_SOURCE_DIR}/include/*.h")
-file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
-
-file(GLOB_RECURSE include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
-#THIRD_PARTY_INCLUDE_DIR contains: glm; stb_image; tiny_obj_loader; vulkan; directInput/sdl
-if(LINUX)
-    set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "${VULKAN_INCLUDE_DIR}/include" "${SDL_INCLUDE_DIR}/include")
-else(WIN32)
-    set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "$ENV{VULKAN_SDK}/include" "${CMAKE_SOURCE_DIR}/../DirectXTK12/Inc")
-endif()
-
 set(IMGUI_HEADER "${CMAKE_SOURCE_DIR}/../imgui")
 set(IMGUI_SRC
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/imgui.cpp"
@@ -49,10 +38,23 @@ set(IMGUI_SRC
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_vulkan.cpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_win32.cpp"
 )
+add_library(imgui STATIC ${IMGUI_SRC})
 
-include_directories(${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER})
+file(GLOB_RECURSE HEADERS "${CMAKE_SOURCE_DIR}/include/*.h")
+file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
-add_executable(${APP_NAME} ${HEADERS} ${SOURCES} ${IMGUI_SRC})
+file(GLOB_RECURSE include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
+#THIRD_PARTY_INCLUDE_DIR contains: glm; stb_image; tiny_obj_loader; vulkan; directInput/sdl
+if(LINUX)
+    set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "${VULKAN_INCLUDE_DIR}/include" "${SDL_INCLUDE_DIR}/include")
+    target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "${VULKAN_INCLUDE_DIR}/include")
+else(WIN32)
+    set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "$ENV{VULKAN_SDK}/include" "${CMAKE_SOURCE_DIR}/../DirectXTK12/Inc")
+    target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "$ENV{VULKAN_SDK}/include")
+endif()
+
+add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
+target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER})
 
 message("copying textures, shaders, models from ${CMAKE_CURRENT_SOURCE_DIR}/ to ${CMAKE_BINARY_DIR}/")
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_BINARY_DIR}/)
@@ -64,6 +66,7 @@ if(LINUX)
 else(WIN32)
     target_link_libraries(${APP_NAME} "vulkan-1.lib" DirectXTK12)
 endif()
+target_link_libraries(${APP_NAME} imgui)
 
 install(TARGETS ${APP_NAME} DESTINATION ${CMAKE_BINARY_DIR}/Bin)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_BINARY_DIR}/Bin/)

@@ -27,4 +27,10 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/bloom.vert -o shaders/vert_bloom.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/bloom.frag -o shaders/frag_bloom.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/depthWriter.vert -o shaders/vert_depthWriter.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/depthWriter.frag -o shaders/frag_depthWriter.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssao.vert -o shaders/vert_ssao.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssao.frag -o shaders/frag_ssao.spv
 pause

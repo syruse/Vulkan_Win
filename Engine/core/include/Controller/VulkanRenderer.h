@@ -26,6 +26,8 @@ public:
         GAUSS_X_BLUR, 
         GAUSS_Y_BLUR,
         BLOOM,
+        DEPTH,
+        SSAO,
         MAX
     };
 
@@ -100,6 +102,9 @@ private:
 
     VkRenderPass m_renderPassBloom{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsBloom{nullptr};
+
+    VkRenderPass m_renderPassDepth{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsDepth{nullptr};
 
     VkDescriptorPool mImguiPool;
 

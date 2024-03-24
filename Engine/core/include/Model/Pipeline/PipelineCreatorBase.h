@@ -24,6 +24,10 @@ public:
           m_pipeline() {
     }
 
+    virtual ~PipelineCreatorBase() {
+        destroyDescriptorPool();
+    };
+
     virtual void recreate() final;
     virtual void destroyDescriptorPool() final;
     virtual void createDescriptorPool() = 0;

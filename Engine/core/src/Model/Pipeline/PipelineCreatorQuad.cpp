@@ -13,10 +13,10 @@ void PipelineCreatorQuad::createPipeline() {
     vertexInputInfo.vertexAttributeDescriptionCount = 0;
     vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
-    // Don't want to write to depth buffer
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthWriteEnable = VK_FALSE;
 
+    // TODO enable\disable blending on demand
     if (m_isBlendForBloom) {
         auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
         VkPipelineColorBlendAttachmentState blendAttachState = {};
@@ -45,8 +45,9 @@ void PipelineCreatorQuad::createPipeline() {
 }
 
 uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
-    uint32_t amount = (m_isGPassNeeded ? (m_vkState._gPassBuffer.size + 1 /*shadowMap*/ + 1 /*ubo*/) : 1 /*singleColorInput*/) +
-                      (m_isDepthNeeded ? 1 : 0);
+    uint32_t amount =
+        (m_isGPassNeeded ? (m_vkState._gPassBuffer.size + 1 /*shadowMap*/ + 1 /*ssao*/ + 1 /*ubo*/) : 1 /*singleColorInput*/) +
+        (m_isDepthNeeded ? 1 : 0);
     return amount;
 }
 
@@ -110,7 +111,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
-    shadowMapInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    VkDescriptorPoolSize ssaoInputPoolSize = depthInputPoolSize;
 
     // GPass Color Attachment Pool Size
     VkDescriptorPoolSize gPassColorInputPoolSize = {};
@@ -124,6 +125,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
     if (m_isGPassNeeded) {
         inputPoolSizes.push_back(gPassColorInputPoolSize);
         inputPoolSizes.push_back(shadowMapInputPoolSize);
+        inputPoolSizes.push_back(ssaoInputPoolSize);
         inputPoolSizes.push_back(uboPoolSize);
     } else {
         inputPoolSizes.push_back(colorInputPoolSize);
@@ -167,8 +169,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
         std::vector<VkWriteDescriptorSet> setWrites;
         setWrites.reserve(attachmentsAmount);
 
-        VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, depthAttachmentDescriptor,
-            depthShadowAttachmentDescriptor;
+        VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, ssaoAttachmentDescriptor,
+            depthAttachmentDescriptor, depthShadowAttachmentDescriptor;
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
             normalAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -192,6 +194,22 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.dstBinding = setWrites.size();
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
             setWrites.push_back(colorWrite);
+
+            // SSAO Attachment Descriptor
+            ssaoAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            ssaoAttachmentDescriptor.imageView = m_vkState._ssaoBuffer.colorBufferImageView[i];
+            ssaoAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+
+            // Color Attachment Descriptor Write
+            VkWriteDescriptorSet ssaoWrite = {};
+            ssaoWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            ssaoWrite.dstSet = m_descriptorSets[i];
+            ssaoWrite.dstBinding = setWrites.size();
+            ssaoWrite.dstArrayElement = 0;
+            ssaoWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            ssaoWrite.descriptorCount = 1;
+            ssaoWrite.pImageInfo = &ssaoAttachmentDescriptor;
+            setWrites.push_back(ssaoWrite);
         } else {
             // Color Attachment Descriptor
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

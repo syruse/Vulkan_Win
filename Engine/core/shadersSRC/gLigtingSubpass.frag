@@ -4,10 +4,15 @@ precision highp float;
 
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput inputGPassNormal;
 layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput inputGPassColor;
-layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inputDepth;
-layout(binding = 3) uniform sampler2D inputShadowMap;
+/** now the depth is separated since SSAO prepass
+* layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inputDepth;
+*/
+layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inputSSAO;
+layout(binding = 3) uniform sampler2D inputDepth;
+layout(binding = 4) uniform sampler2D inputShadowMap;
 
-layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
+
+layout(set = 0, binding = 5) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
     mat4 lightViewProj;
@@ -63,7 +68,7 @@ float getShading(vec3 world, float bias)
     shadow /= 9.0;
 
     return 1.0 - shadow;
-} 
+}
 
 void main()
 {
@@ -71,7 +76,7 @@ void main()
     const float widthHalf = pushConstant.windowSize.x / 2.0;
     if(gl_FragCoord.x > widthHalf)
     {
-        float depth = subpassLoad(inputDepth).r;
+        float depth = texture(inputDepth, in_uv).r;
         float nearPlane = pushConstant.windowSize.w;
         float farPlane = pushConstant.windowSize.z;
         float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
@@ -99,15 +104,17 @@ void main()
     
     /** not optimized clip space forming
         vec2 xyNormalized = vec2(gl_FragCoord.x / pushConstant.windowSize.x, gl_FragCoord.y / pushConstant.windowSize.y); // getting xy in range [0;1]
-        vec4 clip = vec4(xyNormalized * 2.0 - vec2(1.0), subpassLoad(inputDepth).x, 1.0); // xy : [0;1] -> [-1;1]
+        vec4 clip = vec4(xyNormalized * 2.0 - vec2(1.0), texture(inputDepth, in_uv).x, 1.0); // xy : [0;1] -> [-1;1]
     */
     
-    vec4 clip = vec4(in_uv * 2.0 - 1.0, subpassLoad(inputDepth).x, 1.0);
+    vec4 clip = vec4(in_uv * 2.0 - 1.0, texture(inputDepth, in_uv).x, 1.0);
     vec4 world_w = uboViewProjection.viewProjInverse * clip;
     vec3 world = world_w.xyz / world_w.w;
     // Load normal from tile buffer.
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
     vec3 normal = 2.0 * normalRange_0_1 - 1.0;
+    
+    float ambientOcclusion = subpassLoad(inputSSAO).r;
     
     // Blinn-Phong lighting model calculation
     vec3 lightDir   = normalize(pushConstant.lightPos - world);
@@ -129,12 +136,13 @@ void main()
     // the bias based on dot product of normal and lightDir will solve this issue
     // float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
     float bias = 0.025;
-    float shading = clamp(getShading(world, bias), softShadingFactor, 1.0);
+    float shading = ambientOcclusion * clamp(getShading(world, bias), softShadingFactor, 1.0);
     
     vec3 res_color = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
 
     // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
     // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
+    // also it forms additional shading effect
     vec4 final_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
     out_color = final_color;
     

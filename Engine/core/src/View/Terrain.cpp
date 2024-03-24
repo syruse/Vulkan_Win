@@ -53,3 +53,21 @@ void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t
                             m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, m_realMaterialId), 1, &dynamicOffset);
     vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(_indices.size()), 1U, 0U, 0, 0U);
 }
+
+void Terrain::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
+                                      uint32_t dynamicOffset) const {
+    assert(m_generalBuffer);
+    assert(pipelineCreator);
+    assert(pipelineCreator->getPipeline().get());
+    
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
+    
+    VkBuffer vertexBuffers[] = {m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
+    
+    vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout, 0, 1,
+                            pipelineCreator->getDescriptorSet(descriptorSetIndex, m_realMaterialId), 1, &dynamicOffset);
+    vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(_indices.size()), 1U, 0U, 0, 0U);
+}

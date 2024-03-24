@@ -4,7 +4,7 @@ namespace {
 glm::vec3 _forwardDir = glm::vec3(0.0f, 0.0f, 1.0f);
 glm::vec3 _leftDir = glm::vec3(-1.0f, 0.0f, 0.0f);
 glm::vec3 _upDir = glm::vec3(0.0f, 1.0f, 0.0f);
-};
+};  // namespace
 
 Camera::Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target) : mTarget(target) {
     mFromTargetToEye = eye - target;
@@ -24,11 +24,15 @@ void Camera::resetPerspective(const Perstective& perstective) {
     mViewProj.proj[1][1] *= -1;
 }
 
-void Camera::update(float deltaTime) {
-    float kDelay = deltaTime / 33.3;  // camera updating for 30 fps
-    glm::quat interpolatedQuat{};
-    if (mInterpolationK < 1.0f) {
-        mInterpolationK += 0.01f * kDelay;
+void Camera::update(float deltaTime, bool withSmoothTransition) {
+    static glm::quat interpolatedQuat{};
+    if (withSmoothTransition) {
+        float kDelay = deltaTime / 33.3;  // camera updating for 30 fps
+        if (mInterpolationK < 1.0f) {
+            mInterpolationK += 0.01f * kDelay;
+        } else {
+            mInterpolationK = 1.0f;
+        }
     } else {
         mInterpolationK = 1.0f;
     }

@@ -45,7 +45,7 @@ public:
         return mInterpolationK == 1.0f;
     }
 
-    void update(float deltaTime);
+    void update(float deltaTime, bool withSmoothTransition = true);
     void move(EDirection dir);
 
 private:

@@ -36,16 +36,19 @@ public:
         return &m_descriptorSets[descriptorSetsIndex];
     }
 
-private:
+protected:
     void createPipeline() override;
-    void createDescriptorSetLayout() override;
 
+private:
+    void createDescriptorSetLayout() override;
     uint32_t getInputBindingsAmount() const;
 
 private:
     bool m_isBlendForBloom{false};
     bool m_isDepthNeeded{false};
     bool m_isGPassNeeded{false};
+
+protected:
     descriptorSets m_descriptorSets{};
     const VulkanState::ColorBuffer* m_colorBuffer{nullptr};
 };

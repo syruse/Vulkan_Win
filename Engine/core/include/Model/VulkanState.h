@@ -102,8 +102,10 @@ struct VulkanState {
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};
     DepthBuffer _depthBuffer{};
+    DepthBuffer _depthTempBuffer{};
     DepthBuffer _shadowMapBuffer{};
     ColorBuffer _colorBuffer{};
+    ColorBuffer _ssaoBuffer{};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};
