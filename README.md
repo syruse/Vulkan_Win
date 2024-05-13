@@ -26,12 +26,15 @@ the developing is ongoing currently it supports such features as
 </ol></p>
 <p><b>HOWTO BUILD:</b>
 </br>
+You have to fetch DirectXTK12 lib as git submodule before building
+</br>
+git submodule init && cd build
+</br>
 for WIN platform
 </br>
-set variable SDL pointing to include directory
 and ensure that VULKAN_SDK variable is set
 </br>
-<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 16 2019"</i></b>
+<b><i>cmake.exe .\Engine\core\ -G "Visual Studio 17 2022"</i></b>
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
 </br>

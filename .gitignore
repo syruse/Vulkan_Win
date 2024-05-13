@@ -1,13 +1,3 @@
-﻿################################################################################
-# Данный GITIGNORE-файл был автоматически создан Microsoft(R) Visual Studio.
-################################################################################
-
-/Vulkan/.vs/Vulkan/v16/ipch/AutoPCH
-/Vulkan/.vs/Vulkan/v16
-/Vulkan/Vulkan/x64/Debug
-/Vulkan/x64/Debug
-/Vulkan/Vulkan/x64/Release/Vulkan.tlog
-/Vulkan/Vulkan/x64/Release
-Vulkan/Vulkan/CMakeFiles/
-build/
+﻿build/
 *.cache
+/CMakeCache.txt
