@@ -35,7 +35,6 @@ layout(location = 1) out vec4 out_hdr;
 // #define DEBUG_DEPTH 1
 // #define DEBUG_SHADOW 1
 
-const bool is_blinnPhong = true;
 const float shiness = 8.5;
 const float softShadingFactor = 0.5; // soft shading by minimum factor limitation
 const float brightness = 3.2;
@@ -107,49 +106,54 @@ void main()
         vec4 clip = vec4(xyNormalized * 2.0 - vec2(1.0), texture(inputDepth, in_uv).x, 1.0); // xy : [0;1] -> [-1;1]
     */
     
-    vec4 clip = vec4(in_uv * 2.0 - 1.0, texture(inputDepth, in_uv).x, 1.0);
+    float depth = texture(inputDepth, in_uv).r;
+    vec4 clip = vec4(in_uv * 2.0 - 1.0, depth, 1.0);
     vec4 world_w = uboViewProjection.viewProjInverse * clip;
     vec3 world = world_w.xyz / world_w.w;
     // Load normal from tile buffer.
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
-    vec3 normal = 2.0 * normalRange_0_1 - 1.0;
-    
-    float ambientOcclusion = subpassLoad(inputSSAO).r;
-    
-    // Blinn-Phong lighting model calculation
-    vec3 lightDir   = normalize(pushConstant.lightPos - world);
-    vec3 viewDir    = normalize(pushConstant.cameraPos - world);
-    
-    vec3 specInputDir = vec3(0.0);
-    if (is_blinnPhong) {
-        vec3 reflectDir = reflect(-lightDir, normal);
-        specInputDir = reflectDir;
-    }
-    else
-    {
-        vec3 halfwayDir = normalize(lightDir + viewDir);
-        specInputDir = halfwayDir;
-    }
-    float spec = pow(max(dot(normal, specInputDir), 0.0), shiness);
-    
-    // if the surface would have a steep angle to the light source, the shadows may still display shadow acne
-    // the bias based on dot product of normal and lightDir will solve this issue
-    // float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
-    float bias = 0.025;
-    float shading = ambientOcclusion * clamp(getShading(world, bias), softShadingFactor, 1.0);
-    
-    vec3 res_color = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
+	
+	out_color = vec4(0.0);
+	out_hdr = vec4(0.0, 0.0, 0.0, 0.0);
 
-    // length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
-    // preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-    // also it forms additional shading effect
-    vec4 final_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
-    out_color = final_color;
-    
-    // really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
-    if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
-        out_hdr = final_color;
-    else
-        out_hdr = vec4(0.0, 0.0, 0.0, 0.0);
+    // excluding skybox etc with zero length normal
+    if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
+		vec3 normal = 2.0 * normalRange_0_1 - 1.0;
+		
+		float ambientOcclusion = subpassLoad(inputSSAO).r;
+		
+		// Blinn-Phong lighting model calculation
+        vec3 lightDir   = normalize(pushConstant.lightPos - world);
+		vec3 viewDir    = normalize(pushConstant.cameraPos - world);
+		
+		vec3 specInputDir = vec3(0.0);
+		// Blinn-Phong
+		vec3 reflectDir = reflect(-lightDir, normal);
+		specInputDir = reflectDir;
+        /* alternative lighting calculation
+		  vec3 halfwayDir = normalize(lightDir + viewDir);
+		  specInputDir = halfwayDir;
+		*/
+		
+		float spec = pow(max(dot(normal, specInputDir), 0.0), shiness);
+		
+		// if the surface would have a steep angle to the light source, the shadows may still display shadow acne
+		// the bias based on dot product of normal and lightDir will solve this issue
+		// float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
+		float bias = 0.025;
+        float shading = ambientOcclusion * clamp(getShading(world, bias), softShadingFactor, 1.0);
+		
+		vec3 res_color = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
+	
+		// length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
+		// preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
+		// also it forms additional shading effect
+		vec4 final_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
+		out_color = final_color;
+		
+		// really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
+		if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
+			out_hdr = final_color;
+	}
 #endif
 }

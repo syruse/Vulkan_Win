@@ -23,4 +23,5 @@ void main() {
   vec4 color2 = texture(texSampler, vec3(outTexCoordNormalized, 2.0));
   color2 = mix(color2OverSampled, color2, 0.25);
   out_GPass[1] = mix(color1, color2, noiseFactor);
+  out_GPass[1].a = 1.0;
 }

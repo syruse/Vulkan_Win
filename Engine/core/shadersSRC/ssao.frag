@@ -25,14 +25,14 @@ layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 const float noiseScale = 256.0; // oversampling multiplier apllied for 4x4 noise texture
-const float radius = 0.7; // semi-sphera kernel radius
+const float radius = 0.41; // semi-sphera kernel radius
 const float bias = 0.99;
 
 void main()
 {
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
     // skybox etc has zero length normal
-    if (length(normalRange_0_1) > 0.00001) {
+    if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
         vec3 normal = 2.0 * normalRange_0_1 - 1.0;
         
         vec4 clip = vec4(in_uv * 2.0 - 1.0, texture(inputDepth, in_uv).x, 1.0);
@@ -43,7 +43,8 @@ void main()
         vec3 randomVec = texture(inputNoise, in_uv * noiseScale).xyz * 2.0 - 1.0;
         
         // The Gram–Schmidt process for generation of tilted orthogonal basis (we don't need accurancy like precalculated tangent)
-        vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
+        // original : vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal)); but the next formula produces much better result
+		vec3 tangent = normalize(randomVec - dot(randomVec, normal));
         vec3 bitangent = cross(normal, tangent);
         mat3 TBN = mat3(tangent, bitangent, normal);
         
@@ -64,7 +65,7 @@ void main()
         }
         
         occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
-        out_color = vec4(occlusion * occlusion, 0.0, 0.0, 1.0);
+        out_color = vec4(occlusion, 0.0, 0.0, 1.0); // if you wanna more contrast: occlusion * occlusion
     } else {
         out_color = vec4(0.0);
     }
