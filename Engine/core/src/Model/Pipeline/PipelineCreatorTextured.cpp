@@ -7,9 +7,23 @@ void PipelineCreatorTextured::createPipeline() {
     assert(m_renderPass);
     assert(m_vkState._core.getDevice());
 
-    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
-                                                         m_subpassAmount, m_pushConstantRange);
+    if (!m_tessCtrlShader.empty() && !m_tessEvalShader.empty()) {
+        auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
+        pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+
+        auto& tessInfo = Pipeliner::getInstance().getTessInfo();
+        tessInfo.patchControlPoints = 3;
+
+        m_pipeline = Pipeliner::getInstance().createPipeLine(
+            m_vertShader, m_fragShader, m_tessCtrlShader, m_tessEvalShader, m_vkState._width, m_vkState._height,
+            *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(), m_subpassAmount, m_pushConstantRange);
+
+    } else {
+        m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
+                                                             *m_descriptorSetLayout.get(), m_renderPass,
+                                                             m_vkState._core.getDevice(), m_subpassAmount, m_pushConstantRange);
+    }
+
     assert(m_pipeline);
 }
 

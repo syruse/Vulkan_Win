@@ -14,6 +14,10 @@ void deletePipeLine(Pipeliner::PipeLine* p) {
     vkDestroyPipelineLayout(device, p->pipelineLayout, nullptr);
     vkDestroyShaderModule(device, p->vsModule, nullptr);
     vkDestroyShaderModule(device, p->fsModule, nullptr);
+    if (p->tsCtrlModule && p->tsEvalModule) {
+        vkDestroyShaderModule(device, p->tsCtrlModule, nullptr);
+        vkDestroyShaderModule(device, p->tsEvalModule, nullptr);
+    }
     delete p;
 }
 
@@ -91,6 +95,14 @@ Pipeliner::Pipeliner() {
     m_shaderStageCreateInfo[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     m_shaderStageCreateInfo[1].module = nullptr;
     m_shaderStageCreateInfo[1].pName = "main";
+    m_shaderStageCreateInfo[2].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    m_shaderStageCreateInfo[2].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+    m_shaderStageCreateInfo[2].module = nullptr;
+    m_shaderStageCreateInfo[2].pName = "main";
+    m_shaderStageCreateInfo[3].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    m_shaderStageCreateInfo[3].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    m_shaderStageCreateInfo[3].module = nullptr;
+    m_shaderStageCreateInfo[3].pName = "main";
 
     _vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     static auto bindingDescription = I3DModel::Vertex::getBindingDescription();
@@ -156,6 +168,11 @@ Pipeliner::Pipeliner() {
     _depthStencil.front = {};  // Optional
     _depthStencil.back = {};   // Optional
 
+    _tessInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+    _tessInfo.pNext = nullptr;
+    _tessInfo.flags = 0;
+    _tessInfo.patchControlPoints = 3;
+
     /// set default configuration
     m_vertexInputInfo = _vertexInputInfo;
     m_pipelineIACreateInfo = _pipelineIACreateInfo;
@@ -163,10 +180,20 @@ Pipeliner::Pipeliner() {
     m_pipelineMSCreateInfo = _pipelineMSCreateInfo;
     m_blendCreateInfo = _blendCreateInfo;
     m_depthStencil = _depthStencil;
+    m_tessInfo = _tessInfo;
 }
 
 Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width,
                                                   uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
+                                                  VkRenderPass renderPass, VkDevice device, uint32_t subpass,
+                                                  VkPushConstantRange pushConstantRange) {
+    return createPipeLine(vertShader, fragShader, std::string_view{}, std::string_view{}, width, height, descriptorSetLayout,
+                          renderPass, device, subpass, pushConstantRange);
+}
+
+Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader,
+                                                  std::string_view tessCtrlShader, std::string_view tessEvalShader,
+                                                  uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
                                                   VkRenderPass renderPass, VkDevice device, uint32_t subpass,
                                                   VkPushConstantRange pushConstantRange) {
     m_device = device;
@@ -177,13 +204,23 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
         createCache();
     }
 
+    VkGraphicsPipelineCreateInfo pipelineInfo = {};
+
+    bool isTesselationEnabled = !tessCtrlShader.empty() && !tessEvalShader.empty();
+
     std::unique_ptr<PipeLine, decltype(&deletePipeLine)> pipeline(new Pipeliner::PipeLine(), deletePipeLine);
     pipeline->vsModule = Utils::VulkanCreateShaderModule(device, vertShader);
-    assert(pipeline->vsModule);
     pipeline->fsModule = Utils::VulkanCreateShaderModule(device, fragShader);
-    assert(pipeline->fsModule);
     m_shaderStageCreateInfo[0].module = pipeline->vsModule;
     m_shaderStageCreateInfo[1].module = pipeline->fsModule;
+
+    if (isTesselationEnabled) {
+        pipelineInfo.pTessellationState = &m_tessInfo;
+        pipeline->tsCtrlModule = Utils::VulkanCreateShaderModule(device, tessCtrlShader);
+        m_shaderStageCreateInfo[2].module = pipeline->tsCtrlModule;
+        pipeline->tsEvalModule = Utils::VulkanCreateShaderModule(device, tessEvalShader);
+        m_shaderStageCreateInfo[3].module = pipeline->tsEvalModule;
+    }
 
     m_vp.width = (float)width;
     m_vp.height = (float)height;
@@ -206,9 +243,8 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     VkResult res = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipeline->pipelineLayout);
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout error %d\n", res);
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = ARRAY_SIZE_IN_ELEMENTS(m_shaderStageCreateInfo);
+    pipelineInfo.stageCount = isTesselationEnabled ? 4u : 2u;
     pipelineInfo.pStages = &m_shaderStageCreateInfo[0];
     pipelineInfo.pVertexInputState = &m_vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &m_pipelineIACreateInfo;
@@ -232,6 +268,7 @@ Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, s
     m_pipelineMSCreateInfo = _pipelineMSCreateInfo;
     m_blendCreateInfo = _blendCreateInfo;
     m_depthStencil = _depthStencil;
+    m_tessInfo = _tessInfo;
 
     return pipeline;
 }

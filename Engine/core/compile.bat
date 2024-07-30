@@ -15,6 +15,8 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.vert -o shaders/vert_terrain.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.frag -o shaders/frag_terrain.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.tese -o shaders/tessEval_terrain.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/terrain.tesc -o shaders/tessCtrl_terrain.spv
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/particle.vert -o shaders/vert_particle.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/particle.frag -o shaders/frag_particle.spv

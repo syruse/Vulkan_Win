@@ -9,7 +9,17 @@ public:
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, uint32_t texturesAmount = 1u, uint32_t subpass = 0u,
                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, std::string_view{}, std::string_view{},
+                                  texturesAmount, subpass, pushConstantRange) {
+    }
+
+    PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
+                            std::string_view fragShader, std::string_view tessCtrlShader,
+                            std::string_view tessEvalShader, uint32_t texturesAmount = 1u, uint32_t subpass = 0u,
+                            VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
+          m_tessCtrlShader(tessCtrlShader),
+          m_tessEvalShader(tessEvalShader),
           m_texturesAmount(texturesAmount) {
     }
 
@@ -29,6 +39,8 @@ private:
     void createPipeline() override;
 
 private:
+    std::string_view m_tessCtrlShader{};
+    std::string_view m_tessEvalShader{};
     uint32_t m_texturesAmount{1u};
     uint32_t m_maxObjectsCount{0u};
     uint32_t m_curMaterialId{0u};

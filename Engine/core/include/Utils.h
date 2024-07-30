@@ -111,4 +111,5 @@ void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCom
 #define CHECK_VULKAN_ERROR(msg, res) \
     if (res != VK_SUCCESS) {         \
         ERROR_FORMAT(msg, res);      \
+        std::exit(EXIT_FAILURE);     \
     }

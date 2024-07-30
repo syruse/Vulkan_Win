@@ -10,6 +10,8 @@ public:
     struct PipeLine {
         VkShaderModule vsModule = nullptr;
         VkShaderModule fsModule = nullptr;
+        VkShaderModule tsCtrlModule = nullptr;
+        VkShaderModule tsEvalModule = nullptr;
         VkPipeline pipeline = nullptr;
         VkPipelineLayout pipelineLayout = nullptr;
     };
@@ -35,6 +37,11 @@ public:
 
     /// you can customize states of pipeline by get desired and change before invoking createPipeLine
     pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
+                                VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
+                                uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
+
+    pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader, std::string_view tessCtrlShader,
+                                std::string_view tessEvalShader, uint32_t width, uint32_t height,
                                 VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass, VkDevice device,
                                 uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
 
@@ -64,11 +71,15 @@ public:
         return m_blendCreateInfo;
     };
 
+    inline VkPipelineTessellationStateCreateInfo& getTessInfo() {
+        return m_tessInfo;
+    };
+
 private:
     VkDevice m_device{nullptr};
     VkPipelineCache m_pipeline_cache{nullptr};
 
-    VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[2]{};
+    VkPipelineShaderStageCreateInfo m_shaderStageCreateInfo[4]{};
     VkPipelineVertexInputStateCreateInfo m_vertexInputInfo{};
     VkPipelineInputAssemblyStateCreateInfo m_pipelineIACreateInfo{};
     VkViewport m_vp{};
@@ -78,6 +89,7 @@ private:
     VkPipelineMultisampleStateCreateInfo m_pipelineMSCreateInfo{};
     VkPipelineColorBlendStateCreateInfo m_blendCreateInfo{};
     VkPipelineDepthStencilStateCreateInfo m_depthStencil{};
+    VkPipelineTessellationStateCreateInfo m_tessInfo{};
 
     /// persistent default configuration
     inline static VkPipelineVertexInputStateCreateInfo _vertexInputInfo{};
@@ -86,4 +98,5 @@ private:
     inline static VkPipelineMultisampleStateCreateInfo _pipelineMSCreateInfo{};
     inline static VkPipelineColorBlendStateCreateInfo _blendCreateInfo{};
     inline static VkPipelineDepthStencilStateCreateInfo _depthStencil{};
+    inline static VkPipelineTessellationStateCreateInfo _tessInfo{};
 };
