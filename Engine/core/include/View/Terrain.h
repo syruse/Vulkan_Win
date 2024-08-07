@@ -26,4 +26,6 @@ private:
     std::string_view m_textureFileName2{};
     std::string_view m_noiseTextureFileName{};
     std::uint32_t m_realMaterialId{0U};
+    std::vector<I3DModel::Vertex> m_vertices;
+    std::vector<uint32_t> m_indices;
 };
