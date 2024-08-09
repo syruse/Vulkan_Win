@@ -38,6 +38,10 @@ public:
         return m_pipeline;
     }
 
+    bool isPushContantActive() const {
+        return m_pushConstantRange.size != 0u;
+    }
+
 private:
     virtual void createDescriptorSetLayout() = 0;
     virtual void createPipeline() = 0;

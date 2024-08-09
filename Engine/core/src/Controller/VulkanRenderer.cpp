@@ -39,13 +39,15 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     calculateLightThings();
 
     // TODO consider combining into one object with _pushConstant
-    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT |
+                                     VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
 
     assert(m_pipelineCreators.size() == Pipelines::MAX);
     m_pipelineCreators[TERRAIN].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_terrain.spv", "frag_terrain.spv",
-                                                                  "tessCtrl_terrain.spv", "tessEval_terrain.spv"));
+                                                                  "tessCtrl_terrain.spv", "tessEval_terrain.spv", 1U, 0U,
+                                                                  m_pushConstantRange));
     m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
     m_pipelineCreators[SKYBOX].reset(
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
@@ -311,11 +313,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 }
 
 void VulkanRenderer::allocateDynamicBufferTransferSpace() {
-    // Get properties of our new device
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(_core.getPhysDevice(), &deviceProperties);
-
-    size_t minUniformBufferOffset = static_cast<size_t>(deviceProperties.limits.minUniformBufferOffsetAlignment);
+    size_t minUniformBufferOffset = static_cast<size_t>(mDeviceProperties.limits.minUniformBufferOffsetAlignment);
 
     // Calculate alignment of model matrix data
     _modelUniformAlignment = (sizeof(Model) + minUniformBufferOffset - 1) & ~(minUniformBufferOffset - 1);
@@ -875,7 +873,7 @@ bool VulkanRenderer::renderScene() {
         mCamera.move(Camera::EDirection::Back);
     }
 
-    _pushConstant.cameraPos = mCamera.cameraPosition();
+    _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.windDirElapsedTimeMS.w += deltaTime;
 
     // -- GET NEXT IMAGE --
@@ -1768,6 +1766,8 @@ void VulkanRenderer::createDepthResources() {
 
 void VulkanRenderer::init() {
     _core.init();
+    // Get properties of our new device
+    vkGetPhysicalDeviceProperties(_core.getPhysDevice(), &mDeviceProperties);
 
     vkGetDeviceQueue(_core.getDevice(), _core.getQueueFamily(), 0, &_queue);
 

@@ -78,6 +78,12 @@ void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t
     assert(m_pipelineCreatorTextured);
     assert(m_pipelineCreatorTextured->getPipeline().get());
 
+    if (m_pipelineCreatorTextured->isPushContantActive()) {
+        vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                           0, sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
+    }
+
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = {m_generalBuffer};
@@ -96,6 +102,13 @@ void Terrain::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCom
     assert(m_generalBuffer);
     assert(pipelineCreator);
     assert(pipelineCreator->getPipeline().get());
+
+    if (pipelineCreator->isPushContantActive()) {
+        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0,
+                           sizeof(VulkanState::PushConstant),
+                           &m_vkState._pushConstant);
+    }
     
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
     

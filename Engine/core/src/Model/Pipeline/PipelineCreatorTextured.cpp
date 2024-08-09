@@ -44,7 +44,16 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding};
+    // UBO Binding Info
+    VkDescriptorSetLayoutBinding uboViewProjLayoutBinding = {};
+    uboViewProjLayoutBinding.binding = 2;
+    uboViewProjLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboViewProjLayoutBinding.descriptorCount = 1;
+    uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    uboViewProjLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
+                                                               uboViewProjLayoutBinding};
 
     // Create Descriptor Set Layout with given bindings
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
@@ -73,8 +82,11 @@ void PipelineCreatorTextured::createDescriptorPool() {
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     texturePoolSize.descriptorCount *= m_texturesAmount;
 
+    VkDescriptorPoolSize uboViewProjPoolSize = uboPoolSize;
+    uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
     // List of pool sizes
-    std::array<VkDescriptorPoolSize, 2> descriptorPoolSizes{uboPoolSize, texturePoolSize};
+    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -149,8 +161,23 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         textureSetWrite.descriptorCount = m_texturesAmount;
         textureSetWrite.pImageInfo = &imageInfo;
 
+        // UBO ViewProj DESCRIPTOR
+        VkDescriptorBufferInfo UBOBufferInfo{};
+        UBOBufferInfo.buffer = m_vkState._ubo.buffers[i];
+        UBOBufferInfo.offset = 0;
+        UBOBufferInfo.range = sizeof(VulkanState::ViewProj);
+
+        VkWriteDescriptorSet uboDescriptorWrite{};
+        uboDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uboDescriptorWrite.dstSet = material.descriptorSets[i];
+        uboDescriptorWrite.dstBinding = 2;
+        uboDescriptorWrite.dstArrayElement = 0;
+        uboDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboDescriptorWrite.descriptorCount = 1;
+        uboDescriptorWrite.pBufferInfo = &UBOBufferInfo;
+
         // List of Descriptor Set Writes
-        std::array<VkWriteDescriptorSet, 2> setWrites{dynamicUBOSetWrite, textureSetWrite};
+        std::array<VkWriteDescriptorSet, 3> setWrites{dynamicUBOSetWrite, textureSetWrite, uboDescriptorWrite};
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,

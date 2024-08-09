@@ -9,6 +9,14 @@ layout (location = 2) in vec2 inTexCoordNormalized[];
 layout(location = 0) out vec3 outNormal;
 layout(location = 1) out vec2 outTexCoord;
 layout(location = 2) out vec2 outTexCoordNormalized;
+
+layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
+    mat4 viewProj;
+    mat4 viewProjInverse;
+    mat4 lightViewProj;
+    mat4 proj;
+    mat4 view;
+} uboViewProjection;
  
 void main()
 {
@@ -18,5 +26,6 @@ void main()
     outTexCoord = gl_TessCoord.x * inTexCoord[0] + gl_TessCoord.y * inTexCoord[1] + gl_TessCoord.z * inTexCoord[2];
 	outTexCoordNormalized = gl_TessCoord.x * inTexCoordNormalized[0] + gl_TessCoord.y * inTexCoordNormalized[1] + gl_TessCoord.z * inTexCoordNormalized[2];
  
-    gl_Position = gl_TessCoord.x * gl_in[0].gl_Position + gl_TessCoord.y * gl_in[1].gl_Position + gl_TessCoord.z * gl_in[2].gl_Position;
+    vec4 position = gl_TessCoord.x * gl_in[0].gl_Position + gl_TessCoord.y * gl_in[1].gl_Position + gl_TessCoord.z * gl_in[2].gl_Position;
+	gl_Position = uboViewProjection.viewProj * position;
 }

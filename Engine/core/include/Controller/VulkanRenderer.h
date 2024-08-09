@@ -70,6 +70,7 @@ private:
 
     VkPushConstantRange m_pushConstantRange{};
 
+    VkPhysicalDeviceProperties mDeviceProperties;
     std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
 
