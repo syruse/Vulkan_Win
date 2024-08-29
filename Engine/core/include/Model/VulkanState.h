@@ -44,6 +44,7 @@ struct VulkanState {
         alignas(16) glm::mat4 lightViewProj;
         alignas(16) glm::mat4 proj;
         alignas(16) glm::mat4 view;
+        alignas(16) glm::mat4 footPrintViewProj;
     };
 
     struct PushConstant {
@@ -106,6 +107,7 @@ struct VulkanState {
     DepthBuffer _shadowMapBuffer{};
     ColorBuffer _colorBuffer{};
     ColorBuffer _ssaoBuffer{};
+    DepthBuffer _footprintBuffer{};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};

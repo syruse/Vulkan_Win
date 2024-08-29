@@ -106,11 +106,11 @@ void VulkanCore::selectPhysicalDevice() {
 
             INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
             VkQueueFlags flags = QFamilyProp.queueFlags;
-            INFO_FORMAT("    GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
+            INFO_FORMAT("GFX %s, Compute %s, Transfer %s, Sparse binding %s\n",
                         (flags & VK_QUEUE_GRAPHICS_BIT) ? "Yes" : "No", (flags & VK_QUEUE_COMPUTE_BIT) ? "Yes" : "No",
                         (flags & VK_QUEUE_TRANSFER_BIT) ? "Yes" : "No", (flags & VK_QUEUE_SPARSE_BINDING_BIT) ? "Yes" : "No");
 
-            if ((flags & VK_QUEUE_GRAPHICS_BIT) && (m_gfxDevIndex == -1)) {
+            if ((flags & VK_QUEUE_GRAPHICS_BIT)) {
                 if (!m_physDevices.m_qSupportsPresent[i][j]) {
                     Utils::printLog(INFO_PARAM, "Present is not supported");
                     continue;

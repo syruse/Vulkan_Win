@@ -6,6 +6,7 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
     mat4 lightViewProj;
     mat4 proj;
     mat4 view;
+	mat4 footPrintViewProj;
 } uboViewProjection;
 
 layout(set = 0, binding = 1) uniform DynamicUBO {

@@ -7,7 +7,7 @@ void PipelineCreatorTextured::createPipeline() {
     assert(m_renderPass);
     assert(m_vkState._core.getDevice());
 
-    if (!m_tessCtrlShader.empty() && !m_tessEvalShader.empty()) {
+    if (m_isTessellated) {
         auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
         pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
 
@@ -52,8 +52,18 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
     uboViewProjLayoutBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
                                                                uboViewProjLayoutBinding};
+    if (m_isTessellated) {
+        // Depth attachment with trails
+        VkDescriptorSetLayoutBinding depthFootPrintInputLayoutBinding{};
+        depthFootPrintInputLayoutBinding.binding = 3;
+        depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthFootPrintInputLayoutBinding.descriptorCount = 1;
+        depthFootPrintInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+
+        layoutBindings.push_back(depthFootPrintInputLayoutBinding);
+    }
 
     // Create Descriptor Set Layout with given bindings
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
@@ -86,7 +96,12 @@ void PipelineCreatorTextured::createDescriptorPool() {
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
     // List of pool sizes
-    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
+    if (m_isTessellated) {
+        VkDescriptorPoolSize depthFootPrintInputPoolSize = uboPoolSize;
+        depthFootPrintInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descriptorPoolSizes.push_back(depthFootPrintInputPoolSize);
+    }
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -177,7 +192,25 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         uboDescriptorWrite.pBufferInfo = &UBOBufferInfo;
 
         // List of Descriptor Set Writes
-        std::array<VkWriteDescriptorSet, 3> setWrites{dynamicUBOSetWrite, textureSetWrite, uboDescriptorWrite};
+        std::vector<VkWriteDescriptorSet> setWrites{dynamicUBOSetWrite, textureSetWrite, uboDescriptorWrite};
+        if (m_isTessellated) {
+            // Depth FootPrint Attachment
+            VkDescriptorImageInfo depthAttachmentInfo{};
+            depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            depthAttachmentInfo.imageView = m_vkState._footprintBuffer.depthImageView;
+            depthAttachmentInfo.sampler = VK_NULL_HANDLE;
+
+            VkWriteDescriptorSet depthWrite{};
+            depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            depthWrite.dstSet = material.descriptorSets[i];
+            depthWrite.dstBinding = 3;
+            depthWrite.dstArrayElement = 0;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorCount = 1;
+            depthWrite.pImageInfo = &depthAttachmentInfo;
+
+            setWrites.push_back(depthWrite);
+        }
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,

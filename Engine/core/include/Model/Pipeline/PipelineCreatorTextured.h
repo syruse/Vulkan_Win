@@ -21,6 +21,7 @@ public:
           m_tessCtrlShader(tessCtrlShader),
           m_tessEvalShader(tessEvalShader),
           m_texturesAmount(texturesAmount) {
+        m_isTessellated = !m_tessCtrlShader.empty() && !m_tessEvalShader.empty();
     }
 
     void createDescriptorPool() override;
@@ -41,6 +42,7 @@ private:
 private:
     std::string_view m_tessCtrlShader{};
     std::string_view m_tessEvalShader{};
+    bool m_isTessellated{false};
     uint32_t m_texturesAmount{1u};
     uint32_t m_maxObjectsCount{0u};
     uint32_t m_curMaterialId{0u};

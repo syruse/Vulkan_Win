@@ -35,4 +35,7 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssao.vert -o shaders/vert_ssao.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssao.frag -o shaders/frag_ssao.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/footprint.vert -o shaders/vert_footPrint.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/footprint.frag -o shaders/frag_footPrint.spv
 pause

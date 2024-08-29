@@ -27,6 +27,9 @@
 static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
 
+// clear depth buffer only once and then we accumulate trails of the vehicle
+static bool oneOffClearingFootPrint = true; 
+
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
@@ -36,7 +39,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
     _pushConstant.lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
 
-    calculateLightThings();
+    calculateAdditionalMat();
 
     // TODO consider combining into one object with _pushConstant
     m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT |
@@ -68,6 +71,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[DEPTH].reset(
         new PipelineCreatorShadowMap(*this, m_renderPassDepth, "vert_depthWriter.spv", "frag_depthWriter.spv"));
     m_pipelineCreators[SSAO].reset(new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u));
+    m_pipelineCreators[FOOTPRINT].reset(
+        new PipelineCreatorShadowMap(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -149,6 +154,10 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyImage(_core.getDevice(), _depthTempBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _depthTempBuffer.depthImageMemory, nullptr);
 
+    vkDestroyImageView(_core.getDevice(), _footprintBuffer.depthImageView, nullptr);
+    vkDestroyImage(_core.getDevice(), _footprintBuffer.depthImage, nullptr);
+    vkFreeMemory(_core.getDevice(), _footprintBuffer.depthImageMemory, nullptr);
+
     for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyImageView(_core.getDevice(), _colorBuffer.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _colorBuffer.colorBufferImage[i], nullptr);
@@ -161,6 +170,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImageView(_core.getDevice(), _gPassBuffer.color.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _gPassBuffer.color.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _gPassBuffer.color.colorBufferImageMemory[i], nullptr);
+
+        vkDestroyImageView(_core.getDevice(), _ssaoBuffer.colorBufferImageView[i], nullptr);
+        vkDestroyImage(_core.getDevice(), _ssaoBuffer.colorBufferImage[i], nullptr);
+        vkFreeMemory(_core.getDevice(), _ssaoBuffer.colorBufferImageMemory[i], nullptr);
 
         for (auto& buf : _bloomBuffer) {
             vkDestroyImageView(_core.getDevice(), buf.colorBufferImageView[i], nullptr);
@@ -193,6 +206,9 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& framebuffer : m_fbsDepth) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
+    for (auto& framebuffer : m_fbsFootprint) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
 
     for (auto& imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
@@ -208,6 +224,7 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyRenderPass(_core.getDevice(), m_renderPassYBlur, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassBloom, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassDepth, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassFootprint, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
@@ -225,9 +242,10 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _width = width;
         _height = height;
         m_currentFrame = 0u;
+        oneOffClearingFootPrint = true; 
 
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
-        calculateLightThings();
+        calculateAdditionalMat();
 
         createSwapChain();
         createCommandBuffer();
@@ -248,11 +266,18 @@ void VulkanRenderer::recreateDescriptorSets() {
     }
 }
 
-void VulkanRenderer::calculateLightThings() {
-    float aspectRatio = static_cast<float>(_height) / _width;
-    m_lightProj = glm::ortho(-Z_FAR, Z_FAR, -Z_FAR * aspectRatio, Z_FAR * aspectRatio, -Z_FAR, Z_FAR) *
+void VulkanRenderer::calculateAdditionalMat() {
+    const float aspectRatio = static_cast<float>(_height) / _width;
+    const float zFarMulAspectRatio = Z_FAR * aspectRatio;
+    m_lightViewProj = glm::ortho(-Z_FAR, Z_FAR, -zFarMulAspectRatio, zFarMulAspectRatio, -Z_FAR, Z_FAR) *
                   glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    m_lightProj[1][1] *= -1;
+    m_lightViewProj[1][1] *= -1;
+
+    // up vector is flipped for footPrint :vec3(0.0f, 0.0f, 1.0f) since we have 90 degree angle of view point
+    const glm::vec3 footPrintUp = glm::vec3(0.0f, 0.0f, 1.0f);
+    m_footPrintViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
+                          glm::lookAt(glm::vec3(0.0f, Z_FAR, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), footPrintUp);
+    m_footPrintViewProj[1][1] *= -1;
 }
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
@@ -277,9 +302,10 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     static ViewProj viewProj{};
     viewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
     viewProj.viewProjInverse = glm::inverse(viewProj.viewProj);
-    viewProj.lightViewProj = m_lightProj;
+    viewProj.lightViewProj = m_lightViewProj;
     viewProj.proj = cameraViewProj.proj;
     viewProj.view = cameraViewProj.view;
+    viewProj.footPrintViewProj = m_footPrintViewProj;
 
     // Copy VP data
     void* data;
@@ -474,6 +500,40 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);
+    }
+
+    vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+    //---------------------------------------------------------------------------------------------//
+    /// footprint pass
+    VkRenderPassBeginInfo renderPassFootprintInfo = {};
+    renderPassFootprintInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassFootprintInfo.renderPass = m_renderPassFootprint;
+    renderPassFootprintInfo.renderArea.offset.x = 0;
+    renderPassFootprintInfo.renderArea.offset.y = 0;
+    renderPassFootprintInfo.renderArea.extent.width = _width;
+    renderPassFootprintInfo.renderArea.extent.height = _height;
+    renderPassFootprintInfo.framebuffer = m_fbsFootprint[currentImage];
+
+    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    if (oneOffClearingFootPrint) {
+        VkClearValue footPrintClearValues{};
+        footPrintClearValues.depthStencil.depth = 1.0f;
+        VkClearAttachment clearAttachment;
+        clearAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        clearAttachment.clearValue = footPrintClearValues;
+        clearAttachment.colorAttachment = 0u;
+        VkClearRect clearRect = {{{0u, 0u}, {_width, _height}}, 0u, 1u};
+        vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
+        oneOffClearingFootPrint = false;
+    } else {
+        // draw object tracks (the panzer will leave the footprint)
+        for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
+            const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
+            m_models[meshIndex]->drawTracksWithCustomPipeline(m_pipelineCreators[FOOTPRINT].get(), _cmdBufs[currentImage],
+                                                              currentImage, dynamicOffset);
+        }
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -971,6 +1031,16 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
+    VkAttachmentDescription depthSSAOReadyAttachment =
+    depthAttachment;  // already initialized depth texture from early renderPass
+    depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+
+    VkAttachmentDescription shadowMapLoadAttachment = depthSSAOReadyAttachment;
+
+    VkAttachmentDescription footPrintLoadAttachment = depthSSAOReadyAttachment;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -985,12 +1055,18 @@ void VulkanRenderer::createRenderPass() {
     depthAttachmentRef.attachment = 7;  // temporary depth buffer needed only for correct geometry output in g-pass
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference footPrintAttachmentRef{};
+    footPrintAttachmentRef.attachment = 8;  // depthbuf with trails
+    footPrintAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+
     std::array<VkAttachmentReference, 3> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef};
 
     subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpasses[0].colorAttachmentCount = gPassAttachment.size();
     subpasses[0].pColorAttachments = &gPassAttachment[0];
     subpasses[0].pDepthStencilAttachment = &depthAttachmentRef;
+    subpasses[0].inputAttachmentCount = 1u;
+    subpasses[0].pInputAttachments = &footPrintAttachmentRef;
 
     // Set up Subpass 2 (SSAO)
 
@@ -1047,8 +1123,8 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[0].dstSubpass = 0;
     subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;  // for external depth buffer using
     subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    subpassDependencies[0].dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                          VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -1096,20 +1172,12 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[4].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     subpassDependencies[4].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    VkAttachmentDescription shadowMapLoadAttachment = depthAttachment;
-    shadowMapLoadAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     // temporary depth buffer for correct geometry output in g-Pass since depthAttachment is already formed before g-pass started
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
 
-    VkAttachmentDescription depthSSAOReadyAttachment =
-        depthAttachment;  // already initialized depth texture from early renderPass
-    depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-
-    std::array<VkAttachmentDescription, 8> renderPassAttachments = {
-        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO,
-        depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,   depthTemporaryAttachment};
+    std::array<VkAttachmentDescription, 9> renderPassAttachments = {
+        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO, depthSSAOReadyAttachment, 
+        shadowMapLoadAttachment, hdrBloomAttachment,  depthTemporaryAttachment, footPrintLoadAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -1499,19 +1567,64 @@ void VulkanRenderer::createRenderPass() {
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Created a render pass depth");
+
+    //-------------------------------------------------------//
+    // Create info for Render Pass: FootPrint effect
+    VkAttachmentDescription depthAttachmentFootPrint = depthAttachment;
+    depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // we accumulate trails of the vehicle
+    depthAttachmentFootPrint.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    std::array<VkAttachmentDescription, 1> renderPassAttachmentsFootPrint = {depthAttachmentFootPrint};
+
+    VkAttachmentReference footPrintDepthAttachmentReferences = {};
+    footPrintDepthAttachmentReferences.attachment = 0;
+    footPrintDepthAttachmentReferences.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpassFootPrint{};
+    subpassFootPrint.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassFootPrint.colorAttachmentCount = 0u;
+    subpassFootPrint.pColorAttachments = VK_NULL_HANDLE;
+    subpassFootPrint.pDepthStencilAttachment = &footPrintDepthAttachmentReferences;
+    subpassFootPrint.inputAttachmentCount = 0u;
+
+    // Subpass dependencies for layout transitions
+    VkSubpassDependency dependencyFootPrint;
+
+    dependencyFootPrint.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyFootPrint.dstSubpass = 0;
+    dependencyFootPrint.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyFootPrint.srcAccessMask = 0;
+    dependencyFootPrint.dstStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencyFootPrint.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoFootPrint = {};
+    renderPassCreateInfoFootPrint.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoFootPrint.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsFootPrint.size());
+    renderPassCreateInfoFootPrint.pAttachments = renderPassAttachmentsFootPrint.data();
+    renderPassCreateInfoFootPrint.subpassCount = 1;
+    renderPassCreateInfoFootPrint.pSubpasses = &subpassFootPrint;
+    renderPassCreateInfoFootPrint.dependencyCount = 1u;
+    renderPassCreateInfoFootPrint.pDependencies = &dependencyFootPrint;
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoFootPrint, nullptr, &m_renderPassFootprint);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass for footprint effect");
 }
 
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        std::array<VkImageView, 8> attachments = {_colorBuffer.colorBufferImageView[i],
+        std::array<VkImageView, 9> attachments = {_colorBuffer.colorBufferImageView[i],
                                                   _gPassBuffer.normal.colorBufferImageView[i],
                                                   _gPassBuffer.color.colorBufferImageView[i],
                                                   _ssaoBuffer.colorBufferImageView[i],
                                                   _depthBuffer.depthImageView,
                                                   _shadowMapBuffer.depthImageView,
                                                   _bloomBuffer[0].colorBufferImageView[i],
-                                                  _depthTempBuffer.depthImageView};
+                                                  _depthTempBuffer.depthImageView,
+                                                  _footprintBuffer.depthImageView};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -1663,6 +1776,24 @@ void VulkanRenderer::createFramebuffer() {
         CHECK_VULKAN_ERROR("vkCreateFramebuffer DEPTH PASS error %d\n", res);
     }
 
+    //-------------------------------------------------------//
+    // FOOTPRINT PASS (for tire tracks)
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        VkImageView attachment = _footprintBuffer.depthImageView;
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassFootprint;
+        fbCreateInfo.attachmentCount = 1u;
+        fbCreateInfo.pAttachments = &attachment;
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFootprint[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer FOOTPRINT PASS error %d\n", res);
+    }
+
     Utils::printLog(INFO_PARAM, "Frame buffers created");
 }
 
@@ -1742,6 +1873,7 @@ void VulkanRenderer::createDepthResources() {
 
     _shadowMapBuffer.depthFormat = _depthBuffer.depthFormat;
     _depthTempBuffer.depthFormat = _depthBuffer.depthFormat;
+    _footprintBuffer.depthFormat = _depthBuffer.depthFormat;
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
@@ -1762,6 +1894,13 @@ void VulkanRenderer::createDepthResources() {
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthTempBuffer.depthImage, _depthTempBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthTempBuffer.depthImage, _depthTempBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _depthTempBuffer.depthImageView);
+
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _footprintBuffer.depthFormat,
+                             VK_IMAGE_TILING_OPTIMAL,
+                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);
+    Utils::VulkanCreateImageView(_core.getDevice(), _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
+                                 VK_IMAGE_ASPECT_DEPTH_BIT, _footprintBuffer.depthImageView);
 }
 
 void VulkanRenderer::init() {

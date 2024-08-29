@@ -18,6 +18,7 @@ layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
     mat4 lightViewProj;
     mat4 proj;
     mat4 view;
+	mat4 footPrintViewProj;
 } uboViewProjection;
 
 layout(location = 0) in vec2 in_uv;

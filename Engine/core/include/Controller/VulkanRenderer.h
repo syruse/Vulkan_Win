@@ -28,6 +28,7 @@ public:
         BLOOM,
         DEPTH,
         SSAO,
+        FOOTPRINT,
         MAX
     };
 
@@ -63,7 +64,7 @@ private:
     void loadModels();
     void recreateDescriptorSets();
 
-    void calculateLightThings();
+    void calculateAdditionalMat();
 
 private:
     uint16_t m_currentFrame = 0u;
@@ -90,7 +91,7 @@ private:
 
     VkRenderPass m_renderPassShadowMap{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsShadowMap{nullptr};
-    glm::mat4 m_lightProj{1.0f};
+    glm::mat4 m_lightViewProj{1.0f};
 
     VkRenderPass m_renderPassSemiTrans{nullptr};  // semi-transparent objects will be drawn at the end due to g-pass
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSemiTrans{nullptr};
@@ -106,6 +107,10 @@ private:
 
     VkRenderPass m_renderPassDepth{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsDepth{nullptr};
+
+    VkRenderPass m_renderPassFootprint{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFootprint{nullptr};
+    glm::mat4 m_footPrintViewProj{1.0f};
 
     VkDescriptorPool mImguiPool;
 

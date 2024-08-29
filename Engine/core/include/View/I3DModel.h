@@ -96,6 +96,9 @@ public:
     virtual void init() = 0;
     virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const = 0;
     virtual void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {}
+    virtual void drawTracksWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf,
+                                        uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
+    }
 
 protected:
     const VulkanState& m_vkState;
