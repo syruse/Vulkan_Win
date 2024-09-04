@@ -11,10 +11,12 @@
 
 class PipelineCreatorBase;
 class PipelineCreatorTextured;
+class PipelineCreatorFootprint;
 class I3DModel {
 public:
     struct SubObject {
         std::uint32_t realMaterialId;
+        std::uint32_t realMaterialFootprintId;
         std::size_t indexOffset;
         std::size_t indexAmount;
     };
@@ -85,7 +87,12 @@ public:
     };
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true);
+             PipelineCreatorFootprint* pipelineCreatorFootprint, uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true);
+
+    I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
+             uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier) {
+    }
 
     virtual ~I3DModel() {
         std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
@@ -95,9 +102,10 @@ public:
 
     virtual void init() = 0;
     virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const = 0;
-    virtual void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {}
-    virtual void drawTracksWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf,
+    virtual void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf,
                                         uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
+    }
+    virtual void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     }
 
 protected:
@@ -105,6 +113,7 @@ protected:
     TextureFactory& m_textureFactory;
     uint32_t m_vertexMagnitudeMultiplier{1U};
     PipelineCreatorTextured* m_pipelineCreatorTextured{nullptr};
+    PipelineCreatorFootprint* m_pipelineCreatorFootprint{nullptr};
     VulkanState::Model m_modelMtrx{glm::mat4(1.0f)};
     VkDeviceSize m_verticesBufferOffset{0U};
     VkBuffer m_generalBuffer{nullptr};

@@ -1,6 +1,7 @@
 #include "VulkanRenderer.h"
 #include "ObjModel.h"
 #include "Particle.h"
+#include "PipelineCreatorFootprint.h"
 #include "PipelineCreatorParticle.h"
 #include "PipelineCreatorQuad.h"
 #include "PipelineCreatorSSAO.h"
@@ -28,7 +29,7 @@ static constexpr float Z_NEAR = 0.01f;
 static constexpr float Z_FAR = 1000.0f;
 
 // clear depth buffer only once and then we accumulate trails of the vehicle
-static bool oneOffClearingFootPrint = true; 
+static bool oneOffClearingFootPrint = true;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
@@ -42,8 +43,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     calculateAdditionalMat();
 
     // TODO consider combining into one object with _pushConstant
-    m_pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT |
-                                     VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+    m_pushConstantRange.stageFlags =
+        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
 
@@ -72,7 +73,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         new PipelineCreatorShadowMap(*this, m_renderPassDepth, "vert_depthWriter.spv", "frag_depthWriter.spv"));
     m_pipelineCreators[SSAO].reset(new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u));
     m_pipelineCreators[FOOTPRINT].reset(
-        new PipelineCreatorShadowMap(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
+        new PipelineCreatorFootprint(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -83,7 +84,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 #endif
 
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
-                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()), 10U));
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10U));
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
@@ -242,7 +244,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _width = width;
         _height = height;
         m_currentFrame = 0u;
-        oneOffClearingFootPrint = true; 
+        oneOffClearingFootPrint = true;
 
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
@@ -270,7 +272,7 @@ void VulkanRenderer::calculateAdditionalMat() {
     const float aspectRatio = static_cast<float>(_height) / _width;
     const float zFarMulAspectRatio = Z_FAR * aspectRatio;
     m_lightViewProj = glm::ortho(-Z_FAR, Z_FAR, -zFarMulAspectRatio, zFarMulAspectRatio, -Z_FAR, Z_FAR) *
-                  glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                      glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
 
     // up vector is flipped for footPrint :vec3(0.0f, 0.0f, 1.0f) since we have 90 degree angle of view point
@@ -531,8 +533,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         // draw object tracks (the panzer will leave the footprint)
         for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
             const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-            m_models[meshIndex]->drawTracksWithCustomPipeline(m_pipelineCreators[FOOTPRINT].get(), _cmdBufs[currentImage],
-                                                              currentImage, dynamicOffset);
+            m_models[meshIndex]->drawFootprints(_cmdBufs[currentImage], currentImage, dynamicOffset);
         }
     }
 
@@ -1032,7 +1033,7 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
     VkAttachmentDescription depthSSAOReadyAttachment =
-    depthAttachment;  // already initialized depth texture from early renderPass
+        depthAttachment;  // already initialized depth texture from early renderPass
     depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
@@ -1176,8 +1177,9 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
 
     std::array<VkAttachmentDescription, 9> renderPassAttachments = {
-        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO, depthSSAOReadyAttachment, 
-        shadowMapLoadAttachment, hdrBloomAttachment,  depthTemporaryAttachment, footPrintLoadAttachment};
+        colorAttachment,     gPassNormalAttachment,    gPassColorAttachment,
+        colorAttachmentSSAO, depthSSAOReadyAttachment, shadowMapLoadAttachment,
+        hdrBloomAttachment,  depthTemporaryAttachment, footPrintLoadAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -1571,7 +1573,7 @@ void VulkanRenderer::createRenderPass() {
     //-------------------------------------------------------//
     // Create info for Render Pass: FootPrint effect
     VkAttachmentDescription depthAttachmentFootPrint = depthAttachment;
-    depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // we accumulate trails of the vehicle
+    depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;  // we accumulate trails of the vehicle
     depthAttachmentFootPrint.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
     depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;

@@ -1,13 +1,14 @@
 
 #include "ObjModel.h"
 #include "Constants.h"
+#include "PipelineCreatorFootprint.h"
 #include "PipelineCreatorTextured.h"
 #include "Utils.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+#include <algorithm>
 #include <unordered_map>
-#include <algorithm> 
 
 void ObjModel::init() {
     auto p_devide = m_vkState._core.getDevice();
@@ -105,7 +106,7 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
 
             if ((isBumpMappingValid) && ((i + 1u) % 3u == 0u)) {
                 assert((static_cast<int>(indices.size()) - 3) >= 0);
-                vertex.tangent.w = 1.0f; // enabling bump-mapping
+                vertex.tangent.w = 1.0f;  // enabling bump-mapping
                 auto& vert3 = vertices[indices[indices.size() - 1u]];
                 auto& vert2 = vertices[indices[indices.size() - 2u]];
                 auto& vert1 = vertices[indices[indices.size() - 3u]];
@@ -141,9 +142,21 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
 
         /// Note: separation of tracks
         std::string shapeName = shape.name;
-        m_Tracks.reserve(10); // more than enough
+        m_Tracks.reserve(10);  // more than enough
         std::transform(shapeName.begin(), shapeName.end(), shapeName.begin(), ::tolower);
-        if (shapeName.find("track") != std::string::npos) {
+        if (m_pipelineCreatorFootprint && shapeName.find("track") != std::string::npos) {
+            if (m_Tracks.empty()) {
+                auto texture = m_textureFactory.create2DTexture(isBumpMappingValid ? materials[materialId].bump_texname
+                                                                                   : materials[materialId].diffuse_texname);
+                if (!texture.expired()) {
+                    subObject.realMaterialFootprintId = m_pipelineCreatorFootprint->createDescriptor(
+                        texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
+                }
+            } else {
+                // we must have common footprint texture for entire 3d model
+                subObject.realMaterialFootprintId = m_Tracks[0].realMaterialFootprintId;
+            }
+
             m_Tracks.push_back(subObject);
         }
     }
@@ -169,8 +182,8 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
 
     if (m_pipelineCreatorTextured->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VulkanState::PushConstant),
+                           &m_vkState._pushConstant);
     }
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
@@ -201,8 +214,8 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
 
     if (pipelineCreator->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VulkanState::PushConstant),
+                           &m_vkState._pushConstant);
     }
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
@@ -224,30 +237,32 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
     }
 }
 
-void ObjModel::drawTracksWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf,
-                                            uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
+void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
+    if (!m_pipelineCreatorFootprint || m_Tracks.empty()) {
+        return;
+    }
     assert(m_generalBuffer);
-    assert(pipelineCreator);
-    assert(pipelineCreator->getPipeline().get());
+    assert(m_pipelineCreatorFootprint->getPipeline().get());
 
-    if (pipelineCreator->isPushContantActive()) {
-        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,
+    if (m_pipelineCreatorFootprint->isPushContantActive()) {
+        vkCmdPushConstants(cmdBuf, m_pipelineCreatorFootprint->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VulkanState::PushConstant),
                            &m_vkState._pushConstant);
     }
 
-    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorFootprint->getPipeline().get()->pipeline);
 
     VkBuffer vertexBuffers[] = {m_generalBuffer};
     VkDeviceSize offsets[] = {m_verticesBufferOffset};
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout, 0, 1,
-                pipelineCreator->getDescriptorSet(descriptorSetIndex), 1, &dynamicOffset);
+    vkCmdBindDescriptorSets(
+        cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorFootprint->getPipeline().get()->pipelineLayout, 0, 1,
+        m_pipelineCreatorFootprint->getDescriptorSet(descriptorSetIndex, m_Tracks[0].realMaterialFootprintId), 1, &dynamicOffset);
 
     for (const auto& subObject : m_Tracks) {
-         vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
-                          static_cast<uint32_t>(subObject.indexOffset), 0, 0);
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1, static_cast<uint32_t>(subObject.indexOffset), 0,
+                         0);
     }
 }
