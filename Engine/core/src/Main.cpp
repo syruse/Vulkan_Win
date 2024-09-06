@@ -1,8 +1,8 @@
 #include "VulkanRenderer.h"
 
 static constexpr std::string_view _appName{"Vulkan"};
-static constexpr int16_t WINDOW_WIDTH = 512;
-static constexpr int16_t WINDOW_HEIGHT = 512;
+static constexpr int16_t WINDOW_WIDTH = 1920;
+static constexpr int16_t WINDOW_HEIGHT = 1080;
 
 int main(int argc, char** argv) {
     VulkanRenderer _vulkanRenderer(_appName, WINDOW_WIDTH, WINDOW_HEIGHT);

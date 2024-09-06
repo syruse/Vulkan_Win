@@ -17,10 +17,15 @@ public:
                                 uint32_t dynamicOffset) const override;
     void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const override;
 
+    float radius() const override {
+        return mRadius;
+    }
+
 private:
     void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
 
     std::string m_path{};
     std::vector<std::vector<SubObject>> m_SubObjects{};
     std::vector<SubObject> m_Tracks{};
+    float mRadius{0.0f};
 };

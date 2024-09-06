@@ -30,6 +30,10 @@ static constexpr float Z_FAR = 1000.0f;
 
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool oneOffClearingFootPrint = true;
+// lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with footprint texture overlapping
+static glm::vec3 lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
+// if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
+float footPrintRedrawingK = 0.7f; 
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
@@ -245,6 +249,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _height = height;
         m_currentFrame = 0u;
         oneOffClearingFootPrint = true;
+        lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
@@ -513,8 +518,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     renderPassFootprintInfo.renderPass = m_renderPassFootprint;
     renderPassFootprintInfo.renderArea.offset.x = 0;
     renderPassFootprintInfo.renderArea.offset.y = 0;
-    renderPassFootprintInfo.renderArea.extent.width = _width;
-    renderPassFootprintInfo.renderArea.extent.height = _height;
+    renderPassFootprintInfo.renderArea.extent.width = _footprintBuffer.width;
+    renderPassFootprintInfo.renderArea.extent.height = _footprintBuffer.height;
     renderPassFootprintInfo.framebuffer = m_fbsFootprint[currentImage];
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -526,15 +531,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         clearAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         clearAttachment.clearValue = footPrintClearValues;
         clearAttachment.colorAttachment = 0u;
-        VkClearRect clearRect = {{{0u, 0u}, {_width, _height}}, 0u, 1u};
+        VkClearRect clearRect = {{{0u, 0u}, {_footprintBuffer.width, _footprintBuffer.height}}, 0u, 1u};
         vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
         oneOffClearingFootPrint = false;
-    } else {
+    } else if (glm::distance(lastFootPrintPos, mCamera.targetPos()) >= footPrintRedrawingK * m_models[0]->radius()) {
         // draw object tracks (the panzer will leave the footprint)
-        for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
-            const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-            m_models[meshIndex]->drawFootprints(_cmdBufs[currentImage], currentImage, dynamicOffset);
-        }
+        uint32_t meshIndex = 0u;
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
+        m_models[meshIndex]->drawFootprints(_cmdBufs[currentImage], currentImage, dynamicOffset);
+        lastFootPrintPos = mCamera.targetPos();
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -922,15 +927,19 @@ bool VulkanRenderer::renderScene() {
 
     // USER INPUT handling
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP) {
+        footPrintRedrawingK = 0.7f;
         mCamera.move(Camera::EDirection::Forward);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
+        footPrintRedrawingK = 0.07f;
         mCamera.move(Camera::EDirection::Left);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
+        footPrintRedrawingK = 0.07f;
         mCamera.move(Camera::EDirection::Right);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
+        footPrintRedrawingK = 0.7f;
         mCamera.move(Camera::EDirection::Back);
     }
 
@@ -1788,8 +1797,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassFootprint;
         fbCreateInfo.attachmentCount = 1u;
         fbCreateInfo.pAttachments = &attachment;
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _footprintBuffer.width;
+        fbCreateInfo.height = _footprintBuffer.height;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFootprint[i]);
@@ -1897,7 +1906,8 @@ void VulkanRenderer::createDepthResources() {
     Utils::VulkanCreateImageView(_core.getDevice(), _depthTempBuffer.depthImage, _depthTempBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _depthTempBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _footprintBuffer.depthFormat,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _footprintBuffer.width, _footprintBuffer.height,
+                             _footprintBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);

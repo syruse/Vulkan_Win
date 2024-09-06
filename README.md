@@ -5,24 +5,31 @@
 <h1>The game engine powered by Vulkan</h1>
 </br> <b>Platforms:</b> Windows/Unix
 </br> <b>Technologies:</b> C++ 17, Vulkan Api, SDL2(user input), CMake, WinApi, XCB
-<p><img src="BushInstancing&ParticleSystem.png" width="60%" height="60%"></p>
+<p><img src="demo.png" width="60%" height="60%"></p>
 <p>This is simple game engine based on own engine run by Vulkan API, SDL2 (user input)
 the developing is ongoing currently it supports such features as
 <ol>
   <li>Vulkan pipeline caching to speedup creation of pipelines for the game</li>
   <li>Liquidating tileable pattern for terrain by using multisampling from textures array(2 grass textures and noise texture) with different textcoords and colors mixing
-  <p><img src="TerrainImprov.png" width="25%" height="25%"></p></li>
+  <p><img src="TerrainImprov.png" width="65%" height="65%"></p></li>
   <li>Skybox(cubic map)</li>
   <li>Shadows(separate depth pass with point of view from light source)</li>
   <li>G-Pass(separate pass with storing depth, normal (using normal mapping) and color to textures and its vulkan subpass for immidiate using produced pixel from main pass to calculate Blinn-Phong lighing, shadow, final color)
-  <p><img src="CompositionOfRTT.png" width="45%" height="45%"></p></li>
+  <p><img src="CompositionOfRTT.png" width="65%" height="45%"></p></li>
   <li>FXAA(separate pass for anti aliasing)</li>
   <li>WASD camera manipulation by quaternions</li>
   <li>Instancing applying & Semi-transparent quads drawing on top of G-Pass for bushes drawing(2.5D) which are always perpendicular to camera direction
   <li>Particles System for smoke spawning by exhaust pipes 
-  <p><img src="BushInstancing&ParticleSystem.png" width="45%" height="45%"></p></li>
+  <p><img src="BushInstancing_ParticleSystem.png" width="65%" height="65%"></p></li>
   <li>Bllom effect based on two ping-pong hdr textures wich goes through Gauss X\Y blurring sequentially
-  <p><img src="Bloom.png" width="45%" height="45%"></p></li>
+  <p><img src="Bloom.png" width="65%" height="45%"></p></li>
+  <li>Footprints effect based on separate pass drawing footprint of the panzer
+  <p><img src="PanzerFootprintDepth.png" width="65%" height="45%"></p>
+  <p>terrain tesselation (the closer tiles are to camera the more triangles tess shader generates) <br/> with footprint pass input attachment as heightmap which deforms terrain mesh </p>
+  <p><img src="FootprintDeformsTerrain.png" width="95%" height="100%"></p>
+  <p>as the result we have realistic footprints\trails left by the object</p>
+  <p><img src="PanzerFootprint.png" width="65%" height="45%"></p>
+  </li>
 </ol></p>
 <p><b>HOWTO BUILD:</b>
 </br>

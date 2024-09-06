@@ -99,6 +99,10 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
             /// Note: Obj format doesn't care about vertices reusing, let's take it on ourself
             if (uniqueVertices.find(vertex) == uniqueVertices.end()) {
                 uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                float radius = glm::length(vertex.pos);
+                if (radius > mRadius) {
+                    mRadius = radius;
+                }
                 vertices.push_back(vertex);
             }
 
@@ -136,7 +140,7 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
         }
 
         /// Note: each subobject keeps index offset
-        SubObject subObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset)};
+        SubObject subObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset), -1};
         subOjectsMap.emplace(materialId, subObject);
         indecesOffset = indices.size();
 
@@ -146,8 +150,9 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
         std::transform(shapeName.begin(), shapeName.end(), shapeName.begin(), ::tolower);
         if (m_pipelineCreatorFootprint && shapeName.find("track") != std::string::npos) {
             if (m_Tracks.empty()) {
-                auto texture = m_textureFactory.create2DTexture(isBumpMappingValid ? materials[materialId].bump_texname
-                                                                                   : materials[materialId].diffuse_texname);
+                auto texture = m_textureFactory.create2DTexture(!materials[materialId].alpha_texname.empty()
+                                                                    ? materials[materialId].alpha_texname
+                                                                    : materials[materialId].diffuse_texname);
                 if (!texture.expired()) {
                     subObject.realMaterialFootprintId = m_pipelineCreatorFootprint->createDescriptor(
                         texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));

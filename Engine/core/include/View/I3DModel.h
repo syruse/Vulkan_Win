@@ -16,9 +16,9 @@ class I3DModel {
 public:
     struct SubObject {
         std::uint32_t realMaterialId;
-        std::uint32_t realMaterialFootprintId;
         std::size_t indexOffset;
         std::size_t indexAmount;
+        std::uint32_t realMaterialFootprintId;
     };
 
     struct Material {
@@ -106,6 +106,10 @@ public:
                                         uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     }
     virtual void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
+    }
+
+    virtual float radius() const {
+        return 0.0f;
     }
 
 protected:
