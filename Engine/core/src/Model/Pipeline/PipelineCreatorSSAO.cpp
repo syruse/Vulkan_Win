@@ -4,8 +4,8 @@
 #include "Utils.h"
 
 PipelineCreatorSSAO::PipelineCreatorSSAO(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                                         std::string_view fragShader, uint32_t subpass)
-    : PipelineCreatorQuad(vkState, renderPass, vertShader, fragShader, false, false, subpass) {
+                                         std::string_view fragShader, uint32_t subpass, VkPushConstantRange pushConstantRange)
+    : PipelineCreatorQuad(vkState, renderPass, vertShader, fragShader, false, false, subpass, pushConstantRange) {
 }
 
 PipelineCreatorSSAO::~PipelineCreatorSSAO() {
@@ -27,13 +27,13 @@ void PipelineCreatorSSAO::createPipeline() {
 
     // ssaoKernel is semisphere with vectors for sampling
     {
-        for (uint32_t i = 0u; i < 64; ++i) {
+        for (uint32_t i = 0u; i < UBOSemiSpheraKernel::kernelSize; ++i) {
             glm::vec4 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator),
                              0.0f);
             sample = glm::normalize(sample);
             sample *= randomFloats(generator);
-            float scale = (float)i / 64.0;
-            scale = glm::mix(0.1f, 1.0f, scale * scale);  // for positioning closer to origin (parabola graph due to scale^2)
+            float scale = i / static_cast<float>(UBOSemiSpheraKernel::kernelSize);
+            scale = glm::mix(0.01f, 1.0f, scale * scale);  // for positioning closer to origin (parabola graph due to scale^2)
             sample *= scale;
             m_ubo.params.samples[i] = sample;
         }

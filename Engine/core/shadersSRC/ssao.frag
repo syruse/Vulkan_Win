@@ -21,13 +21,19 @@ layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
 	mat4 footPrintViewProj;
 } uboViewProjection;
 
+layout(push_constant) uniform PushConstant {
+    vec4 windowSize;
+    vec3 lightPos;
+    vec3 cameraPos;
+} pushConstant;
+
 layout(location = 0) in vec2 in_uv;
 
 layout(location = 0) out vec4 out_color;
 
 const float noiseScale = 256.0; // oversampling multiplier apllied for 4x4 noise texture
-const float radius = 0.41; // semi-sphera kernel radius
-const float bias = 0.99;
+const float radius = 0.5; // semi-sphera kernel radius
+const float bias = 0.003;
 
 void main()
 {
@@ -36,7 +42,8 @@ void main()
     if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
         vec3 normal = 2.0 * normalRange_0_1 - 1.0;
         
-        vec4 clip = vec4(in_uv * 2.0 - 1.0, texture(inputDepth, in_uv).x, 1.0);
+		float depth = texture(inputDepth, in_uv).r;
+        vec4 clip = vec4(in_uv * 2.0 - 1.0, depth, 1.0);
         vec4 world_w = uboViewProjection.viewProjInverse * clip;
         vec4 world = world_w / world_w.w;
         vec4 posInViewSpace = uboViewProjection.view * world;
@@ -48,6 +55,10 @@ void main()
 		vec3 tangent = normalize(randomVec - dot(randomVec, normal));
         vec3 bitangent = cross(normal, tangent);
         mat3 TBN = mat3(tangent, bitangent, normal);
+		
+		float nearPlane = pushConstant.windowSize.w;
+        float farPlane = pushConstant.windowSize.z;
+        float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
         
         float occlusion = 0.0;
         for(int i = 0; i < SSAO_KERNEL_SIZE; ++i)
@@ -57,16 +68,20 @@ void main()
             vec4 offset = vec4(sample_, 1.0);
             offset = uboViewProjection.proj * offset;
             offset.xyz /= offset.w;
-            clip = vec4(offset.xy, texture(inputDepth, offset.xy * 0.5 + 0.5).r, 1.0);
+			
+			clip = vec4(offset.xy, texture(inputDepth, offset.xy * 0.5 + 0.5).r, 1.0);
             world_w = uboViewProjection.viewProjInverse * clip;
             world = world_w / world_w.w;
             vec4 sampleView = uboViewProjection.view * world;
-            float rangeCheck = smoothstep(0.0f, 1.0f, radius / abs(posInViewSpace.z - sampleView.z));
-            occlusion += (sampleView.z >= sample_.z + bias ? 1.0 : 0.0) * rangeCheck;
+			
+            float sampleDepth = texture(inputDepth, offset.xy * 0.5 + vec2(0.5)).r;
+			float linearSampleDepth = (2.0 * nearPlane) / (farPlane + nearPlane - sampleDepth * (farPlane - nearPlane));
+			float rangeCheck = smoothstep(0.0, 1.0, radius / abs(posInViewSpace.z - sampleView.z));
+            occlusion += (linearDepth - bias > linearSampleDepth ? 1.0 : 0.0) * rangeCheck;
         }
-        
-        occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
-        out_color = vec4(occlusion, 0.0, 0.0, 1.0); // if you wanna more contrast: occlusion * occlusion
+		
+		occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
+        out_color = vec4(occlusion * occlusion, 0.0, 0.0, 1.0); // if you wanna more contrast: occlusion * occlusion
     } else {
         out_color = vec4(0.0);
     }

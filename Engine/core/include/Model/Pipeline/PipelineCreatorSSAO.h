@@ -6,16 +6,18 @@
 class PipelineCreatorSSAO : public PipelineCreatorQuad {
     // SSAO semisphera kernel for sampling
     struct UBOSemiSpheraKernel {
+        static constexpr uint32_t kernelSize = 64;
         struct Params {
-            glm::vec4 samples[64];
+            glm::vec4 samples[kernelSize];
         };
         std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> buffers{};
         std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> buffersMemory{};
         Params params;
     };
+
 public:
     PipelineCreatorSSAO(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                        std::string_view fragShader, uint32_t subpass = 0u);
+                        std::string_view fragShader, uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u});
     ~PipelineCreatorSSAO();
 
     void createDescriptorPool() override;

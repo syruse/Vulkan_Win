@@ -25,15 +25,16 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 
-static constexpr float Z_NEAR = 0.01f;
+static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
 
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool oneOffClearingFootPrint = true;
-// lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with footprint texture overlapping
+// lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
+// footprint texture overlapping
 static glm::vec3 lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
-float footPrintRedrawingK = 0.7f; 
+float footPrintRedrawingK = 0.7f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
@@ -75,7 +76,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         new PipelineCreatorQuad(*this, m_renderPassBloom, "vert_bloom.spv", "frag_bloom.spv", &this->_bloomBuffer[0], true));
     m_pipelineCreators[DEPTH].reset(
         new PipelineCreatorShadowMap(*this, m_renderPassDepth, "vert_depthWriter.spv", "frag_depthWriter.spv"));
-    m_pipelineCreators[SSAO].reset(new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u));
+    m_pipelineCreators[SSAO].reset(
+        new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u, m_pushConstantRange));
     m_pipelineCreators[FOOTPRINT].reset(
         new PipelineCreatorFootprint(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
 #ifndef NDEBUG
@@ -583,6 +585,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO];
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -1875,6 +1879,7 @@ void VulkanRenderer::createPipeline() {
 }
 
 void VulkanRenderer::createDepthResources() {
+    // 32bits depth is preferable
     if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT},
                                           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                           _depthBuffer.depthFormat)) {
@@ -1884,7 +1889,15 @@ void VulkanRenderer::createDepthResources() {
 
     _shadowMapBuffer.depthFormat = _depthBuffer.depthFormat;
     _depthTempBuffer.depthFormat = _depthBuffer.depthFormat;
-    _footprintBuffer.depthFormat = _depthBuffer.depthFormat;
+
+    // 16bits depth is preferable since is more than enough for footprint
+    if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM},
+                                          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                          _footprintBuffer.depthFormat)) {
+        Utils::printLog(ERROR_PARAM, "failed to find supported format!");
+        return;
+    }
+
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
@@ -1892,7 +1905,8 @@ void VulkanRenderer::createDepthResources() {
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height,
+                             _depthBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
@@ -1907,8 +1921,7 @@ void VulkanRenderer::createDepthResources() {
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _depthTempBuffer.depthImageView);
 
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _footprintBuffer.width, _footprintBuffer.height,
-                             _footprintBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
+                             _footprintBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
