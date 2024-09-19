@@ -31,6 +31,7 @@ layout(location = 0) in vec2 in_uv;
 
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_hdr;
+layout(location = 2) out vec4 out_shading;
 
 // uncomment if you need draw attachment content
 // #define DEBUG_DEPTH 1
@@ -38,7 +39,7 @@ layout(location = 1) out vec4 out_hdr;
 
 const float shiness = 8.5;
 const float softShadingFactor = 0.5; // soft shading by minimum factor limitation
-const float brightness = 3.2;
+const float brightness = 2.7;
 
 float getShading(vec3 world, float bias)
 {
@@ -115,7 +116,8 @@ void main()
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
 	
 	out_color = vec4(0.0);
-	out_hdr = vec4(0.0, 0.0, 0.0, 0.0);
+	out_hdr = vec4(0.0);
+	out_shading = vec4(1.0);
 
     // excluding skybox etc with zero length normal
     if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
@@ -142,19 +144,20 @@ void main()
 		// the bias based on dot product of normal and lightDir will solve this issue
 		// float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
 		float bias = 0.025;
-        float shading = ambientOcclusion * clamp(getShading(world, bias), softShadingFactor, 1.0);
+        float shading = clamp(getShading(world, bias), softShadingFactor, 1.0);
 		
-		vec3 res_color = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
-	
-		// length(normalRange_0_1) designates whether it's background pixel or pixel of 3d model
-		// preserving existing color (for example skybox color) if it's not g-pass stuff by paiting with transparent color
-		// also it forms additional shading effect
-		vec4 final_color = mix(vec4(0.0), vec4(res_color, albedo.a), length(normalRange_0_1));
+		vec4 final_color = vec4(1.0);
+		
+		final_color.rgb = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
+	    final_color.a = albedo.a;
+
 		out_color = final_color;
 		
 		// really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
 		if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
 			out_hdr = final_color;
+		// now ambientOcclusion is moved to separate pass where blurring is applied for SSAO
+		out_shading = vec4(ambientOcclusion);
 	}
 #endif
 }

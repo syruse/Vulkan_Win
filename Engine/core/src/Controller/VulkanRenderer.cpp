@@ -72,14 +72,18 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         new PipelineCreatorQuad(*this, m_renderPassXBlur, "vert_gaussXBlur.spv", "frag_gaussXBlur.spv", &this->_bloomBuffer[0]));
     m_pipelineCreators[GAUSS_Y_BLUR].reset(
         new PipelineCreatorQuad(*this, m_renderPassYBlur, "vert_gaussYBlur.spv", "frag_gaussYBlur.spv", &this->_bloomBuffer[1]));
-    m_pipelineCreators[BLOOM].reset(
-        new PipelineCreatorQuad(*this, m_renderPassBloom, "vert_bloom.spv", "frag_bloom.spv", &this->_bloomBuffer[0], true));
+    m_pipelineCreators[BLOOM].reset(new PipelineCreatorQuad(*this, m_renderPassBloom, "vert_bloom.spv", "frag_bloom.spv",
+                                                            &this->_bloomBuffer[0],
+                                                            PipelineCreatorQuad::BLEND::SRC_ONE_AND_DST_ONE));
     m_pipelineCreators[DEPTH].reset(
         new PipelineCreatorShadowMap(*this, m_renderPassDepth, "vert_depthWriter.spv", "frag_depthWriter.spv"));
     m_pipelineCreators[SSAO].reset(
         new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u, m_pushConstantRange));
     m_pipelineCreators[FOOTPRINT].reset(
         new PipelineCreatorFootprint(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
+    m_pipelineCreators[SSAO_BLUR].reset(new PipelineCreatorQuad(*this, m_renderPassSSAOblur, "vert_ssaoBlur.spv",
+                                                                "frag_ssaoBlur.spv", &this->_shadingBuffer,
+                                                                PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA));
 #ifndef NDEBUG
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -183,6 +187,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImage(_core.getDevice(), _ssaoBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _ssaoBuffer.colorBufferImageMemory[i], nullptr);
 
+        vkDestroyImageView(_core.getDevice(), _shadingBuffer.colorBufferImageView[i], nullptr);
+        vkDestroyImage(_core.getDevice(), _shadingBuffer.colorBufferImage[i], nullptr);
+        vkFreeMemory(_core.getDevice(), _shadingBuffer.colorBufferImageMemory[i], nullptr);
+
         for (auto& buf : _bloomBuffer) {
             vkDestroyImageView(_core.getDevice(), buf.colorBufferImageView[i], nullptr);
             vkDestroyImage(_core.getDevice(), buf.colorBufferImage[i], nullptr);
@@ -217,6 +225,9 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& framebuffer : m_fbsFootprint) {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
+    for (auto& framebuffer : m_fbsSSAOblur) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
 
     for (auto& imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
@@ -233,6 +244,7 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyRenderPass(_core.getDevice(), m_renderPassBloom, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassDepth, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFootprint, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassSSAOblur, nullptr);
 
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
@@ -550,7 +562,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     /// G pass
     VkClearValue clearValue;
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
-    std::vector<VkClearValue> clearValues(8, clearValue);
+    std::vector<VkClearValue> clearValues(10, clearValue);
     clearValues[7] = VkClearValue{};
     clearValues[7].depthStencil.depth = 1.0f;
 
@@ -585,8 +597,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -605,6 +617,41 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
 
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+    }
+
+    vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+
+    vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+    //---------------------------------------------------------------------------------------------//
+    // SSAO BLUR
+    std::array<VkClearValue, 2> ssaoBlurClearValues{};
+    ssaoBlurClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    ssaoBlurClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    VkRenderPassBeginInfo renderPassSSAOblurInfo = {};
+    renderPassSSAOblurInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassSSAOblurInfo.renderPass = m_renderPassSSAOblur;
+    renderPassSSAOblurInfo.renderArea.offset.x = 0;
+    renderPassSSAOblurInfo.renderArea.offset.y = 0;
+    renderPassSSAOblurInfo.renderArea.extent.width = _width;
+    renderPassSSAOblurInfo.renderArea.extent.height = _height;
+    renderPassSSAOblurInfo.clearValueCount = ssaoBlurClearValues.size();
+    renderPassSSAOblurInfo.pClearValues = ssaoBlurClearValues.data();
+    renderPassSSAOblurInfo.framebuffer = m_fbsSSAOblur[currentImage];
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSSAOblurInfo, VK_SUBPASS_CONTENTS_INLINE);
+    {
+        const auto& pipelineCreator = m_pipelineCreators[SSAO_BLUR];
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -676,6 +723,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
         vkCmdEndRenderPass(_cmdBufs[currentImage]);
     }
+
     //---------------------------------------------------------------------------------------------//
     /// BLOOM
 
@@ -807,15 +855,11 @@ void VulkanRenderer::createColorBufferImage() {
                                           VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, _colorBuffer.colorFormat)) {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
+    _gPassBuffer.color.colorFormat = _colorBuffer.colorFormat;
 
     if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R16G16B16A16_SFLOAT},
                                           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
                                           _gPassBuffer.normal.colorFormat)) {
-        Utils::printLog(ERROR_PARAM, "failed to find supported format!");
-    }
-
-    if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R8G8B8A8_UNORM}, VK_IMAGE_TILING_OPTIMAL,
-                                          VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, _gPassBuffer.color.colorFormat)) {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
 
@@ -830,6 +874,7 @@ void VulkanRenderer::createColorBufferImage() {
                                           _ssaoBuffer.colorFormat)) {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
+    _shadingBuffer.colorFormat = _ssaoBuffer.colorFormat;
 
     for (size_t i = 0; i < _swapChain.images.size(); ++i) {
         // By keeping G Pass buffers on-tile only (VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT), we can save a lot of bandwidth and
@@ -887,6 +932,15 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _ssaoBuffer.colorBufferImage[i], _ssaoBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _ssaoBuffer.colorBufferImageView[i]);
+
+        // SHADING render target
+        Utils::VulkanCreateImage(
+            _core.getDevice(), _core.getPhysDevice(), _width, _height, _shadingBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            _shadingBuffer.colorBufferImage[i], _shadingBuffer.colorBufferImageMemory[i]);
+
+        Utils::VulkanCreateImageView(_core.getDevice(), _shadingBuffer.colorBufferImage[i], _shadingBuffer.colorFormat,
+                                     VK_IMAGE_ASPECT_COLOR_BIT, _shadingBuffer.colorBufferImageView[i]);
     }
 }
 
@@ -1022,6 +1076,9 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription colorAttachmentSSAO = colorAttachment;
     colorAttachmentSSAO.format = _ssaoBuffer.colorFormat;
 
+    VkAttachmentDescription colorAttachmentShading = colorAttachment;
+    colorAttachmentShading.format = _shadingBuffer.colorFormat;
+
     VkAttachmentDescription hdrBloomAttachment = colorAttachment;
     hdrBloomAttachment.format = _bloomBuffer[0].colorFormat;
 
@@ -1120,7 +1177,11 @@ void VulkanRenderer::createRenderPass() {
     hdrAttachmentRef.attachment = 6;
     hdrAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    std::array<VkAttachmentReference, 2u> colorAndHdrAttachmentRef{colorAttachmentRef, hdrAttachmentRef};
+    VkAttachmentReference shadingAttachmentRef{};
+    shadingAttachmentRef.attachment = 9;
+    shadingAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    std::array<VkAttachmentReference, 3u> colorAndHdrAttachmentRef{colorAttachmentRef, hdrAttachmentRef, shadingAttachmentRef};
     subpasses[2].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpasses[2].colorAttachmentCount = colorAndHdrAttachmentRef.size();
     subpasses[2].pColorAttachments = colorAndHdrAttachmentRef.data();
@@ -1189,10 +1250,10 @@ void VulkanRenderer::createRenderPass() {
     // temporary depth buffer for correct geometry output in g-Pass since depthAttachment is already formed before g-pass started
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
 
-    std::array<VkAttachmentDescription, 9> renderPassAttachments = {
-        colorAttachment,     gPassNormalAttachment,    gPassColorAttachment,
-        colorAttachmentSSAO, depthSSAOReadyAttachment, shadowMapLoadAttachment,
-        hdrBloomAttachment,  depthTemporaryAttachment, footPrintLoadAttachment};
+    std::array<VkAttachmentDescription, 10> renderPassAttachments = {
+        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO,
+        depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,   depthTemporaryAttachment,
+        footPrintLoadAttachment,  colorAttachmentShading};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -1626,20 +1687,80 @@ void VulkanRenderer::createRenderPass() {
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Created a render pass for footprint effect");
+
+    //-------------------------------------------------------//
+    // SSAO blurring & applying
+    // we use previously prepared noisy SSAO passthough texture _shadingBuffer to blur and apply
+    VkAttachmentDescription colorAttachmentSSAOblurOutput = {};  // main swapChain buffer for applying
+    colorAttachmentSSAOblurOutput.format = _core.getSurfaceFormat().format;
+    colorAttachmentSSAOblurOutput.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachmentSSAOblurOutput.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachmentSSAOblurOutput.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentSSAOblurOutput.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentSSAOblurOutput.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachmentSSAOblurOutput.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentSSAOblurOutput.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkAttachmentDescription colorAttachmentSSAOblurInput = colorAttachmentSSAOblurOutput;  // SSAO input for blurring
+    colorAttachmentSSAOblurInput.format = _shadingBuffer.colorFormat;
+    colorAttachmentSSAOblurInput.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentSSAOblurInput.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference attachmentReferenceSSAOblurOutput = {};
+    attachmentReferenceSSAOblurOutput.attachment = 0;
+    attachmentReferenceSSAOblurOutput.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference attachmentReferenceSSAOblurInput;
+    attachmentReferenceSSAOblurInput.attachment = 1;
+    attachmentReferenceSSAOblurInput.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkSubpassDescription subpassSSAOblur{};
+    subpassSSAOblur.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassSSAOblur.colorAttachmentCount = 1;
+    subpassSSAOblur.pColorAttachments = &attachmentReferenceSSAOblurOutput;
+    subpassSSAOblur.inputAttachmentCount = 1;
+    subpassSSAOblur.pInputAttachments = &attachmentReferenceSSAOblurInput;
+
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsSSAOblur = {colorAttachmentSSAOblurOutput,
+                                                                            colorAttachmentSSAOblurInput};
+
+    // Subpass dependencies for layout transitions
+    std::array<VkSubpassDependency, 1u> dependencySSAOblur;
+
+    dependencySSAOblur[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencySSAOblur[0].dstSubpass = 0;
+    dependencySSAOblur[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySSAOblur[0].srcAccessMask = 0;
+    dependencySSAOblur[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySSAOblur[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassCreateInfoSSAOblur = {};
+    renderPassCreateInfoSSAOblur.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoSSAOblur.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsSSAOblur.size());
+    renderPassCreateInfoSSAOblur.pAttachments = renderPassAttachmentsSSAOblur.data();
+    renderPassCreateInfoSSAOblur.subpassCount = 1;
+    renderPassCreateInfoSSAOblur.pSubpasses = &subpassSSAOblur;
+    renderPassCreateInfoSSAOblur.dependencyCount = dependencySSAOblur.size();
+    renderPassCreateInfoSSAOblur.pDependencies = dependencySSAOblur.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoSSAOblur, nullptr, &m_renderPassSSAOblur);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass for ssao blur");
 }
 
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        std::array<VkImageView, 9> attachments = {_colorBuffer.colorBufferImageView[i],
-                                                  _gPassBuffer.normal.colorBufferImageView[i],
-                                                  _gPassBuffer.color.colorBufferImageView[i],
-                                                  _ssaoBuffer.colorBufferImageView[i],
-                                                  _depthBuffer.depthImageView,
-                                                  _shadowMapBuffer.depthImageView,
-                                                  _bloomBuffer[0].colorBufferImageView[i],
-                                                  _depthTempBuffer.depthImageView,
-                                                  _footprintBuffer.depthImageView};
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        std::array<VkImageView, 10> attachments = {_colorBuffer.colorBufferImageView[i],
+                                                   _gPassBuffer.normal.colorBufferImageView[i],
+                                                   _gPassBuffer.color.colorBufferImageView[i],
+                                                   _ssaoBuffer.colorBufferImageView[i],
+                                                   _depthBuffer.depthImageView,
+                                                   _shadowMapBuffer.depthImageView,
+                                                   _bloomBuffer[0].colorBufferImageView[i],
+                                                   _depthTempBuffer.depthImageView,
+                                                   _footprintBuffer.depthImageView,
+                                                   _shadingBuffer.colorBufferImageView[i]};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -1660,7 +1781,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss x blurring for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[1].colorBufferImageView[i],
                                                   _bloomBuffer[0].colorBufferImageView[i]};
 
@@ -1679,7 +1800,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss y blurring for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[0].colorBufferImageView[i],
                                                   _bloomBuffer[1].colorBufferImageView[i]};
 
@@ -1698,7 +1819,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _bloomBuffer[0].colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -1716,7 +1837,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO FXAA
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (Utils::VulkanCreateImageView(_core.getDevice(), _swapChain.images[i], _core.getSurfaceFormat().format,
                                          VK_IMAGE_ASPECT_COLOR_BIT, _swapChain.views[i]) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
@@ -1739,7 +1860,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -1757,7 +1878,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SHADOW MAP
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkImageView attachment = _shadowMapBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -1775,7 +1896,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO DEPTH PASS (for SSAO)
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkImageView attachment = _depthBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -1793,7 +1914,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FOOTPRINT PASS (for tire tracks)
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkImageView attachment = _footprintBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -1807,6 +1928,24 @@ void VulkanRenderer::createFramebuffer() {
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFootprint[i]);
         CHECK_VULKAN_ERROR("vkCreateFramebuffer FOOTPRINT PASS error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
+    // FBO for SSAO blurring and applying
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _shadingBuffer.colorBufferImageView[i]};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassSSAOblur;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _width;
+        fbCreateInfo.height = _height;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsSSAOblur[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer Bloom error %d\n", res);
     }
 
     Utils::printLog(INFO_PARAM, "Frame buffers created");
@@ -1905,8 +2044,7 @@ void VulkanRenderer::createDepthResources() {
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height,
-                             _depthBuffer.depthFormat,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat,
                              VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);

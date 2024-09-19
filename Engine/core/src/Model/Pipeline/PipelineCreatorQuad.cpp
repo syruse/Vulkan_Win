@@ -16,19 +16,26 @@ void PipelineCreatorQuad::createPipeline() {
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthWriteEnable = VK_FALSE;
 
-    // TODO enable\disable blending on demand
-    if (m_isBlendForBloom) {
+    if (m_blend != BLEND::NONE) {
         auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
         VkPipelineColorBlendAttachmentState blendAttachState = {};
         blendAttachState.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         blendAttachState.blendEnable = VK_TRUE;
-        blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachState.colorBlendOp = VK_BLEND_OP_ADD;
-        blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
         blendAttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        if (m_blend == BLEND::SRC_ONE_AND_DST_ONE) {
+            blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+        } else {
+            blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        }
 
         blendInfo.attachmentCount = 1;
         blendInfo.pAttachments = &blendAttachState;

@@ -4,13 +4,14 @@
 
 class PipelineCreatorQuad : public PipelineCreatorBase {
 public:
+    enum class BLEND { NONE, SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA, SRC_ONE_AND_DST_ONE };
     using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
 
     PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                         std::string_view fragShader, bool isDepthNeeded = false, bool isGPassNeeded = false,
                         uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
-          m_isBlendForBloom(false),
+          m_blend(BLEND::NONE),
           m_isDepthNeeded(isDepthNeeded),
           m_isGPassNeeded(isGPassNeeded),
           m_colorBuffer(&vkState._colorBuffer) {
@@ -18,13 +19,13 @@ public:
     }
 
     PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                        std::string_view fragShader, VulkanState::ColorBuffer* colorBuffer, bool isBlendForBloom = false, bool isDepthNeeded = false,
-                        VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                        std::string_view fragShader, VulkanState::ColorBuffer* colorBuffer, BLEND blend = BLEND::NONE,
+                        bool isDepthNeeded = false, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, 0u, pushConstantRange),
-          m_isBlendForBloom(isBlendForBloom),
+          m_blend(blend),
           m_isDepthNeeded(isDepthNeeded),
           m_isGPassNeeded(false),
-          m_colorBuffer(colorBuffer){
+          m_colorBuffer(colorBuffer) {
         assert(m_colorBuffer);
     }
 
@@ -44,7 +45,7 @@ private:
     uint32_t getInputBindingsAmount() const;
 
 private:
-    bool m_isBlendForBloom{false};
+    BLEND m_blend{BLEND::NONE};
     bool m_isDepthNeeded{false};
     bool m_isGPassNeeded{false};
 

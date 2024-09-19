@@ -112,6 +112,7 @@ struct VulkanState {
     DepthBuffer _shadowMapBuffer{};
     ColorBuffer _colorBuffer{};
     ColorBuffer _ssaoBuffer{};
+    ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
     FootPrintBuffer _footprintBuffer{};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};

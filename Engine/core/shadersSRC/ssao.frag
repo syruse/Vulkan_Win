@@ -32,8 +32,9 @@ layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 const float noiseScale = 256.0; // oversampling multiplier apllied for 4x4 noise texture
-const float radius = 0.5; // semi-sphera kernel radius
-const float bias = 0.003;
+const float radius = 0.95; // semi-sphera kernel radius
+const float bias = 0.006;
+const int contrastFactor = 8;
 
 void main()
 {
@@ -51,8 +52,7 @@ void main()
         vec3 randomVec = texture(inputNoise, in_uv * noiseScale).xyz * 2.0 - 1.0;
         
         // The Gram–Schmidt process for generation of tilted orthogonal basis (we don't need accurancy like precalculated tangent)
-        // original : vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal)); but the next formula produces much better result
-		vec3 tangent = normalize(randomVec - dot(randomVec, normal));
+		vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
         vec3 bitangent = cross(normal, tangent);
         mat3 TBN = mat3(tangent, bitangent, normal);
 		
@@ -69,19 +69,19 @@ void main()
             offset = uboViewProjection.proj * offset;
             offset.xyz /= offset.w;
 			
-			clip = vec4(offset.xy, texture(inputDepth, offset.xy * 0.5 + 0.5).r, 1.0);
+			float sampleDepth = texture(inputDepth, offset.xy * 0.5 + vec2(0.5)).r;
+			clip = vec4(offset.xy, sampleDepth, 1.0);
             world_w = uboViewProjection.viewProjInverse * clip;
             world = world_w / world_w.w;
             vec4 sampleView = uboViewProjection.view * world;
-			
-            float sampleDepth = texture(inputDepth, offset.xy * 0.5 + vec2(0.5)).r;
+
 			float linearSampleDepth = (2.0 * nearPlane) / (farPlane + nearPlane - sampleDepth * (farPlane - nearPlane));
 			float rangeCheck = smoothstep(0.0, 1.0, radius / abs(posInViewSpace.z - sampleView.z));
             occlusion += (linearDepth - bias > linearSampleDepth ? 1.0 : 0.0) * rangeCheck;
         }
 		
 		occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
-        out_color = vec4(occlusion * occlusion, 0.0, 0.0, 1.0); // if you wanna more contrast: occlusion * occlusion
+        out_color = vec4(pow(occlusion, contrastFactor), 0.0, 0.0, 1.0);
     } else {
         out_color = vec4(0.0);
     }

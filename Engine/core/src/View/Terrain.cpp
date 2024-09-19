@@ -65,7 +65,7 @@ void Terrain::init() {
         for (auto& vertex : m_vertices) {
             vertex.pos = factor * vertex.pos;
             // repetition factor can be calculated more precisely
-            vertex.tangent = glm::vec4(30.0f * (factor / texture->width) * vertex.texCoord, 0.0f, 0.0f);
+            vertex.tangent = glm::vec4(45.0f * (factor / texture->width) * vertex.texCoord, 0.0f, 0.0f);
         }
     }
 

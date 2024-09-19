@@ -23,12 +23,13 @@ public:
         POST_LIGHTING,
         POST_FXAA,
         PARTICLE,
-        GAUSS_X_BLUR, 
+        GAUSS_X_BLUR,
         GAUSS_Y_BLUR,
         BLOOM,
         DEPTH,
         SSAO,
         FOOTPRINT,
+        SSAO_BLUR,
         MAX
     };
 
@@ -96,7 +97,7 @@ private:
     VkRenderPass m_renderPassSemiTrans{nullptr};  // semi-transparent objects will be drawn at the end due to g-pass
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSemiTrans{nullptr};
 
-    VkRenderPass m_renderPassXBlur{nullptr}; // Gauss x blurring for bloom effect
+    VkRenderPass m_renderPassXBlur{nullptr};  // Gauss x blurring for bloom effect
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsXBlur{nullptr};
 
     VkRenderPass m_renderPassYBlur{nullptr};  // Gauss y blurring for bloom effect
@@ -111,6 +112,13 @@ private:
     VkRenderPass m_renderPassFootprint{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFootprint{nullptr};
     glm::mat4 m_footPrintViewProj{1.0f};
+
+    /** SSAO blurring & applying (for blurring we need the access to neibor pixels hence we have one passthrough _shadingBuffer (noisy
+        SSAO content) from subpasses of m_renderPass) thus we have one single shading buffer with noisy SSAO content instead
+        keeping two buffers (depth and normals) needed for SSAO creation in separate non subpass aproach
+    */
+    VkRenderPass m_renderPassSSAOblur{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSSAOblur{nullptr};
 
     VkDescriptorPool mImguiPool;
 
