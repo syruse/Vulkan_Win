@@ -28,13 +28,15 @@
 static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
 
+// light source position offset from the camera
+const static glm::vec3 _lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
 // clear depth buffer only once and then we accumulate trails of the vehicle
-static bool oneOffClearingFootPrint = true;
+static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
 // footprint texture overlapping
-static glm::vec3 lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
+static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
-float footPrintRedrawingK = 0.7f;
+float _footPrintRedrawingK = 0.7f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
@@ -43,7 +45,6 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     assert(mTextureFactory);
 
     _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
-    _pushConstant.lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
 
     calculateAdditionalMat();
 
@@ -262,8 +263,8 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _width = width;
         _height = height;
         m_currentFrame = 0u;
-        oneOffClearingFootPrint = true;
-        lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
+        _oneOffClearingFootPrint = true;
+        _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
@@ -288,12 +289,6 @@ void VulkanRenderer::recreateDescriptorSets() {
 }
 
 void VulkanRenderer::calculateAdditionalMat() {
-    const float aspectRatio = static_cast<float>(_height) / _width;
-    const float zFarMulAspectRatio = Z_FAR * aspectRatio;
-    m_lightViewProj = glm::ortho(-Z_FAR, Z_FAR, -zFarMulAspectRatio, zFarMulAspectRatio, -Z_FAR, Z_FAR) *
-                      glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    m_lightViewProj[1][1] *= -1;
-
     // up vector is flipped for footPrint :vec3(0.0f, 0.0f, 1.0f) since we have 90 degree angle of view point
     const glm::vec3 footPrintUp = glm::vec3(0.0f, 0.0f, 1.0f);
     m_footPrintViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
@@ -352,6 +347,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
     pModel->model = glm::translate(rotMat, mCamera.targetPos());
     pModel->MVP = viewProj.viewProj * pModel->model;
+
+    _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
+    m_lightViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
+                      glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    m_lightViewProj[1][1] *= -1;
 
     // Map the list of model data
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * objectsAmount, 0, &data);
@@ -538,7 +538,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    if (oneOffClearingFootPrint) {
+    if (_oneOffClearingFootPrint) {
         VkClearValue footPrintClearValues{};
         footPrintClearValues.depthStencil.depth = 1.0f;
         VkClearAttachment clearAttachment;
@@ -547,13 +547,13 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         clearAttachment.colorAttachment = 0u;
         VkClearRect clearRect = {{{0u, 0u}, {_footprintBuffer.width, _footprintBuffer.height}}, 0u, 1u};
         vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
-        oneOffClearingFootPrint = false;
-    } else if (glm::distance(lastFootPrintPos, mCamera.targetPos()) >= footPrintRedrawingK * m_models[0]->radius()) {
+        _oneOffClearingFootPrint = false;
+    } else if (glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius()) {
         // draw object tracks (the panzer will leave the footprint)
         uint32_t meshIndex = 0u;
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawFootprints(_cmdBufs[currentImage], currentImage, dynamicOffset);
-        lastFootPrintPos = mCamera.targetPos();
+        _lastFootPrintPos = mCamera.targetPos();
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -985,19 +985,19 @@ bool VulkanRenderer::renderScene() {
 
     // USER INPUT handling
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP) {
-        footPrintRedrawingK = 0.7f;
+        _footPrintRedrawingK = 0.7f;
         mCamera.move(Camera::EDirection::Forward);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
-        footPrintRedrawingK = 0.07f;
+        _footPrintRedrawingK = 0.07f;
         mCamera.move(Camera::EDirection::Left);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
-        footPrintRedrawingK = 0.07f;
+        _footPrintRedrawingK = 0.07f;
         mCamera.move(Camera::EDirection::Right);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
-        footPrintRedrawingK = 0.7f;
+        _footPrintRedrawingK = 0.7f;
         mCamera.move(Camera::EDirection::Back);
     }
 

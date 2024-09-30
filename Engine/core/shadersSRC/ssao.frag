@@ -34,7 +34,7 @@ layout(location = 0) out vec4 out_color;
 const float noiseScale = 256.0; // oversampling multiplier apllied for 4x4 noise texture
 const float radius = 0.95; // semi-sphera kernel radius
 const float bias = 0.006;
-const int contrastFactor = 8;
+const int contrastFactor = 7;
 
 void main()
 {

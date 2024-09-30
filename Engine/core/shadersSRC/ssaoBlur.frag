@@ -6,7 +6,7 @@ layout(location = 0) in vec2 fragTexCoord;
 
 layout(location = 0) out vec4 out_color;
 
-const int blurFactor = 2;
+const int blurFactor = 4;
 
 void main()
 {
@@ -25,4 +25,6 @@ void main()
     result /= pow(blurFactor + blurFactor, 2);
 
     out_color = vec4(vec3(0.0), 1.0 - result);
+	// for debug
+	// out_color = vec4(vec3(result), 1.0);
 }

@@ -38,14 +38,14 @@ layout(location = 2) out vec4 out_shading;
 // #define DEBUG_SHADOW 1
 
 const float shiness = 8.5;
-const float softShadingFactor = 0.5; // soft shading by minimum factor limitation
+const float softShadingFactor = 0.65; // soft shading by minimum factor limitation
 const float brightness = 2.7;
 
 float getShading(vec3 world, float bias)
 {
     vec4 lightPerspective = uboViewProjection.lightViewProj * vec4(world, 1.0);
     vec3 normalizedCoords = lightPerspective.xyz / lightPerspective.w;
-    normalizedCoords = normalizedCoords * 0.5 + 0.5;
+    normalizedCoords = (normalizedCoords * 0.5) + vec3(0.5);
     float currentDepth = normalizedCoords.z;
     
     // clipping coords which don't fit in normalized range to avoid shading far pixels
@@ -142,13 +142,12 @@ void main()
 		
 		// if the surface would have a steep angle to the light source, the shadows may still display shadow acne
 		// the bias based on dot product of normal and lightDir will solve this issue
-		// float bias = max(0.91 * (1.0 - dot(normal, normalize(lightDir + viewDir))), 0.2);
-		float bias = 0.025;
+		float bias = max(0.47 * (1.0 - dot(normal, normalize(lightDir))), 0.14);
         float shading = clamp(getShading(world, bias), softShadingFactor, 1.0);
 		
 		vec4 final_color = vec4(1.0);
 		
-		final_color.rgb = brightness * (shading * albedo.rgb) + (spec * albedo.rgb);
+		final_color.rgb = brightness * (albedo.rgb) + (spec * albedo.rgb);
 	    final_color.a = albedo.a;
 
 		out_color = final_color;
@@ -156,8 +155,8 @@ void main()
 		// really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
 		if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
 			out_hdr = final_color;
-		// now ambientOcclusion is moved to separate pass where blurring is applied for SSAO
-		out_shading = vec4(ambientOcclusion);
+		// now shading (shadows + ambientOcclusion) is moved to separate pass where blurring is applied for SSAO
+		out_shading = vec4(shading * ambientOcclusion);
 	}
 #endif
 }
