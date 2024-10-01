@@ -298,7 +298,7 @@ void VulkanRenderer::calculateAdditionalMat() {
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     assert(_ubo.buffersMemory.size() > currentImage);
-    float kDelay = deltaMS / 33.3;  // skybox updating aligned to 30 fps
+    const float kDelay = deltaMS;
 
     glm::vec4 velocity = mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
     glm::vec4 exhaustPipePos1 =
@@ -340,13 +340,12 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = model;
     pModel->MVP = viewProj.viewProj * pModel->model;
 
-    // move skybox to get unreachable
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
-    skyboxRotationDegree += 0.001f * kDelay;
+    skyboxRotationDegree += 0.0001f * kDelay;
     glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
-    pModel->model = glm::translate(rotMat, mCamera.targetPos());
-    pModel->MVP = viewProj.viewProj * pModel->model;
+    pModel->model = rotMat;
+    pModel->MVP = viewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
     _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
     m_lightViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
