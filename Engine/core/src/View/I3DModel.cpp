@@ -6,7 +6,7 @@
 
 I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory,
                    PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint,
-                   uint32_t vertexMagnitudeMultiplier) noexcept(true)
+                   float vertexMagnitudeMultiplier) noexcept(true)
     : m_vkState(vulkanState),
       m_textureFactory(textureFactory),
       m_pipelineCreatorTextured(pipelineCreatorTextured),

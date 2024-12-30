@@ -9,7 +9,7 @@ class Terrain : public I3DModel {
 public:
     Terrain(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view noiseTextureFileName,
             std::string_view textureFileName1, std::string_view textureFileName2,
-            PipelineCreatorTextured* pipelineCreatorTextured, uint32_t vertexMagnitudeMultiplier = 1u) noexcept(true)
+            PipelineCreatorTextured* pipelineCreatorTextured, float vertexMagnitudeMultiplier = 1.0f) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, vertexMagnitudeMultiplier),
           m_textureFileName1(textureFileName1),
           m_textureFileName2(textureFileName2),

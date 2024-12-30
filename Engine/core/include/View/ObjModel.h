@@ -6,7 +6,7 @@ class ObjModel : public I3DModel {
 public:
     ObjModel(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view path,
              PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint,
-             uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
+             float vertexMagnitudeMultiplier = 1.0f) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier),
           m_path(path) {
     }

@@ -87,10 +87,10 @@ public:
     };
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             PipelineCreatorFootprint* pipelineCreatorFootprint, uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true);
+             PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f) noexcept(true);
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             uint32_t vertexMagnitudeMultiplier = 1U) noexcept(true)
+             float vertexMagnitudeMultiplier = 1.0f) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier) {
     }
 
@@ -112,10 +112,14 @@ public:
         return 0.0f;
     }
 
+    virtual void update(float deltaTimeMS, int animationID = 0u) {
+        // actual for animated models
+    }
+
 protected:
     const VulkanState& m_vkState;
     TextureFactory& m_textureFactory;
-    uint32_t m_vertexMagnitudeMultiplier{1U};
+    float m_vertexMagnitudeMultiplier{1.0f};
     PipelineCreatorTextured* m_pipelineCreatorTextured{nullptr};
     PipelineCreatorFootprint* m_pipelineCreatorFootprint{nullptr};
     VulkanState::Model m_modelMtrx{glm::mat4(1.0f)};

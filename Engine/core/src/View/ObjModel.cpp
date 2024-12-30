@@ -11,14 +11,14 @@
 #include <unordered_map>
 
 void ObjModel::init() {
-    auto p_devide = m_vkState._core.getDevice();
-    assert(p_devide);
+    auto p_device = m_vkState._core.getDevice();
+    assert(p_device);
 
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
 
     load(vertices, indices);
-    Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
+    Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 }
 

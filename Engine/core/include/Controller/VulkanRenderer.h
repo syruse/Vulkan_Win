@@ -13,8 +13,6 @@
 
 class VulkanRenderer : public VulkanState {
 public:
-    static constexpr std::string_view MODEL_PATH{"Tank.obj"};
-
     enum Pipelines {
         GPASS = 0,
         TERRAIN,

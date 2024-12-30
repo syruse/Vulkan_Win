@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "MD5Model.h"
 #include "ObjModel.h"
 #include "Particle.h"
 #include "PipelineCreatorFootprint.h"
@@ -43,6 +44,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
       mCamera({65.0f, static_cast<float>(width) / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
+    using namespace std::literals;
 
     _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
 
@@ -93,10 +95,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         }
     }
 #endif
-
-    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, MODEL_PATH,
+    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10U));
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
+    m_models.emplace_back(new MD5Model("pinky.md5mesh"sv, "idle1.md5anim"sv, *this, *mTextureFactory,
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 1.0f));
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
@@ -333,17 +337,23 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->model = glm::mat4(1.0f);
-        pModel->MVP = viewProj.viewProj * pModel->model;
+        pModel->MVP = viewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
     Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
     pModel->model = model;
     pModel->MVP = viewProj.viewProj * pModel->model;
 
+    // animated model must be rotated since it's designed in another coordinate system: left handed
+    pModel = (Model*)((uint64_t)mp_modelTransferSpace + _modelUniformAlignment);
+    glm::mat4 rotMat = glm::rotate(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    pModel->model = rotMat;
+    pModel->MVP = viewProj.viewProj * pModel->model;
+
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
     skyboxRotationDegree += 0.0001f * kDelay;
-    glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
+    rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
     pModel->model = rotMat;
     pModel->MVP = viewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
@@ -1026,6 +1036,9 @@ bool VulkanRenderer::renderScene() {
     submitInfo.signalSemaphoreCount = 1;
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
+    for (auto& model : m_models) {
+        model->update(deltaTime);
+    }
     updateUniformBuffer(ImageIndex, deltaTime);
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
