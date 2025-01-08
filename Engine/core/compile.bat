@@ -41,4 +41,7 @@
 
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssaoBlur.vert -o shaders/vert_ssaoBlur.spv
 %VULKAN_SDK%/Bin/glslc.exe shadersSRC/ssaoBlur.frag -o shaders/frag_ssaoBlur.spv
+
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/semi_transparent.vert -o shaders/vert_semi_transparent.spv
+%VULKAN_SDK%/Bin/glslc.exe shadersSRC/semi_transparent.frag -o shaders/frag_semi_transparent.spv
 pause

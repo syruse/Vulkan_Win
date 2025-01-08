@@ -3,7 +3,7 @@
 #include "I3DModel.h"
 
 class MD5Model : public I3DModel {
-    struct MD5Vertex{
+    struct MD5Vertex {
         // gpu data
         I3DModel::Vertex& gpuVertex;
         // for internal using
@@ -71,8 +71,6 @@ class MD5Model : public I3DModel {
         std::vector<MD5Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<Weight> weights;
-
-        //TODOstd::vector<XMFLOAT3> positions;
     };
 
     struct Model3D {
@@ -86,10 +84,13 @@ class MD5Model : public I3DModel {
 
 public:
     MD5Model(std::string_view md5ModelFileName, std::string_view md5AnimFileName, const VulkanState& vulkanState,
-             TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f) noexcept(true)
+             TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
+             PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
+             float animationSpeedMultiplier = 1.0f) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier),
           m_md5ModelFileName(md5ModelFileName),
-          m_md5AnimFileName(md5AnimFileName){
+          m_md5AnimFileName(md5AnimFileName),
+          m_animationSpeedMultiplier(animationSpeedMultiplier) {
     }
     void init() override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
@@ -109,6 +110,7 @@ private:
     std::string_view m_md5ModelFileName{};
     std::string_view m_md5AnimFileName{};
     float m_radius{0.0f};
+    float m_animationSpeedMultiplier{1.0f};
     VkDeviceSize m_bufferSize{0u};
     Model3D m_MD5Model;
 };

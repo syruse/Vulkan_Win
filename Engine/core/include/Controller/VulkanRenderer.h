@@ -21,6 +21,7 @@ public:
         POST_LIGHTING,
         POST_FXAA,
         PARTICLE,
+        SEMI_TRANSPARENT,
         GAUSS_X_BLUR,
         GAUSS_Y_BLUR,
         BLOOM,
@@ -111,8 +112,8 @@ private:
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFootprint{nullptr};
     glm::mat4 m_footPrintViewProj{1.0f};
 
-    /** SSAO blurring & applying (for blurring we need the access to neibor pixels hence we have one passthrough _shadingBuffer (noisy
-        SSAO content) from subpasses of m_renderPass) thus we have one single shading buffer with noisy SSAO content instead
+    /** SSAO blurring & applying (for blurring we need the access to neibor pixels hence we have one passthrough _shadingBuffer
+       (noisy SSAO content) from subpasses of m_renderPass) thus we have one single shading buffer with noisy SSAO content instead
         keeping two buffers (depth and normals) needed for SSAO creation in separate non subpass aproach
     */
     VkRenderPass m_renderPassSSAOblur{nullptr};

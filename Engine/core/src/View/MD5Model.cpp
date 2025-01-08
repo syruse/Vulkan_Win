@@ -259,9 +259,10 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         return;
     }
 
-    m_MD5Model.animations[animationID].currAnimTime += deltaTimeMS / 1000.0f;  // Update the current animation time
+    m_MD5Model.animations[animationID].currAnimTime +=
+        m_animationSpeedMultiplier * deltaTimeMS / 1000.0f;  // Update the current animation time
 
-    if (m_MD5Model.animations[animationID].currAnimTime > m_MD5Model.animations[animationID].totalAnimTime)
+    if (m_MD5Model.animations[animationID].currAnimTime >= m_MD5Model.animations[animationID].totalAnimTime)
         m_MD5Model.animations[animationID].currAnimTime = 0.0f;
 
     // Which frame are we on
@@ -277,7 +278,7 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         currentFrame - frame0;  // Get the remainder (in time) between frame0 and frame1 to use as interpolation factor
 
     std::vector<Joint> interpolatedSkeleton;  // Create a frame skeleton to store the interpolated skeletons in
-
+    interpolatedSkeleton.reserve(m_MD5Model.animations[animationID].numJoints);
     // Compute the interpolated skeleton
     for (int i = 0; i < m_MD5Model.animations[animationID].numJoints; i++) {
         Joint tempJoint;

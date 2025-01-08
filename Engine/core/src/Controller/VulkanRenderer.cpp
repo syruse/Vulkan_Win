@@ -6,6 +6,7 @@
 #include "PipelineCreatorParticle.h"
 #include "PipelineCreatorQuad.h"
 #include "PipelineCreatorSSAO.h"
+#include "PipelineCreatorSemiTransparent.h"
 #include "PipelineCreatorShadowMap.h"
 #include "PipelineCreatorSkyBox.h"
 #include "PipelineCreatorTextured.h"
@@ -71,6 +72,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                                 &this->_colorBuffer, false, false, m_pushConstantRange));
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
                                                                    "frag_particle.spv", 0u, m_pushConstantRange));
+    m_pipelineCreators[SEMI_TRANSPARENT].reset(new PipelineCreatorSemiTransparent(
+        *this, m_renderPassSemiTrans, "vert_semi_transparent.spv", "frag_semi_transparent.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[GAUSS_X_BLUR].reset(
         new PipelineCreatorQuad(*this, m_renderPassXBlur, "vert_gaussXBlur.spv", "frag_gaussXBlur.spv", &this->_bloomBuffer[0]));
     m_pipelineCreators[GAUSS_Y_BLUR].reset(
@@ -98,9 +101,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
-    m_models.emplace_back(new MD5Model("pinky.md5mesh"sv, "idle1.md5anim"sv, *this, *mTextureFactory,
+    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 1.0f));
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
+    m_models.emplace_back(new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f, 0.1f));
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
@@ -345,7 +351,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->MVP = viewProj.viewProj * pModel->model;
 
     // animated model must be rotated since it's designed in another coordinate system: left handed
-    pModel = (Model*)((uint64_t)mp_modelTransferSpace + _modelUniformAlignment);
+    pModel = (Model*)((uint64_t)mp_modelTransferSpace + 2 * _modelUniformAlignment);
     glm::mat4 rotMat = glm::rotate(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     pModel->model = rotMat;
     pModel->MVP = viewProj.viewProj * pModel->model;
@@ -595,6 +601,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     ///  SkyBox and 3D Models
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
+        // TODO
+        if (meshIndex == 2u)
+            continue;
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
@@ -802,6 +811,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         for (auto& particle : m_particles) {
             particle->draw(_cmdBufs[currentImage], currentImage);
         }
+    }
+    {
+        // TODO
+        const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        uint32_t meshIndex = 2u;
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
+        m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
