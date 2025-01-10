@@ -59,7 +59,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     assert(m_pipelineCreators.size() == Pipelines::MAX);
     m_pipelineCreators[TERRAIN].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_terrain.spv", "frag_terrain.spv",
-                                                                  "tessCtrl_terrain.spv", "tessEval_terrain.spv", 1U, 0U,
+                                                                  "tessCtrl_terrain.spv", "tessEval_terrain.spv", 0U,
                                                                   m_pushConstantRange));
     m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
     m_pipelineCreators[SKYBOX].reset(
@@ -101,12 +101,6 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
-    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
-                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
-    m_models.emplace_back(new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
-                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f, 0.1f));
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
@@ -114,6 +108,14 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                          "sky_up.png", "sky_lt.png", "sky_rt.png"};
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
+
+    m_semiTransparentModels.emplace_back(new ObjModel(
+        *this, *mTextureFactory, "tree.obj"sv, static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 17.0f));
+    m_semiTransparentModels.emplace_back(
+        new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
+                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+                     static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 17.0f, 0.1f));
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
@@ -350,18 +352,24 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = model;
     pModel->MVP = viewProj.viewProj * pModel->model;
 
-    // animated model must be rotated since it's designed in another coordinate system: left handed
-    pModel = (Model*)((uint64_t)mp_modelTransferSpace + 2 * _modelUniformAlignment);
-    glm::mat4 rotMat = glm::rotate(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    pModel->model = rotMat;
-    pModel->MVP = viewProj.viewProj * pModel->model;
-
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
     skyboxRotationDegree += 0.0001f * kDelay;
-    rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
     pModel->model = rotMat;
     pModel->MVP = viewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
+
+    for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
+        Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
+        pModel->model = glm::mat4(1.0f);
+        pModel->MVP = viewProj.viewProj;
+    }
+
+    // TODO animated model must be rotated since it's designed in another coordinate system: left handed
+    pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount + 1) * _modelUniformAlignment);
+    rotMat = glm::rotate(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    pModel->model = rotMat;
+    pModel->MVP = viewProj.viewProj * pModel->model;
 
     _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
     m_lightViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
@@ -369,8 +377,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     m_lightViewProj[1][1] *= -1;
 
     // Map the list of model data
-    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, _modelUniformAlignment * objectsAmount, 0, &data);
-    memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * objectsAmount);
+    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0,
+                _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()), 0, &data);
+    memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()));
     vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
 }
 
@@ -381,7 +390,8 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     _modelUniformAlignment = (sizeof(Model) + minUniformBufferOffset - 1) & ~(minUniformBufferOffset - 1);
 
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds m_models.size()
-    mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * m_models.size(), _modelUniformAlignment);
+    mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size()),
+                                                    _modelUniformAlignment);
 }
 
 void VulkanRenderer::createDescriptorPool() {
@@ -436,7 +446,7 @@ void VulkanRenderer::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(ViewProj);
 
     // Model buffer size
-    VkDeviceSize modelBufferSize = _modelUniformAlignment * m_models.size();
+    VkDeviceSize modelBufferSize = _modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size());
 
     /**
      * We should have multiple buffers, because multiple frames may be in flight at the same time and
@@ -601,9 +611,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     ///  SkyBox and 3D Models
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
-        // TODO
-        if (meshIndex == 2u)
-            continue;
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
@@ -812,14 +819,14 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
             particle->draw(_cmdBufs[currentImage], currentImage);
         }
     }
-    {
+
+    for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
         // TODO
         const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
-        uint32_t meshIndex = 2u;
-        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
-        m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
+        m_semiTransparentModels[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
@@ -979,6 +986,10 @@ void VulkanRenderer::loadModels() {
         model->init();
     }
 
+    for (auto& model : m_semiTransparentModels) {
+        model->init();
+    }
+
     for (auto& particle : m_particles) {
         particle->init();
     }
@@ -1016,11 +1027,11 @@ bool VulkanRenderer::renderScene() {
         mCamera.move(Camera::EDirection::Forward);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
-        _footPrintRedrawingK = 0.07f;
+        _footPrintRedrawingK = 0.03f;
         mCamera.move(Camera::EDirection::Left);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
-        _footPrintRedrawingK = 0.07f;
+        _footPrintRedrawingK = 0.03f;
         mCamera.move(Camera::EDirection::Right);
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
@@ -1055,6 +1066,9 @@ bool VulkanRenderer::renderScene() {
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
     for (auto& model : m_models) {
+        model->update(deltaTime);
+    }
+    for (auto& model : m_semiTransparentModels) {
         model->update(deltaTime);
     }
     updateUniformBuffer(ImageIndex, deltaTime);

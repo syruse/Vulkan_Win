@@ -7,20 +7,18 @@
 class PipelineCreatorTextured : public PipelineCreatorBase {
 public:
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
-                            std::string_view fragShader, uint32_t texturesAmount = 1u, uint32_t subpass = 0u,
+                            std::string_view fragShader, uint32_t subpass = 0u,
                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, std::string_view{}, std::string_view{},
-                                  texturesAmount, subpass, pushConstantRange) {
+        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, std::string_view{}, std::string_view{}, subpass,
+                                  pushConstantRange) {
     }
 
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, std::string_view tessCtrlShader, std::string_view tessEvalShader,
-                            uint32_t texturesAmount = 1u, uint32_t subpass = 0u,
-                            VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                            uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
           m_tessCtrlShader(tessCtrlShader),
-          m_tessEvalShader(tessEvalShader),
-          m_texturesAmount(texturesAmount) {
+          m_tessEvalShader(tessEvalShader) {
         m_isTessellated = !m_tessCtrlShader.empty() && !m_tessEvalShader.empty();
     }
 
@@ -45,6 +43,5 @@ protected:
     std::string_view m_tessCtrlShader{};
     std::string_view m_tessEvalShader{};
     bool m_isTessellated{false};
-    uint32_t m_texturesAmount{1u};
     std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
 };

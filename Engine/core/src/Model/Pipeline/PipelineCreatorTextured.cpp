@@ -39,7 +39,7 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     // Texture
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = m_texturesAmount;
+    samplerLayoutBinding.descriptorCount = 1;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -90,7 +90,6 @@ void PipelineCreatorTextured::createDescriptorPool() {
 
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    texturePoolSize.descriptorCount *= m_texturesAmount;
 
     VkDescriptorPoolSize uboViewProjPoolSize = uboPoolSize;
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -173,7 +172,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
         textureSetWrite.dstBinding = 1;
         textureSetWrite.dstArrayElement = 0;
         textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        textureSetWrite.descriptorCount = m_texturesAmount;
+        textureSetWrite.descriptorCount = 1;
         textureSetWrite.pImageInfo = &imageInfo;
 
         // UBO ViewProj DESCRIPTOR

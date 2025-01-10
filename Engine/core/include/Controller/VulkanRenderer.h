@@ -74,6 +74,8 @@ private:
     VkPhysicalDeviceProperties mDeviceProperties;
     std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
+    std::array<std::unique_ptr<Particle>, 5u> m_particles;
+    std::vector<std::unique_ptr<I3DModel>> m_semiTransparentModels{};
 
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_presentCompleteSem{nullptr};
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_renderCompleteSem{nullptr};
@@ -123,8 +125,6 @@ private:
 
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
-
-    std::array<std::unique_ptr<Particle>, 5u> m_particles;
 
     Camera mCamera;
 };

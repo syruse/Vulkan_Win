@@ -152,7 +152,7 @@ uint32_t PipelineCreatorSemiTransparent::createDescriptor(std::weak_ptr<TextureF
         textureSetWrite.dstBinding = 1;
         textureSetWrite.dstArrayElement = 0;
         textureSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        textureSetWrite.descriptorCount = m_texturesAmount;
+        textureSetWrite.descriptorCount = 1;
         textureSetWrite.pImageInfo = &imageInfo;
 
         // Depth Attachment
