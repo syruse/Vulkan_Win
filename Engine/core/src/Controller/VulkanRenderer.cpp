@@ -111,11 +111,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     m_semiTransparentModels.emplace_back(new ObjModel(
         *this, *mTextureFactory, "tree.obj"sv, static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 17.0f));
+        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 12.0f));
     m_semiTransparentModels.emplace_back(
         new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-                     static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 17.0f, 0.1f));
+                     static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 12.0f, 0.1f));
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
@@ -364,12 +364,6 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->model = glm::mat4(1.0f);
         pModel->MVP = viewProj.viewProj;
     }
-
-    // TODO animated model must be rotated since it's designed in another coordinate system: left handed
-    pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount + 1) * _modelUniformAlignment);
-    rotMat = glm::rotate(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    pModel->model = rotMat;
-    pModel->MVP = viewProj.viewProj * pModel->model;
 
     _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
     m_lightViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
@@ -1326,7 +1320,7 @@ void VulkanRenderer::createRenderPass() {
     depthAttachmentSemiTrans.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachmentSemiTrans.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference colorAttachmentSemiTransReference = {};
     colorAttachmentSemiTransReference.attachment = 0;
@@ -1334,16 +1328,14 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentReference depthAttachmentSemiTransReference;
     depthAttachmentSemiTransReference.attachment = 1;
-    depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpassSemiTrans{};
     subpassSemiTrans.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpassSemiTrans.colorAttachmentCount = 1;
     subpassSemiTrans.pColorAttachments = &colorAttachmentSemiTransReference;
-    subpassSemiTrans.inputAttachmentCount = 1;
-    subpassSemiTrans.pInputAttachments = &depthAttachmentSemiTransReference;
-    // TODO we need depth for correct bushes drawing
-    // subpassSemiTrans.pDepthStencilAttachment
+    subpassSemiTrans.inputAttachmentCount = 0;
+    subpassSemiTrans.pDepthStencilAttachment = &depthAttachmentSemiTransReference;
 
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsSemiTrans = {colorAttachmentSemiTrans, depthAttachmentSemiTrans};
 
@@ -1361,9 +1353,9 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[1].dstSubpass = 0;
     dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencySemiTrans[1].srcAccessMask = 0;
-    dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencySemiTrans[1].dstStageMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencySemiTrans[1].dstAccessMask =
-        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // in this case we need only read mode (depth is read in shader)
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoSemiTrans = {};
     renderPassCreateInfoSemiTrans.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;

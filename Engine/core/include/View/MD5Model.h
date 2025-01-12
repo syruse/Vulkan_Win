@@ -86,11 +86,12 @@ public:
     MD5Model(std::string_view md5ModelFileName, std::string_view md5AnimFileName, const VulkanState& vulkanState,
              TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
-             float animationSpeedMultiplier = 1.0f) noexcept(true)
+             float animationSpeedMultiplier = 1.0f, bool isSwapYZNeeded = true) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier),
           m_md5ModelFileName(md5ModelFileName),
           m_md5AnimFileName(md5AnimFileName),
-          m_animationSpeedMultiplier(animationSpeedMultiplier) {
+          m_animationSpeedMultiplier(animationSpeedMultiplier),
+          m_isSwapYZNeeded(isSwapYZNeeded) {
     }
     void init() override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
@@ -105,12 +106,14 @@ public:
 private:
     bool loadMD5Anim();
     bool loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+    void swapYandZ(glm::vec3& vertexData);
 
 private:
     std::string_view m_md5ModelFileName{};
     std::string_view m_md5AnimFileName{};
     float m_radius{0.0f};
     float m_animationSpeedMultiplier{1.0f};
+    bool m_isSwapYZNeeded{true};  // due to different coordinate systems
     VkDeviceSize m_bufferSize{0u};
     Model3D m_MD5Model;
 };

@@ -9,7 +9,7 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
 	mat4 footPrintViewProj;
 } uboViewProjection;
 
-layout(set = 0, binding = 4) uniform UBOParticleObject {
+layout(set = 0, binding = 3) uniform UBOParticleObject {
     vec4 dynamicPos;
     vec4 velocity;
     int mode; // '0' regular particles effect(parallel to user face) and '1' spreading along z-plane(which perpendicular to z-plane)

@@ -13,10 +13,9 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     auto& raster = Pipeliner::getInstance().getRasterizationInfo();
     raster.cullMode = VK_CULL_MODE_NONE;
 
-    // DEPTH TEST IS APPLIED INSIDE SHADER
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
-    depthStencil.depthTestEnable = VK_FALSE;
-    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
@@ -41,15 +40,7 @@ void PipelineCreatorSemiTransparent::createDescriptorSetLayout() {
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Depth attachment
-    VkDescriptorSetLayoutBinding depthInputLayoutBinding{};
-    depthInputLayoutBinding.binding = 2;
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    depthInputLayoutBinding.descriptorCount = 1;
-    depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 3u> inputBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
-                                                               depthInputLayoutBinding};
+    std::array<VkDescriptorSetLayoutBinding, 2u> inputBindings{dynamicUBOLayoutBinding, samplerLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -78,10 +69,7 @@ void PipelineCreatorSemiTransparent::createDescriptorPool() {
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
-    VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-
-    std::array<VkDescriptorPoolSize, 3u> poolSize{uboPoolSize, texturePoolSize, depthInputPoolSize};
+    std::array<VkDescriptorPoolSize, 2u> poolSize{uboPoolSize, texturePoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -155,23 +143,8 @@ uint32_t PipelineCreatorSemiTransparent::createDescriptor(std::weak_ptr<TextureF
         textureSetWrite.descriptorCount = 1;
         textureSetWrite.pImageInfo = &imageInfo;
 
-        // Depth Attachment
-        VkDescriptorImageInfo depthAttachmentInfo{};
-        depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        depthAttachmentInfo.imageView = m_vkState._depthBuffer.depthImageView;
-        depthAttachmentInfo.sampler = VK_NULL_HANDLE;
-
-        VkWriteDescriptorSet depthWrite{};
-        depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        depthWrite.dstSet = material.descriptorSets[i];
-        depthWrite.dstBinding = 2;
-        depthWrite.dstArrayElement = 0;
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        depthWrite.descriptorCount = 1;
-        depthWrite.pImageInfo = &depthAttachmentInfo;
-
         // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites{dynamicUBOSetWrite, textureSetWrite, depthWrite};
+        std::vector<VkWriteDescriptorSet> setWrites{dynamicUBOSetWrite, textureSetWrite};
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,

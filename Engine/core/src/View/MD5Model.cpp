@@ -21,7 +21,7 @@ void MD5Model::init() {
 
         Utils::VulkanCreateBuffer(p_devide, m_vkState._core.getPhysDevice(), m_bufferSize,
                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_generalBuffer,
+                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_generalBuffer,
                                   m_generalBufferMemory);
 
         void* data;
@@ -337,6 +337,11 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
             tempVert.gpuVertex.pos *= m_vertexMagnitudeMultiplier;
 
             tempVert.gpuVertex.normal = glm::normalize(tempVert.gpuVertex.normal);
+
+            if (m_isSwapYZNeeded) {
+                swapYandZ(tempVert.gpuVertex.pos);
+                swapYandZ(tempVert.gpuVertex.normal);
+            }
         }
 
         // Update the subset's buffer
@@ -352,6 +357,11 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
     }
 
     vkUnmapMemory(p_device, m_generalBufferMemory);
+}
+
+void MD5Model::swapYandZ(glm::vec3& vertexData) {
+    std::swap(vertexData.y, vertexData.z);
+    vertexData.z *= -1.0f;
 }
 
 bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
