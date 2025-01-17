@@ -1,6 +1,8 @@
 #include "MD5Model.h"
+#include <array>
 #include <cassert>
 #include <fstream>
+#include <future>
 #include "Constants.h"
 #include "PipelineCreatorTextured.h"
 #include "Utils.h"
@@ -258,6 +260,12 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         Utils::printLog(ERROR_PARAM, "wrong animationID: ", animationID);
         return;
     }
+    assert(m_MD5Model.animations[animationID].numFrames > 1);
+
+    float currentFrame{0.0f};
+    std::size_t frame0{0u};
+    std::size_t frame1{0u};
+    float interpolation{0.0f};
 
     m_MD5Model.animations[animationID].currAnimTime +=
         m_animationSpeedMultiplier * deltaTimeMS / 1000.0f;  // Update the current animation time
@@ -266,24 +274,80 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         m_MD5Model.animations[animationID].currAnimTime = 0.0f;
 
     // Which frame are we on
-    float currentFrame = m_MD5Model.animations[animationID].currAnimTime * m_MD5Model.animations[animationID].frameRate;
-    int frame0 = floorf(currentFrame);
-    int frame1 = frame0 + 1;
+    currentFrame = m_MD5Model.animations[animationID].currAnimTime * m_MD5Model.animations[animationID].frameRate;
+    frame0 = static_cast<std::size_t>(floorf(currentFrame));
+    frame1 = frame0 + 1u;
 
     // Make sure we don't go over the number of frames
     if (frame0 == m_MD5Model.animations[animationID].numFrames - 1)
         frame1 = 0;
 
-    float interpolation =
+    interpolation =
         currentFrame - frame0;  // Get the remainder (in time) between frame0 and frame1 to use as interpolation factor
 
-    std::vector<Joint> interpolatedSkeleton;  // Create a frame skeleton to store the interpolated skeletons in
-    interpolatedSkeleton.reserve(m_MD5Model.animations[animationID].numJoints);
-    // Compute the interpolated skeleton
-    for (int i = 0; i < m_MD5Model.animations[animationID].numJoints; i++) {
-        Joint tempJoint;
-        Joint joint0 = m_MD5Model.animations[animationID].frameSkeleton[frame0][i];  // Get the i'th joint of frame0's skeleton
-        Joint joint1 = m_MD5Model.animations[animationID].frameSkeleton[frame1][i];  // Get the i'th joint of frame1's skeleton
+    // Create a frame skeleton to store the interpolated skeletons in
+    if (mInterpolatedSkeleton.size() < m_MD5Model.animations[animationID].numJoints) {
+        mInterpolatedSkeleton.resize(m_MD5Model.animations[animationID].numJoints);
+    }
+
+    std::array<std::future<void>, 4u> workerThreads;
+    std::size_t chunkOffset{0u};
+    std::size_t indexFrom{0u};
+    std::size_t indexTo{0u};
+    std::size_t workerThreadIndexPlusOne{0u};
+
+    // Compute the interpolated skeleton in worker_threads
+    chunkOffset = m_MD5Model.animations[animationID].numJoints / workerThreads.size();
+    for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
+        workerThreadIndexPlusOne = workerThreadIndex + 1U;
+        indexFrom = workerThreadIndex * chunkOffset;
+        indexTo = workerThreadIndexPlusOne > workerThreads.size() ? m_MD5Model.animations[animationID].numJoints
+                                                                  : workerThreadIndexPlusOne * chunkOffset;
+        workerThreads[workerThreadIndex] = std::async(std::launch::async, &MD5Model::calculateInterpolatedSkeleton, this,
+                                                      animationID, frame0, frame1, interpolation, indexFrom, indexTo);
+    }
+    for (auto& thread : workerThreads) {
+        thread.wait();
+    }
+
+    // Update the subsets vertex buffer in worker_threads
+    auto p_device = m_vkState._core.getDevice();
+    assert(p_device);
+    void* data;
+
+    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
+
+    // in most cases we have one single heavy subset which must be splitted for parallel calculation
+    for (std::size_t k = 0u; k < m_MD5Model.numSubsets; k++) {
+        chunkOffset = m_MD5Model.subsets[k].vertices.size() / workerThreads.size();
+        for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
+            workerThreadIndexPlusOne = workerThreadIndex + 1U;
+            indexFrom = workerThreadIndex * chunkOffset;
+            indexTo = workerThreadIndexPlusOne > workerThreads.size() ? m_MD5Model.subsets[k].vertices.size()
+                                                                      : workerThreadIndexPlusOne * chunkOffset;
+            workerThreads[workerThreadIndex] =
+                std::async(std::launch::async, &MD5Model::updateAnimationChunk, this, k, indexFrom, indexTo, (char*)data);
+        }
+
+        for (auto& thread : workerThreads) {
+            thread.wait();
+        }
+    }
+
+    vkUnmapMemory(p_device, m_generalBufferMemory);
+}
+
+void MD5Model::calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
+                                             std::size_t indexFrom, std::size_t indexTo) {
+    ModelAnimation& animation = m_MD5Model.animations[animationID];
+    assert(indexFrom < animation.numJoints && indexTo <= animation.numJoints && indexTo <= mInterpolatedSkeleton.size() &&
+           animation.frameSkeleton.size() > frame0 && animation.frameSkeleton.size() > frame1);
+    Joint joint0;
+    Joint joint1;
+    for (std::size_t i = indexFrom; i < indexTo; i++) {
+        Joint& tempJoint = mInterpolatedSkeleton[i];
+        joint0 = animation.frameSkeleton[frame0][i];  // Get the i'th joint of frame0's skeleton
+        joint1 = animation.frameSkeleton[frame1][i];  // Get the i'th joint of frame1's skeleton
 
         tempJoint.parentID = joint0.parentID;  // Set the tempJoints parent id
 
@@ -293,73 +357,66 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         // Interpolate orientations using spherical interpolation (Slerp)
         tempJoint.orientation = glm::slerp(joint0.orientation, joint1.orientation, interpolation);
 
-        interpolatedSkeleton.push_back(tempJoint);  // Push the joint back into our interpolated skeleton
+        // joint updating of our interpolated skeleton completed
     }
-
-    // Update the subsets vertex buffer
-    auto p_device = m_vkState._core.getDevice();
-    assert(p_device);
-    glm::vec3 rotatedPoint = glm::vec3(.0f, .0f, .0f);
-    void* data;
-
-    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
-
-    for (int k = 0; k < m_MD5Model.numSubsets; k++) {
-        for (int i = 0; i < m_MD5Model.subsets[k].vertices.size(); ++i) {
-            MD5Vertex& tempVert = m_MD5Model.subsets[k].vertices[i];
-            tempVert.gpuVertex.pos = glm::vec3(.0f, .0f, .0f);     // Make sure the vertex's pos is cleared first
-            tempVert.gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
-
-            // Sum up the joints and weights information to get vertex's position and normal
-            for (int j = 0; j < tempVert.weightCount; ++j) {
-                const Weight& tempWeight = m_MD5Model.subsets[k].weights[tempVert.startWeight + j];
-                const Joint& tempJoint = interpolatedSkeleton[tempWeight.jointID];
-
-                // Calculate vertex position (in joint space, eg. rotate the point around (0,0,0)) for this weight using the joint
-                // orientation quaternion and its conjugate We can rotate a point using a quaternion with the equation
-                // "rotatedPoint = quaternion * point * quaternionConjugate" but conjugate id nor actual for glm since it has
-                // internal optimization
-                rotatedPoint = tempJoint.orientation * tempWeight.pos;
-
-                // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking the
-                // weights bias into account
-                tempVert.gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
-
-                // Compute the normals for this frames skeleton using the weight normals from before
-                // We can comput the normals the same way we compute the vertices position, only we don't have to translate them
-                // (just rotate)
-                rotatedPoint = tempJoint.orientation * tempWeight.normal;
-
-                // Add to vertices normal and take weight bias into account
-                tempVert.gpuVertex.normal = tempVert.gpuVertex.normal + (rotatedPoint * tempWeight.bias);
-            }
-
-            tempVert.gpuVertex.pos *= m_vertexMagnitudeMultiplier;
-
-            tempVert.gpuVertex.normal = glm::normalize(tempVert.gpuVertex.normal);
-
-            if (m_isSwapYZNeeded) {
-                swapYandZ(tempVert.gpuVertex.pos);
-                swapYandZ(tempVert.gpuVertex.normal);
-            }
-        }
-
-        // Update the subset's buffer
-        static const std::size_t indexBytes = sizeof(m_MD5Model.subsets[k].indices[0]);
-        static const std::size_t vertBytes = sizeof(m_MD5Model.subsets[k].gpuVertices[0]);
-
-        const std::size_t indicesSize = indexBytes * m_MD5Model.subsets[k].indices.size();
-        const std::size_t verticesSize = vertBytes * m_MD5Model.subsets[k].gpuVertices.size();
-
-        memcpy((char*)data + m_MD5Model.subsets[k].indexOffset * indexBytes, m_MD5Model.subsets[k].indices.data(), indicesSize);
-        memcpy((char*)data + m_verticesBufferOffset + m_MD5Model.subsets[k].vertOffset * vertBytes,
-               m_MD5Model.subsets[k].gpuVertices.data(), verticesSize);
-    }
-
-    vkUnmapMemory(p_device, m_generalBufferMemory);
 }
 
-void MD5Model::swapYandZ(glm::vec3& vertexData) {
+void MD5Model::updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo, char* data) {
+    ModelSubset& subset = m_MD5Model.subsets[subsetId];
+    assert(data && indexFrom < subset.vertices.size() && indexTo <= subset.vertices.size());
+
+    glm::vec3 rotatedPoint = glm::vec3(.0f, .0f, .0f);
+    for (std::size_t i = indexFrom; i < indexTo; ++i) {
+        MD5Vertex& tempVert = subset.vertices[i];
+        tempVert.gpuVertex.pos = glm::vec3(.0f, .0f, .0f);     // Make sure the vertex's pos is cleared first
+        tempVert.gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
+
+        // Sum up the joints and weights information to get vertex's position and normal
+        for (std::size_t j = 0; j < tempVert.weightCount; ++j) {
+            const Weight& tempWeight = subset.weights[tempVert.startWeight + j];
+            const Joint& tempJoint = mInterpolatedSkeleton[tempWeight.jointID];
+
+            // Calculate vertex position (in joint space, eg. rotate the point around (0,0,0)) for this weight using the joint
+            // orientation quaternion and its conjugate We can rotate a point using a quaternion with the equation
+            // "rotatedPoint = quaternion * point * quaternionConjugate" but conjugate id nor actual for glm since it has
+            // internal optimization
+            rotatedPoint = tempJoint.orientation * tempWeight.pos;
+
+            // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking the
+            // weights bias into account
+            tempVert.gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
+
+            // Compute the normals for this frames skeleton using the weight normals from before
+            // We can comput the normals the same way we compute the vertices position, only we don't have to translate them
+            // (just rotate)
+            rotatedPoint = tempJoint.orientation * tempWeight.normal;
+
+            // Add to vertices normal and take weight bias into account
+            tempVert.gpuVertex.normal = tempVert.gpuVertex.normal + (rotatedPoint * tempWeight.bias);
+        }
+
+        tempVert.gpuVertex.pos *= m_vertexMagnitudeMultiplier;
+
+        tempVert.gpuVertex.normal = glm::normalize(tempVert.gpuVertex.normal);
+
+        if (m_isSwapYZNeeded) {
+            swapYandZ(tempVert.gpuVertex.pos);
+            swapYandZ(tempVert.gpuVertex.normal);
+        }
+    }
+
+    // Update the subset's buffer
+    static const std::size_t indexBytes = sizeof(subset.indices[0]);
+    static const std::size_t vertBytes = sizeof(subset.gpuVertices[0]);
+
+    const std::size_t indicesSize = indexBytes * subset.indices.size();
+    const std::size_t verticesSize = vertBytes * subset.gpuVertices.size();
+
+    memcpy((char*)data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
+    memcpy((char*)data + m_verticesBufferOffset + subset.vertOffset * vertBytes, subset.gpuVertices.data(), verticesSize);
+}
+
+inline void MD5Model::swapYandZ(glm::vec3& vertexData) {
     std::swap(vertexData.y, vertexData.z);
     vertexData.z *= -1.0f;
 }

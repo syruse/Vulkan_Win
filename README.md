@@ -4,10 +4,10 @@
 
 <h1>The game engine powered by Vulkan</h1>
 </br> <b>Platforms:</b> Windows/Unix
-</br> <b>Technologies:</b> C++ 17, Vulkan Api, SDL2(user input), CMake, WinApi, XCB
+</br> <b>Technologies:</b> C++ 17, Vulkan Api, DirectXTK12/SDL2(user input), CMake, WinApi, XCB, stb_image, tinyobjloader
 <p><img src="demo.png" width="60%" height="60%"></p>
 <p>This is simple game engine based on own engine run by Vulkan API, SDL2 (user input)
-the developing is ongoing currently it supports such features as
+the developing is ongoing currently, it supports such features as
 <ol>
   <li>Vulkan pipeline caching to speedup creation of pipelines for the game</li>
   <li>Liquidating tileable pattern for terrain by using multisampling from textures array(2 grass textures and noise texture) with different textcoords and colors mixing

@@ -106,7 +106,10 @@ public:
 private:
     bool loadMD5Anim();
     bool loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
-    void swapYandZ(glm::vec3& vertexData);
+    inline void swapYandZ(glm::vec3& vertexData);
+    void updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo, char* data);
+    void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
+                                       std::size_t indexFrom, std::size_t indexTo);
 
 private:
     std::string_view m_md5ModelFileName{};
@@ -116,4 +119,7 @@ private:
     bool m_isSwapYZNeeded{true};  // due to different coordinate systems
     VkDeviceSize m_bufferSize{0u};
     Model3D m_MD5Model;
+    // base intermediate animation as interpolation between neighbor frames animations
+    // we keep it in memory to avoid allocations for each frame update
+    std::vector<Joint> mInterpolatedSkeleton;  
 };
