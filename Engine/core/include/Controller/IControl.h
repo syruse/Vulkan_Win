@@ -19,6 +19,7 @@ public:
         uint32_t mouseX = 0;
         uint32_t mouseY = 0;
         ImDrawData* hmiRenderData = nullptr;
+        const UI::States* hmiStates = nullptr;
 
         void reset() {
             isQuited = false;

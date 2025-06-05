@@ -1,0 +1,37 @@
+#pragma once
+
+#include "VertexData.h"
+
+#ifndef NDEBUG
+#define MD5_CUDA_VERBOSE_LOG
+#endif
+
+namespace md5_cuda_animation {
+	class Model3D;
+	class Joint;
+};
+
+namespace cuda {
+    // returns -1 if no CUDA device is available
+	int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE);
+};
+
+class MD5CudaAnimation {
+public:
+	MD5CudaAnimation(int cudaDevice, md5_animation::Model3D& _MD5Model, bool isSwapYZNeeded = false, 
+	                 float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f);
+	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
+	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
+	~MD5CudaAnimation();
+
+	void update(float deltaTimeMS, int animationID, void* out_data, uint64_t verticesBufferOffset);
+private:
+    md5_animation::Model3D& cpu_MD5Model;
+	void* cuda_stream;
+    int cuda_SMs;
+	int cuda_warpSize;
+	md5_cuda_animation::Model3D* cuda_MD5Model = nullptr;
+	md5_cuda_animation::Joint* cuda_interpolatedSkeleton = nullptr;
+	uint32_t cuda_maxJointsPerSkeleton = 0u;
+	std::vector<VertexData*> gpu_vertices;//TODO
+};

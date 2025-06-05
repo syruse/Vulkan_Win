@@ -1062,8 +1062,10 @@ bool VulkanRenderer::renderScene() {
     for (auto& model : m_models) {
         model->update(deltaTime);
     }
+    const bool isGPUCalculationFavorable =
+        windowQueueMSG.hmiStates ? windowQueueMSG.hmiStates->gpuAnimationEnabled.second : true;
     for (auto& model : m_semiTransparentModels) {
-        model->update(deltaTime);
+        model->update(deltaTime, 0, isGPUCalculationFavorable);
     }
     updateUniformBuffer(ImageIndex, deltaTime);
 
@@ -2039,8 +2041,8 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     init_info.Device = _core.getDevice();
     init_info.Queue = _queue;
     init_info.DescriptorPool = mImguiPool;
-    init_info.MinImageCount = 3;
-    init_info.ImageCount = 3;
+    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.RenderPass = m_renderPassFXAA;
 

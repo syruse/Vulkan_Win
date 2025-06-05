@@ -7,14 +7,47 @@
 #include "PipelineCreatorTextured.h"
 #include "Utils.h"
 
+#include "MD5CudaAnimation.h_cu"
+
+using namespace md5_animation;
+
 void MD5Model::init() {
     auto p_devide = m_vkState._core.getDevice();
     assert(p_devide);
 
-    std::vector<Vertex> vertices{};
+    uint8_t vk_deviceUUID[VK_UUID_SIZE];
+    // getting the VK device
+    {
+        // Get the device ID properties (Vulkan 1.1 or later)
+        VkPhysicalDeviceIDPropertiesKHR idProperties;
+        idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES_KHR;
+        idProperties.pNext = nullptr;
+
+        VkPhysicalDeviceVulkan11Properties vulkan11Properties;
+        vulkan11Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+        vulkan11Properties.pNext = &idProperties;
+
+        VkPhysicalDeviceProperties2 physicalDeviceProperties2;
+        physicalDeviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        physicalDeviceProperties2.pNext = &vulkan11Properties;
+
+        vkGetPhysicalDeviceProperties2(m_vkState._core.getPhysDevice(), &physicalDeviceProperties2);
+
+        // Access the device UUID
+        memcpy(vk_deviceUUID, vulkan11Properties.deviceUUID, VK_UUID_SIZE);
+    }
+
+    std::vector<VertexData> vertices{};
     std::vector<uint32_t> indices{};
 
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
+
+        int cudaDevice = cuda::getCudaDevice(vk_deviceUUID, VK_UUID_SIZE);
+        if (cudaDevice > -1) {
+            mCudaAnimator = new MD5CudaAnimation(cudaDevice, m_MD5Model, m_isSwapYZNeeded, m_animationSpeedMultiplier,
+                                                 m_vertexMagnitudeMultiplier);
+        }
+
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
@@ -255,12 +288,17 @@ bool MD5Model::loadMD5Anim() {
     return true;
 }
 
-void MD5Model::update(float deltaTimeMS, int animationID) {
-    if (m_MD5Model.animations.size() <= animationID) {
-        Utils::printLog(ERROR_PARAM, "wrong animationID: ", animationID);
-        return;
+void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, void* out_data) {
+    assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
+    if (mCudaAnimator) {
+        mCudaAnimator->update(deltaTimeMS, animationID, out_data, m_verticesBufferOffset);
+    } else {
+        Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
     }
-    assert(m_MD5Model.animations[animationID].numFrames > 1);
+}
+
+void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, void* out_data) {
+    assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
 
     float currentFrame{0.0f};
     std::size_t frame0{0u};
@@ -301,8 +339,8 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
     for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
         workerThreadIndexPlusOne = workerThreadIndex + 1U;
         indexFrom = workerThreadIndex * chunkOffset;
-        indexTo = workerThreadIndexPlusOne > workerThreads.size() ? m_MD5Model.animations[animationID].numJoints
-                                                                  : workerThreadIndexPlusOne * chunkOffset;
+        indexTo = workerThreadIndexPlusOne >= workerThreads.size() ? m_MD5Model.animations[animationID].numJoints
+                                                                   : workerThreadIndexPlusOne * chunkOffset;
         workerThreads[workerThreadIndex] = std::async(std::launch::async, &MD5Model::calculateInterpolatedSkeleton, this,
                                                       animationID, frame0, frame1, interpolation, indexFrom, indexTo);
     }
@@ -310,12 +348,13 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         thread.wait();
     }
 
-    // Update the subsets vertex buffer in worker_threads
-    auto p_device = m_vkState._core.getDevice();
-    assert(p_device);
-    void* data;
-
-    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
+    // Print out the 10th joint of the interpolated skeleton for debugging purposes
+    // #ifndef NDEBUG
+    //     auto& tempJoint = mInterpolatedSkeleton[10];
+    //     printf("\nCPU InterpolatedSkeleton[10].parentID: %d; InterpolatedSkeleton[10].orientation = %f %f %f\n",
+    //     tempJoint.parentID,
+    //            tempJoint.orientation.x, tempJoint.orientation.y, tempJoint.orientation.z);
+    // #endif
 
     // in most cases we have one single heavy subset which must be splitted for parallel calculation
     for (std::size_t k = 0u; k < m_MD5Model.numSubsets; k++) {
@@ -323,15 +362,46 @@ void MD5Model::update(float deltaTimeMS, int animationID) {
         for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
             workerThreadIndexPlusOne = workerThreadIndex + 1U;
             indexFrom = workerThreadIndex * chunkOffset;
-            indexTo = workerThreadIndexPlusOne > workerThreads.size() ? m_MD5Model.subsets[k].vertices.size()
-                                                                      : workerThreadIndexPlusOne * chunkOffset;
+            indexTo = workerThreadIndexPlusOne >= workerThreads.size() ? m_MD5Model.subsets[k].vertices.size()
+                                                                       : workerThreadIndexPlusOne * chunkOffset;
             workerThreads[workerThreadIndex] =
-                std::async(std::launch::async, &MD5Model::updateAnimationChunk, this, k, indexFrom, indexTo, (char*)data);
+                std::async(std::launch::async, &MD5Model::updateAnimationChunk, this, k, indexFrom, indexTo);
         }
 
         for (auto& thread : workerThreads) {
             thread.wait();
         }
+
+        // Update the subset's buffer
+        ModelSubset& subset = m_MD5Model.subsets[k];
+        const std::size_t indexBytes = sizeof(subset.indices[0]);
+        const std::size_t vertBytes = sizeof(subset.gpuVertices[0]);
+
+        const std::size_t indicesSize = indexBytes * subset.indices.size();
+        const std::size_t verticesSize = vertBytes * subset.gpuVertices.size();
+
+        memcpy((char*)out_data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
+        memcpy((char*)out_data + m_verticesBufferOffset + subset.vertOffset * vertBytes, subset.gpuVertices.data(), verticesSize);
+    }
+}
+
+void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU) {
+    if (m_MD5Model.animations.size() <= animationID) {
+        Utils::printLog(ERROR_PARAM, "wrong animationID: ", animationID);
+        return;
+    }
+    assert(m_MD5Model.animations[animationID].numFrames > 1);
+    // Update the subsets vertex buffer in worker_threads
+    auto p_device = m_vkState._core.getDevice();
+    assert(p_device);
+    void* data;
+
+    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
+
+    if (mCudaAnimator && onGPU) {
+        updateAnimationOnGPU(deltaTimeMS, animationID, data);
+    } else {
+        updateAnimationOnCPU(deltaTimeMS, animationID, data);
     }
 
     vkUnmapMemory(p_device, m_generalBufferMemory);
@@ -361,15 +431,16 @@ void MD5Model::calculateInterpolatedSkeleton(std::size_t animationID, std::size_
     }
 }
 
-void MD5Model::updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo, char* data) {
+void MD5Model::updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo) {
     ModelSubset& subset = m_MD5Model.subsets[subsetId];
-    assert(data && indexFrom < subset.vertices.size() && indexTo <= subset.vertices.size());
+    assert(indexFrom < subset.vertices.size() && indexTo <= subset.vertices.size());
 
     glm::vec3 rotatedPoint = glm::vec3(.0f, .0f, .0f);
     for (std::size_t i = indexFrom; i < indexTo; ++i) {
         MD5Vertex& tempVert = subset.vertices[i];
-        tempVert.gpuVertex.pos = glm::vec3(.0f, .0f, .0f);     // Make sure the vertex's pos is cleared first
-        tempVert.gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
+        auto& gpuVertex = subset.gpuVertices[tempVert.gpuVertexIndex];
+        gpuVertex.pos = glm::vec3(.0f, .0f, .0f);// Make sure the vertex's pos is cleared first
+        gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
 
         // Sum up the joints and weights information to get vertex's position and normal
         for (std::size_t j = 0; j < tempVert.weightCount; ++j) {
@@ -384,7 +455,7 @@ void MD5Model::updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom,
 
             // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking the
             // weights bias into account
-            tempVert.gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
+            gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
 
             // Compute the normals for this frames skeleton using the weight normals from before
             // We can comput the normals the same way we compute the vertices position, only we don't have to translate them
@@ -392,28 +463,18 @@ void MD5Model::updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom,
             rotatedPoint = tempJoint.orientation * tempWeight.normal;
 
             // Add to vertices normal and take weight bias into account
-            tempVert.gpuVertex.normal = tempVert.gpuVertex.normal + (rotatedPoint * tempWeight.bias);
+            gpuVertex.normal = gpuVertex.normal + (rotatedPoint * tempWeight.bias);
         }
 
-        tempVert.gpuVertex.pos *= m_vertexMagnitudeMultiplier;
+        gpuVertex.pos *= m_vertexMagnitudeMultiplier;
 
-        tempVert.gpuVertex.normal = glm::normalize(tempVert.gpuVertex.normal);
+        gpuVertex.normal = glm::normalize(gpuVertex.normal);
 
         if (m_isSwapYZNeeded) {
-            swapYandZ(tempVert.gpuVertex.pos);
-            swapYandZ(tempVert.gpuVertex.normal);
+            swapYandZ(gpuVertex.pos);
+            swapYandZ(gpuVertex.normal);
         }
     }
-
-    // Update the subset's buffer
-    static const std::size_t indexBytes = sizeof(subset.indices[0]);
-    static const std::size_t vertBytes = sizeof(subset.gpuVertices[0]);
-
-    const std::size_t indicesSize = indexBytes * subset.indices.size();
-    const std::size_t verticesSize = vertBytes * subset.gpuVertices.size();
-
-    memcpy((char*)data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
-    memcpy((char*)data + m_verticesBufferOffset + subset.vertOffset * vertBytes, subset.gpuVertices.data(), verticesSize);
 }
 
 inline void MD5Model::swapYandZ(glm::vec3& vertexData) {
@@ -421,7 +482,7 @@ inline void MD5Model::swapYandZ(glm::vec3& vertexData) {
     vertexData.z *= -1.0f;
 }
 
-bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices) {
     assert(m_pipelineCreatorTextured);
     assert(!m_md5ModelFileName.empty());
 
@@ -555,8 +616,9 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                         subset.gpuVertices.reserve(numVerts);
                         for (int i = 0; i < numVerts; i++) {
                             subset.gpuVertices.emplace_back();
-                            I3DModel::Vertex& gpuVert = subset.gpuVertices.back();
-                            MD5Vertex tempVert{gpuVert};
+                            VertexData& gpuVert = subset.gpuVertices.back();
+                            MD5Vertex tempVert;
+                            tempVert.gpuVertexIndex = i;
 
                             fileIn >> checkString  // Skip "vert # ("
                                 >> checkString >> checkString;
@@ -635,7 +697,8 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                 glm::vec3 rotatedPoint = glm::vec3{0.0f, 0.0f, 0.0f};
                 for (int i = 0; i < subset.vertices.size(); ++i) {
                     MD5Vertex& tempVert = subset.vertices[i];
-                    tempVert.gpuVertex.pos = glm::vec3{0.0f, 0.0f, 0.0f};  // Make sure the vertex's pos is cleared first
+                    auto& gpuVertex = subset.gpuVertices[tempVert.gpuVertexIndex];
+                    gpuVertex.pos = glm::vec3{0.0f, 0.0f, 0.0f};  // Make sure the vertex's pos is cleared first
 
                     // Sum up the joints and weights information to get vertex's position
                     for (int j = 0; j < tempVert.weightCount; ++j) {
@@ -648,7 +711,7 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                         // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking
                         // the weights bias into account The weight bias is used because multiple weights might have an effect on
                         // the vertices final position. Each weight is attached to one joint.
-                        tempVert.gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
+                        gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
 
                         // Basically what has happened above, is we have taken the weights position relative to the joints
                         // position we then rotate the weights position (so that the weight is actually being rotated around (0,
@@ -660,7 +723,7 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                         // position must add up to 1.
                     }
 
-                    tempVert.gpuVertex.pos *= m_vertexMagnitudeMultiplier;
+                    gpuVertex.pos *= m_vertexMagnitudeMultiplier;
                 }
 
                 //*** Calculate vertex normals using normal averaging ***///
@@ -671,12 +734,13 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                 // Compute face normals
                 for (int i = 0; i < subset.numTriangles; ++i) {
                     // Get the vector describing one edge of our triangle (edge 2,0)
-                    glm::vec3 edge1 = subset.vertices[subset.indices[(i * 3) + 2]].gpuVertex.pos -
-                                      subset.vertices[subset.indices[(i * 3)]].gpuVertex.pos;  // Create our first edge
+                    auto& gpuVertex = subset.gpuVertices[subset.vertices[i].gpuVertexIndex];
+                    glm::vec3 edge1 = subset.gpuVertices[subset.vertices[subset.indices[(i * 3) + 2]].gpuVertexIndex].pos -
+                                      subset.gpuVertices[subset.vertices[subset.indices[(i * 3)]].gpuVertexIndex].pos;  // Create our first edge
 
                     // Get the vector describing another edge of our triangle (edge 1,0)
-                    glm::vec3 edge2 = subset.vertices[subset.indices[(i * 3) + 1]].gpuVertex.pos -
-                                      subset.vertices[subset.indices[(i * 3)]].gpuVertex.pos;  // Create our second edge
+                    glm::vec3 edge2 = subset.gpuVertices[subset.vertices[subset.indices[(i * 3) + 1]].gpuVertexIndex].pos -
+                                      subset.gpuVertices[subset.vertices[subset.indices[(i * 3)]].gpuVertexIndex].pos;  // Create our second edge
 
                     // Cross multiply the two edge vectors to get the un-normalized face normal
                     unnormalized = glm::cross(edge1, edge2);
@@ -701,7 +765,8 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                     normalSum = glm::normalize(normalSum);
 
                     // Store the normal in our current vertex
-                    subset.vertices[i].gpuVertex.normal = normalSum;
+                    auto& gpuVertex = subset.gpuVertices[subset.vertices[i].gpuVertexIndex];
+                    gpuVertex.normal = normalSum;
 
                     // Create the joint space normal for easy normal calculations in animation
                     const MD5Vertex& tempVert = subset.vertices[i];  // Get the current vertex
@@ -710,7 +775,7 @@ bool MD5Model::loadMD5Model(std::vector<Vertex>& vertices, std::vector<uint32_t>
                     for (int k = 0; k < tempVert.weightCount; k++)  // Loop through each of the vertices weights
                     {
                         // Get the joints orientation
-                        Joint tempJoint = m_MD5Model.joints[subset.weights[tempVert.startWeight + k].jointID];
+                        Joint& tempJoint = m_MD5Model.joints[subset.weights[tempVert.startWeight + k].jointID];
 
                         // Calculate normal based off joints orientation (turn into joint space)
                         normal = tempJoint.orientation * normalSum;

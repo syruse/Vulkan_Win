@@ -27,7 +27,7 @@ layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
 void main()
 {
     // Pass the values along to the fragment shader.
-    // For triangles, the vertex’s position is a barycentric coordinate (u,v,w), where u + v + w = 1.0, and indicates the relative influence of the three vertices of the triangle on the position of the vertex
+    // For triangles, the vertex’s position is a barycentric coordinate (builtin TessCoord with u,v,w), where u + v + w = 1.0, and indicates the relative influence of the three vertices of the triangle on the position of the vertex
     outNormal = gl_TessCoord.x * inNormal[0] + gl_TessCoord.y * inNormal[1] + gl_TessCoord.z * inNormal[2];
     outTexCoord = gl_TessCoord.x * inTexCoord[0] + gl_TessCoord.y * inTexCoord[1] + gl_TessCoord.z * inTexCoord[2];
 	outTexCoordNormalized = gl_TessCoord.x * inTexCoordNormalized[0] + gl_TessCoord.y * inTexCoordNormalized[1] + gl_TessCoord.z * inTexCoordNormalized[2];

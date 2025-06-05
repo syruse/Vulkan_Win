@@ -9,6 +9,8 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
 static constexpr const char* WIN_CLASS_NAME = "Win32Control";
@@ -52,6 +54,8 @@ void Win32Control::init() {
     /// let's adjust the rect
     AdjustWindowRectEx(&rect, style, 0, 0);
 
+    SetProcessDPIAware();  // take dpi into account for window size
+
     m_hwnd = CreateWindowEx(0,
                             WIN_CLASS_NAME,  // class name
                             m_appName.data(), style, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, NULL,
@@ -73,6 +77,7 @@ void Win32Control::init() {
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    io.WantCaptureMouse = true;
     ImGui::StyleColorsDark();
 
     ImGui_ImplWin32_Init(m_hwnd);
@@ -148,7 +153,7 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     _windowQueueMsg.hmiRenderData = nullptr; 
     if (escPressed) {
         imGuiNewFrame();
-        mUi.draw();
+        _windowQueueMsg.hmiStates = &mUi.updateAndDraw();
         _windowQueueMsg.hmiRenderData = ImGui::GetDrawData();
     }
 
@@ -181,6 +186,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_MOUSEMOVE:
         case WM_LBUTTONDOWN:
         case WM_LBUTTONUP:
+            ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
         case WM_RBUTTONDOWN:
         case WM_RBUTTONUP:
         case WM_MBUTTONDOWN:

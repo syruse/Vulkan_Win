@@ -2,6 +2,7 @@
 
 #include "TextureFactory.h"
 #include "VulkanState.h"
+#include "VertexData.h"
 
 #include <array>
 #include <glm/glm.hpp>
@@ -28,17 +29,7 @@ public:
         std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
     };
 
-    struct Vertex {
-        glm::vec3 pos{0.0f};
-        glm::vec3 normal{0.0f};
-        glm::vec2 texCoord{0.0f};
-        // extra attributes for TBN matrix
-
-        // last component indicates legality of bump-mapping applying
-        // 3d model may contain no bump texture for some sub models that's why we need to enable\disable bump-mapping
-        // there should be no perf drop for using additional 4th component since anyway atributes passed as vec4 per one location
-        glm::vec4 tangent{0.0f};
-        glm::vec3 bitangent{0.0f};
+    struct Vertex : VertexData {
 
         bool operator==(const Vertex& other) const {
             return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
@@ -112,7 +103,7 @@ public:
         return 0.0f;
     }
 
-    virtual void update(float deltaTimeMS, int animationID = 0u) {
+    virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true) {
         // actual for animated models
     }
 
