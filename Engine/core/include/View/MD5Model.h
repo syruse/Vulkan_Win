@@ -6,6 +6,11 @@ class MD5CudaAnimation;
 
 class MD5Model : public I3DModel {
 public:
+    enum AnimationType : uint32_t {
+        ANIMATION_TYPE_CUDA = 0U,
+        ANIMATION_TYPE_CPU, 
+        ANIMATION_TYPE_SIZE
+    };
     MD5Model(std::string_view md5ModelFileName, std::string_view md5AnimFileName, const VulkanState& vulkanState,
              TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
@@ -15,6 +20,19 @@ public:
           m_md5AnimFileName(md5AnimFileName),
           m_animationSpeedMultiplier(animationSpeedMultiplier),
           m_isSwapYZNeeded(isSwapYZNeeded) {
+    }
+    virtual ~MD5Model() {
+        std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
+        for (auto& buf : m_CUDAandCPUaccessibleBufs) {
+            if (buf != nullptr) {
+                vkDestroyBuffer(m_vkState._core.getDevice(), buf, nullptr);
+            }
+        }
+        for (auto& mem : m_CUDAandCPUaccessibleMems) {
+            if (mem != nullptr) {
+                vkFreeMemory(m_vkState._core.getDevice(), mem, nullptr);
+            }
+        }
     }
     void init() override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
@@ -33,8 +51,9 @@ private:
     void updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo);
     void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
                                        std::size_t indexFrom, std::size_t indexTo);
-    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, void* out_data);
-    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, void* out_data);
+    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID);
+    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID);
+    inline void waitForCudaSignal(uint32_t descriptorSetIndex) const;
 
 private:
     std::string_view m_md5ModelFileName{};
@@ -49,4 +68,10 @@ private:
     std::vector<md5_animation::Joint> mInterpolatedSkeleton;
     // CUDA animation
     MD5CudaAnimation* mCudaAnimator{nullptr};
+    VkSemaphore mVkCudaSyncObject{nullptr};  // for synchronization with CUDA
+    bool mIsCudaCalculationRequested{false};
+    mutable uint64_t mWaitCudaSignalValue{1};  // wait for CUDA signal value
+    // CPU accessible buffer and CUDA\GPU accessible buffer
+    VkBuffer m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
+    VkDeviceMemory m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
 };

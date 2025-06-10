@@ -18,13 +18,13 @@ namespace cuda {
 
 class MD5CudaAnimation {
 public:
-	MD5CudaAnimation(int cudaDevice, md5_animation::Model3D& _MD5Model, bool isSwapYZNeeded = false, 
-	                 float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f);
+	MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize, void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model,
+	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
 	~MD5CudaAnimation();
 
-	void update(float deltaTimeMS, int animationID, void* out_data, uint64_t verticesBufferOffset);
+	void update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset);
 private:
     md5_animation::Model3D& cpu_MD5Model;
 	void* cuda_stream;
@@ -33,5 +33,8 @@ private:
 	md5_cuda_animation::Model3D* cuda_MD5Model = nullptr;
 	md5_cuda_animation::Joint* cuda_interpolatedSkeleton = nullptr;
 	uint32_t cuda_maxJointsPerSkeleton = 0u;
+	char* cuda_extrVkMappedBuffer;
+	void* cuda_semaphoreHandle = nullptr;
+	uint64_t cuda_signalVkValue = 1; // informs the Vulkan semaphore that the animation is ready
 	std::vector<VertexData*> gpu_vertices;//TODO
 };

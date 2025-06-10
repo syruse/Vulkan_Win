@@ -18,7 +18,12 @@
 #include "MD5CudaAnimation.h_cu"
 
 namespace md5_cuda_animation {
-struct MD5Vertex {
+#ifdef __CUDACC__
+struct __align__(16) MD5Vertex
+#else
+struct alignas(16) MD5Vertex
+#endif
+{
     // gpu data
     uint32_t gpuVertexIndex;
     // for internal using
@@ -26,32 +31,58 @@ struct MD5Vertex {
     int weightCount;
 };
 
-struct Joint {
+#ifdef __CUDACC__
+struct __align__(16) Joint
+#else
+struct alignas(16) Joint
+#endif
+{
     int parentID;
 
     glm::vec3 pos;
     glm::quat orientation;
 };
 
-struct BoundingBox {
+#ifdef __CUDACC__
+struct __align__(16) BoundingBox
+#else
+struct alignas(16) BoundingBox
+#endif
+{
     glm::vec3 min;
     glm::vec3 max;
 };
 
-struct FrameData {
+
+#ifdef __CUDACC__
+    struct __align__(16) FrameData
+#else
+    struct alignas(16) FrameData
+#endif
+{
     int frameID;
     float* frameData;
     uint32_t frameDataCount;
 };
 
-struct AnimJointInfo {
+#ifdef __CUDACC__
+    struct __align__(16) AnimJointInfo
+#else
+    struct alignas(16) AnimJointInfo
+#endif
+{
     int parentID;
 
     int flags;
     int startIndex;
 };
 
-struct ModelAnimation {
+#ifdef __CUDACC__
+    struct __align__(16) ModelAnimation
+#else
+    struct alignas(16) ModelAnimation
+#endif
+{
     int numFrames;
     int numJoints;
     int frameRate;
@@ -73,14 +104,24 @@ struct ModelAnimation {
     uint32_t frameSkeletonCount;
 };
 
-struct Weight {
+#ifdef __CUDACC__
+    struct __align__(16) Weight
+#else
+    struct alignas(16) Weight
+#endif
+{
     int jointID;
     float bias;
     glm::vec3 pos;
     glm::vec3 normal;
 };
 
-struct ModelSubset {
+#ifdef __CUDACC__
+    struct __align__(16) ModelSubset
+#else
+    struct alignas(16) ModelSubset
+#endif
+{
     int numTriangles;
     uint32_t realMaterialId{0u};
     uint32_t indexOffset{0u};
@@ -96,7 +137,12 @@ struct ModelSubset {
     uint32_t weightsCount;
 };
 
-struct Model3D {
+#ifdef __CUDACC__
+    struct __align__(16) Model3D
+#else
+    struct alignas(16) Model3D
+#endif
+{
     Joint* joints;
     uint32_t numJoints;
     ModelSubset* subsets;
@@ -192,10 +238,44 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
 }
 }  // namespace cuda
 
-MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, md5_animation::Model3D& _MD5Model, bool isSwapYZNeeded,
-                                   float animationSpeedMultiplier, float vertexMagnitudeMultiplier) : cpu_MD5Model(_MD5Model) {
+MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize,
+                                   void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, bool isSwapYZNeeded, float animationSpeedMultiplier,
+                                   float vertexMagnitudeMultiplier, uint64_t cuda_signalVkValue)
+    : cpu_MD5Model(_MD5Model), cuda_signalVkValue(cuda_signalVkValue) {
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
            _MD5Model.joints.size() > 0u);
+
+    // import the Vulkan buffer memory to CUDA space
+    {
+        cudaExternalMemory_t m_cudaExternalVKmem;
+
+        cudaExternalMemoryHandleDesc externalMemoryHandleDesc = {};
+        externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+        externalMemoryHandleDesc.size = vkBufSize;  // Size of the external memory object
+        externalMemoryHandleDesc.handle.win32.handle =
+            winMemHandleOfVkBufMem;  // external win32 memory handle of m_generalBufferMemory
+
+        cudaCheckError(cudaImportExternalMemory(&m_cudaExternalVKmem, &externalMemoryHandleDesc));
+
+        cudaExternalMemoryBufferDesc externalMemBufferDesc = {};
+        externalMemBufferDesc.offset = 0;
+        externalMemBufferDesc.size = vkBufSize;  // Size of the external memory buffer
+        externalMemBufferDesc.flags = 0;
+
+        cudaCheckError(cudaExternalMemoryGetMappedBuffer((void**)&cuda_extrVkMappedBuffer, m_cudaExternalVKmem, &externalMemBufferDesc));
+    }
+
+    // import the Vulkan semaphore to CUDA space
+    cudaExternalSemaphore_t cudaSem;
+    {
+        cudaExternalSemaphoreHandleDesc externalSemaphoreHandleDesc = {};
+        externalSemaphoreHandleDesc.type = cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
+        externalSemaphoreHandleDesc.handle.win32.handle = winVkSemaphoreHandle;
+        externalSemaphoreHandleDesc.flags = 0;
+
+        cudaCheckError(cudaImportExternalSemaphore(&cudaSem, &externalSemaphoreHandleDesc));
+        cuda_semaphoreHandle = cudaSem;
+    }
 
     cudaCheckError(cudaMemcpyToSymbol(GPU_DEBUG_ENABLED, &gpu_debug_enabled, sizeof(gpu_debug_enabled)));
 
@@ -455,60 +535,84 @@ __device__ void swapYandZ(glm::vec3& vertexData) {
 }
 
 __global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
-                                     md5_cuda_animation::Joint* cuda_interpolatedSkeleton,
-                                     int subsetId) {
+                                     md5_cuda_animation::Joint* cuda_interpolatedSkeleton, int subsetId,
+                                     char* cuda_extrVkMappedBuffer, uint64_t verticesBufferOffset) {
     // Unique thread index among all blocks
     int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
-    ///if (GPU_DEBUG_ENABLED && globalThreadIndx == 0) {
-    ///    printf("updateAnimationChunk subsetId:%d\n", subsetId);
-    ///}
+    // thread index within one block
+    int blockThreadXIndx = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+    /// if (GPU_DEBUG_ENABLED && globalThreadIndx == 0) {
+    ///     printf("updateAnimationChunk subsetId:%d\n", subsetId);
+    /// }
     if (cuda_MD5Model->numSubsets <= subsetId) {
         printf("updateAnimationChunk: subsetId is out of range\n");
         return;
     }
     md5_cuda_animation::ModelSubset& subset = cuda_MD5Model->subsets[subsetId];
-    if (subset.verticesCount <= globalThreadIndx) {
-        //printf("updateAnimationChunk: index is out of range\n");
-        return;
+
+    __shared__ uint32_t indexBytes;
+    __shared__ uint32_t vertBytes;
+
+    // init shared data on the first thread for each SM block
+    if (blockThreadXIndx == 0) {
+        indexBytes = sizeof(subset.indices[0]);
+        vertBytes = sizeof(subset.gpuVertices[0]);
     }
 
-    glm::vec3 rotatedPoint = glm::vec3(.0f, .0f, .0f);
-    md5_cuda_animation::MD5Vertex& tempVert = subset.vertices[globalThreadIndx];
-    VertexData& gpuVertex = subset.gpuVertices[tempVert.gpuVertexIndex];
-    gpuVertex.pos = glm::vec3(.0f, .0f, .0f);     // Make sure the vertex's pos is cleared first
-    gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
+    // Synchronize threads within the warp to ensure all threads have the same indexBytes, vertBytes values
+    __syncwarp();
 
-    // Sum up the joints and weights information to get vertex's position and normal
-    for (uint32_t j = 0; j < tempVert.weightCount; ++j) {
-        const md5_cuda_animation::Weight& tempWeight = subset.weights[tempVert.startWeight + j];
-        const md5_cuda_animation::Joint& tempJoint = cuda_interpolatedSkeleton[tempWeight.jointID];
+    // Note: we have more indices than vertices, so we need to skip the globalThreadIndx that are out of bounds
 
-        // Calculate vertex position (in joint space, eg. rotate the point around (0,0,0)) for this weight using the joint
-        // orientation quaternion and its conjugate We can rotate a point using a quaternion with the equation
-        // "rotatedPoint = quaternion * point * quaternionConjugate" but conjugate id nor actual for glm since it has
-        // internal optimization
-        rotatedPoint = tempJoint.orientation * tempWeight.pos;
+    // Update the subset's buffer by copying i-th vertex data to the mapped buffer
+    if (subset.gpuVerticesCount > globalThreadIndx) {
+        glm::vec3 rotatedPoint = glm::vec3(.0f, .0f, .0f);
+        md5_cuda_animation::MD5Vertex& tempVert = subset.vertices[globalThreadIndx];
+        VertexData& gpuVertex = subset.gpuVertices[tempVert.gpuVertexIndex];
+        gpuVertex.pos = glm::vec3(.0f, .0f, .0f);     // Make sure the vertex's pos is cleared first
+        gpuVertex.normal = glm::vec3(.0f, .0f, .0f);  // Clear vertices normal
 
-        // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking the
-        // weights bias into account
-        gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
+        // Sum up the joints and weights information to get vertex's position and normal
+        for (uint32_t j = 0; j < tempVert.weightCount; ++j) {
+            const md5_cuda_animation::Weight& tempWeight = subset.weights[tempVert.startWeight + j];
+            const md5_cuda_animation::Joint& tempJoint = cuda_interpolatedSkeleton[tempWeight.jointID];
 
-        // Compute the normals for this frames skeleton using the weight normals from before
-        // We can comput the normals the same way we compute the vertices position, only we don't have to translate them
-        // (just rotate)
-        rotatedPoint = tempJoint.orientation * tempWeight.normal;
+            // Calculate vertex position (in joint space, eg. rotate the point around (0,0,0)) for this weight using the joint
+            // orientation quaternion and its conjugate We can rotate a point using a quaternion with the equation
+            // "rotatedPoint = quaternion * point * quaternionConjugate" but conjugate id nor actual for glm since it has
+            // internal optimization
+            rotatedPoint = tempJoint.orientation * tempWeight.pos;
 
-        // Add to vertices normal and take weight bias into account
-        gpuVertex.normal = gpuVertex.normal + (rotatedPoint * tempWeight.bias);
-    }
+            // Now move the verices position from joint space (0,0,0) to the joints position in world space, taking the
+            // weights bias into account
+            gpuVertex.pos += (tempJoint.pos + rotatedPoint) * tempWeight.bias;
 
-    gpuVertex.pos *= cuda_MD5Model->vertexMagnitudeMultiplier;
+            // Compute the normals for this frames skeleton using the weight normals from before
+            // We can comput the normals the same way we compute the vertices position, only we don't have to translate them
+            // (just rotate)
+            rotatedPoint = tempJoint.orientation * tempWeight.normal;
 
-    gpuVertex.normal = glm::normalize(gpuVertex.normal);
+            // Add to vertices normal and take weight bias into account
+            gpuVertex.normal = gpuVertex.normal + (rotatedPoint * tempWeight.bias);
+        }
 
-    if (cuda_MD5Model->isSwapYZNeeded) {
-        swapYandZ(gpuVertex.pos);
-        swapYandZ(gpuVertex.normal);
+        gpuVertex.pos *= cuda_MD5Model->vertexMagnitudeMultiplier;
+
+        gpuVertex.normal = glm::normalize(gpuVertex.normal);
+
+        if (cuda_MD5Model->isSwapYZNeeded) {
+            swapYandZ(gpuVertex.pos);
+            swapYandZ(gpuVertex.normal);
+        }
+
+        memcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + (subset.vertOffset + globalThreadIndx) * vertBytes,
+               &subset.gpuVertices[globalThreadIndx], vertBytes);
+    } 
+    
+    // Update the subset's buffer by copying i-th index to the mapped buffer
+    if (globalThreadIndx < subset.indicesCount) {
+        memcpy(cuda_extrVkMappedBuffer + (subset.indexOffset + globalThreadIndx) * indexBytes, &subset.indices[globalThreadIndx],
+               indexBytes);
     }
 }
 
@@ -628,7 +732,7 @@ __global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
     //}
 }
 
-void MD5CudaAnimation::update(float deltaTimeMS, int animationID, void* out_data, uint64_t verticesBufferOffset) {
+void MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset) {
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
     int threadsPerBlock = cuda_warpSize;
@@ -640,26 +744,45 @@ void MD5CudaAnimation::update(float deltaTimeMS, int animationID, void* out_data
                                                                                       deltaTimeMS, animationID);
     
     gpuKernelCheck();
-    cudaDeviceSynchronize();  // Wait for kernel to finish
+    cudaDeviceSynchronize();  // Wait for cuda_interpolatedSkeleton completion before updating the subsets
+
+    //static bool isFirstUpdate = true;
 
     for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
         auto& subset = cpu_MD5Model.subsets[i];
-        int32_t subsetVertices = subset.vertices.size();
+        int32_t subsetVertices = glm::max(subset.gpuVertices.size(), glm::max(subset.vertices.size(), subset.indices.size()));
         blocksPerGrid = subsetVertices / threadsPerBlock + 1;
-        updateAnimationChunk<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(cuda_MD5Model, cuda_interpolatedSkeleton, i);
+        updateAnimationChunk<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
+            cuda_MD5Model, cuda_interpolatedSkeleton, i, cuda_extrVkMappedBuffer, verticesBufferOffset);
 
         gpuKernelCheck();
-        cudaDeviceSynchronize();  // Wait for kernel to finish
-
-        // Update the subset's buffer
-        const uint32_t indexBytes = sizeof(subset.indices[0]);
-        const uint32_t vertBytes = sizeof(subset.gpuVertices[0]);
-
-        const uint32_t indicesSize = indexBytes * subset.indices.size();
-        const uint32_t verticesSize = vertBytes * subset.gpuVertices.size();
-
-        memcpy((char*)out_data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
-        cudaMemcpy((char*)out_data + verticesBufferOffset + subset.vertOffset * vertBytes, gpu_vertices[i], verticesSize,
-                   cudaMemcpyDeviceToHost);
+        
+        //if (isFirstUpdate) {
+        //    cudaDeviceSynchronize();  // Wait for kernel to finish
+        //
+        //    // Update the subset's buffer
+        //    const uint32_t indexBytes = sizeof(subset.indices[0]);
+        //    const uint32_t vertBytes = sizeof(subset.gpuVertices[0]);
+        //
+        //    const uint32_t indicesSize = indexBytes * subset.indices.size();
+        //    const uint32_t verticesSize = vertBytes * subset.gpuVertices.size();
+        //
+        //    cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
+        //               cudaMemcpyHostToDevice);
+        //    /*cudaMemcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + subset.vertOffset * vertBytes, gpu_vertices[i],
+        //               verticesSize, cudaMemcpyDeviceToHost);*/
+        //}
     }
+
+    /*if (isFirstUpdate) {
+        isFirstUpdate = false;
+    }*/
+
+    // Signal vulkan to continue with the updated buffers
+    cudaExternalSemaphoreSignalParams signalParams = {};
+    signalParams.flags = 0;
+    signalParams.params.fence.value = cuda_signalVkValue;
+    cudaExternalSemaphore_t cudaSem = (cudaExternalSemaphore_t)cuda_semaphoreHandle;
+    cudaCheckError(cudaSignalExternalSemaphoresAsync(&cudaSem, &signalParams, 1, (cudaStream_t)cuda_stream));
+    cuda_signalVkValue++;  // increment signal value for next synchronization with next Vulkan swapchain
 }

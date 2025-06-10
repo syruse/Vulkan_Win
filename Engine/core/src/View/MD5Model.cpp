@@ -7,6 +7,10 @@
 #include "PipelineCreatorTextured.h"
 #include "Utils.h"
 
+#ifdef _WIN32
+#include <vulkan/vulkan_win32.h>
+#endif
+
 #include "MD5CudaAnimation.h_cu"
 
 using namespace md5_animation;
@@ -15,55 +19,135 @@ void MD5Model::init() {
     auto p_devide = m_vkState._core.getDevice();
     assert(p_devide);
 
-    uint8_t vk_deviceUUID[VK_UUID_SIZE];
-    // getting the VK device
-    {
-        // Get the device ID properties (Vulkan 1.1 or later)
-        VkPhysicalDeviceIDPropertiesKHR idProperties;
-        idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES_KHR;
-        idProperties.pNext = nullptr;
-
-        VkPhysicalDeviceVulkan11Properties vulkan11Properties;
-        vulkan11Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
-        vulkan11Properties.pNext = &idProperties;
-
-        VkPhysicalDeviceProperties2 physicalDeviceProperties2;
-        physicalDeviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        physicalDeviceProperties2.pNext = &vulkan11Properties;
-
-        vkGetPhysicalDeviceProperties2(m_vkState._core.getPhysDevice(), &physicalDeviceProperties2);
-
-        // Access the device UUID
-        memcpy(vk_deviceUUID, vulkan11Properties.deviceUUID, VK_UUID_SIZE);
-    }
-
     std::vector<VertexData> vertices{};
     std::vector<uint32_t> indices{};
 
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
-
-        int cudaDevice = cuda::getCudaDevice(vk_deviceUUID, VK_UUID_SIZE);
-        if (cudaDevice > -1) {
-            mCudaAnimator = new MD5CudaAnimation(cudaDevice, m_MD5Model, m_isSwapYZNeeded, m_animationSpeedMultiplier,
-                                                 m_vertexMagnitudeMultiplier);
-        }
-
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
         const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();
         m_bufferSize = indicesSize + verticesSize;
 
-        Utils::VulkanCreateBuffer(p_devide, m_vkState._core.getPhysDevice(), m_bufferSize,
-                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_generalBuffer,
-                                  m_generalBufferMemory);
+        // TODO we have always two buffers, one for CPU and one for CUDA, but we can use only one buffer
+        // init CPU accessible clasic buffers
+        {
+            Utils::VulkanCreateBuffer(p_devide, m_vkState._core.getPhysDevice(), m_bufferSize,
+                                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CPU],
+                                      m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU]);
+            void* data;
+            vkMapMemory(p_devide, m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU], 0, m_bufferSize, 0, &data);
+            memcpy(data, indices.data(), (size_t)indicesSize);
+            memcpy((char*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
+            vkUnmapMemory(p_devide, m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU]);
 
-        void* data;
-        vkMapMemory(p_devide, m_generalBufferMemory, 0, m_bufferSize, 0, &data);
-        memcpy(data, indices.data(), (size_t)indicesSize);
-        memcpy((char*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
-        vkUnmapMemory(p_devide, m_generalBufferMemory);
+            m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU];
+            m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CPU];
+        }
+
+#if defined(USE_CUDA) && USE_CUDA
+        uint8_t vk_deviceUUID[VK_UUID_SIZE];
+        // getting the VK device
+        {
+            // Get the device ID properties (Vulkan 1.1 or later)
+            VkPhysicalDeviceIDPropertiesKHR idProperties;
+            idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES_KHR;
+            idProperties.pNext = nullptr;
+
+            VkPhysicalDeviceVulkan11Properties vulkan11Properties;
+            vulkan11Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+            vulkan11Properties.pNext = &idProperties;
+
+            VkPhysicalDeviceProperties2 physicalDeviceProperties2;
+            physicalDeviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            physicalDeviceProperties2.pNext = &vulkan11Properties;
+
+            vkGetPhysicalDeviceProperties2(m_vkState._core.getPhysDevice(), &physicalDeviceProperties2);
+
+            // Access the device UUID
+            memcpy(vk_deviceUUID, vulkan11Properties.deviceUUID, VK_UUID_SIZE);
+        }
+
+        int cudaDevice = cuda::getCudaDevice(vk_deviceUUID, VK_UUID_SIZE);
+        if (cudaDevice > -1) {
+            Utils::VulkanCreateExternalBuffer(p_devide, m_vkState._core.getPhysDevice(), m_bufferSize,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA],
+                m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA]);
+
+            // external win32 memory handle of m_generalBufferMemory
+            HANDLE win32VkBufMemoryHandle = 0;
+            {
+                VkMemoryGetWin32HandleInfoKHR vkMemoryGetWin32HandleInfoKHR = {};
+                vkMemoryGetWin32HandleInfoKHR.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+                vkMemoryGetWin32HandleInfoKHR.pNext = NULL;
+                vkMemoryGetWin32HandleInfoKHR.memory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
+                vkMemoryGetWin32HandleInfoKHR.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+                PFN_vkGetMemoryWin32HandleKHR fpGetMemoryWin32HandleKHR;
+                fpGetMemoryWin32HandleKHR =
+                    (PFN_vkGetMemoryWin32HandleKHR)vkGetDeviceProcAddr(p_devide, "vkGetMemoryWin32HandleKHR");
+                if (!fpGetMemoryWin32HandleKHR) {
+                    Utils::printLog(ERROR_PARAM, "Failed to retrieve vkGetMemoryWin32HandleKHR!");
+                }
+                if (fpGetMemoryWin32HandleKHR(p_devide, &vkMemoryGetWin32HandleInfoKHR, &win32VkBufMemoryHandle) != VK_SUCCESS) {
+                    Utils::printLog(ERROR_PARAM, "Failed to retrieve handle for buffer!");
+                }
+            }
+
+            // Create the semaphore to sync cuda and vulkan access to vertex buffer
+            {
+                VkSemaphoreCreateInfo semaphoreInfo = {};
+                semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+                VkExportSemaphoreCreateInfoKHR exportSemaphoreCreateInfo = {};
+                exportSemaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
+
+                VkSemaphoreTypeCreateInfo timelineCreateInfo;
+                timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+                timelineCreateInfo.pNext = NULL;
+                timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+                timelineCreateInfo.initialValue = 0;
+                exportSemaphoreCreateInfo.pNext = &timelineCreateInfo;
+
+                exportSemaphoreCreateInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+                semaphoreInfo.pNext = &exportSemaphoreCreateInfo;
+
+                if (vkCreateSemaphore(p_devide, &semaphoreInfo, nullptr, &mVkCudaSyncObject) != VK_SUCCESS) {
+                    Utils::printLog(ERROR_PARAM, "failed to create synchronization objects for a CUDA-Vulkan!");
+                }
+            }
+
+            // win32 semaphore handle of VkSemaphore for cuda
+            HANDLE win32VkSemaphoreHandle;
+            {
+                VkSemaphoreGetWin32HandleInfoKHR semaphoreGetWin32HandleInfoKHR = {};
+                semaphoreGetWin32HandleInfoKHR.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
+                semaphoreGetWin32HandleInfoKHR.pNext = NULL;
+                semaphoreGetWin32HandleInfoKHR.semaphore = mVkCudaSyncObject;
+                semaphoreGetWin32HandleInfoKHR.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+                PFN_vkGetSemaphoreWin32HandleKHR fpGetSemaphoreWin32HandleKHR;
+                fpGetSemaphoreWin32HandleKHR =
+                    (PFN_vkGetSemaphoreWin32HandleKHR)vkGetDeviceProcAddr(p_devide, "vkGetSemaphoreWin32HandleKHR");
+                if (!fpGetSemaphoreWin32HandleKHR) {
+                    Utils::printLog(ERROR_PARAM, "Failed to retrieve vkGetSemaphoreWin32HandleKHR!");
+                }
+                if (fpGetSemaphoreWin32HandleKHR(p_devide, &semaphoreGetWin32HandleInfoKHR, &win32VkSemaphoreHandle) !=
+                    VK_SUCCESS) {
+                    Utils::printLog(ERROR_PARAM, "Failed to retrieve handle for semaphore!");
+                }
+            }
+
+            mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize,
+                                                 (void*)win32VkSemaphoreHandle, m_MD5Model, m_isSwapYZNeeded, 
+                                                 m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier, mWaitCudaSignalValue);
+
+            m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
+            m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
+        }
+#endif
     } else {
         Utils::printLog(ERROR_PARAM, "Couldn't load md5 model:", m_md5ModelFileName);
     }
@@ -288,17 +372,24 @@ bool MD5Model::loadMD5Anim() {
     return true;
 }
 
-void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, void* out_data) {
+void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
-        mCudaAnimator->update(deltaTimeMS, animationID, out_data, m_verticesBufferOffset);
+        mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset);
     } else {
         Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
     }
 }
 
-void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, void* out_data) {
+void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
+
+    // Update the subsets vertex buffer in worker_threads
+    auto p_device = m_vkState._core.getDevice();
+    assert(p_device);
+    void* data;
+
+    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
 
     float currentFrame{0.0f};
     std::size_t frame0{0u};
@@ -380,9 +471,12 @@ void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, 
         const std::size_t indicesSize = indexBytes * subset.indices.size();
         const std::size_t verticesSize = vertBytes * subset.gpuVertices.size();
 
-        memcpy((char*)out_data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
-        memcpy((char*)out_data + m_verticesBufferOffset + subset.vertOffset * vertBytes, subset.gpuVertices.data(), verticesSize);
+        // we don't need to copy the indices all the time, they are not changing
+        // memcpy((char*)data + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize);
+        memcpy((char*)data + m_verticesBufferOffset + subset.vertOffset * vertBytes, subset.gpuVertices.data(), verticesSize);
     }
+
+    vkUnmapMemory(p_device, m_generalBufferMemory);
 }
 
 void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU) {
@@ -391,20 +485,18 @@ void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU) {
         return;
     }
     assert(m_MD5Model.animations[animationID].numFrames > 1);
-    // Update the subsets vertex buffer in worker_threads
-    auto p_device = m_vkState._core.getDevice();
-    assert(p_device);
-    void* data;
 
-    vkMapMemory(p_device, m_generalBufferMemory, 0u, m_bufferSize, 0, &data);
+    mIsCudaCalculationRequested = onGPU;
 
     if (mCudaAnimator && onGPU) {
-        updateAnimationOnGPU(deltaTimeMS, animationID, data);
+        m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
+        m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
+        updateAnimationOnGPU(deltaTimeMS, animationID);
     } else {
-        updateAnimationOnCPU(deltaTimeMS, animationID, data);
+        m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU];
+        m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CPU];
+        updateAnimationOnCPU(deltaTimeMS, animationID);
     }
-
-    vkUnmapMemory(p_device, m_generalBufferMemory);
 }
 
 void MD5Model::calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
@@ -827,10 +919,34 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
     return true;
 }
 
+void MD5Model::waitForCudaSignal(uint32_t descriptorSetIndex) const {
+    if (mCudaAnimator && mIsCudaCalculationRequested) {
+        auto p_devide = m_vkState._core.getDevice();
+        assert(p_devide);
+
+        static uint32_t lastDescriptorSetIndex = -1;
+
+        VkSemaphoreWaitInfo semaphoreWaitInfo = {};
+        semaphoreWaitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        semaphoreWaitInfo.pSemaphores = &mVkCudaSyncObject;
+        semaphoreWaitInfo.semaphoreCount = 1;
+        semaphoreWaitInfo.pValues = &mWaitCudaSignalValue;
+        vkWaitSemaphores(p_devide, &semaphoreWaitInfo, UINT64_MAX);
+
+        if (lastDescriptorSetIndex != descriptorSetIndex) {
+            lastDescriptorSetIndex = descriptorSetIndex;
+            // increment wait value to avoid deadlock in case of multiple draw calls for different swapchains
+            mWaitCudaSignalValue++;  
+        }
+    }
+}
+
 void MD5Model::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     assert(m_generalBuffer);
     assert(m_pipelineCreatorTextured);
     assert(m_pipelineCreatorTextured->getPipeline().get());
+
+    waitForCudaSignal(descriptorSetIndex);
 
     if (m_pipelineCreatorTextured->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
@@ -858,6 +974,8 @@ void MD5Model::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
     assert(m_generalBuffer);
     assert(pipelineCreator);
     assert(pipelineCreator->getPipeline().get());
+
+    waitForCudaSignal(descriptorSetIndex);
 
     if (pipelineCreator->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,

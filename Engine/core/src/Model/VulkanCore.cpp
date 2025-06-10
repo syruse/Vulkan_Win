@@ -3,6 +3,10 @@
 #include <vector>
 #include "Utils.h"
 
+#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
+#include <vulkan/vulkan_win32.h>
+#endif
+
 using namespace Utils;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
@@ -147,7 +151,12 @@ void VulkanCore::createInstance() {
 #ifdef _DEBUG
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif
-        VK_KHR_SURFACE_EXTENSION_NAME, m_winController->getVulkanWindowSurfaceExtension().data()};
+        VK_KHR_SURFACE_EXTENSION_NAME, 
+#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
+        VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+#endif
+        m_winController->getVulkanWindowSurfaceExtension().data()};
 
 #ifdef _DEBUG
     const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
@@ -195,7 +204,12 @@ void VulkanCore::createLogicalDevice() {
     qInfo.pQueuePriorities = &qPriorities;
     qInfo.queueFamilyIndex = m_gfxQueueFamily;
 
+#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
+    const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+                             VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME};
+#else
     const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+#endif  
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;

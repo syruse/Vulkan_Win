@@ -4,7 +4,12 @@
 #include <glm/gtc/quaternion.hpp>
 #include <vector>
 
-struct VertexData {
+#ifdef __CUDACC__
+struct __align__(16) VertexData
+#else
+struct alignas(16) VertexData
+#endif
+{
     glm::vec3 pos{0.0f};
     glm::vec3 normal{0.0f};
     glm::vec2 texCoord{0.0f};
