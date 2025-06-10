@@ -22,7 +22,11 @@ public:
 	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
-	~MD5CudaAnimation();
+	~MD5CudaAnimation() {
+		for (auto& cleanupFunc : cuda_cleanupFunctions) {
+			cleanupFunc();
+		}
+	}
 
 	void update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset);
 private:
@@ -36,5 +40,5 @@ private:
 	char* cuda_extrVkMappedBuffer;
 	void* cuda_semaphoreHandle = nullptr;
 	uint64_t cuda_signalVkValue = 1; // informs the Vulkan semaphore that the animation is ready
-	std::vector<VertexData*> gpu_vertices;//TODO
+	std::vector<std::function<void()>> cuda_cleanupFunctions;
 };

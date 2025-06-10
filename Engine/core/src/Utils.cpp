@@ -313,8 +313,9 @@ void VulkanCreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDevi
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = Utils::VulkanFindMemoryType(physicalDevice, memRequirements, properties);
 
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-        Utils::printLog(ERROR_PARAM, "failed to allocate buffer memory!");
+    auto status = vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory);
+    if (status != VK_SUCCESS) {
+        Utils::printLog(ERROR_PARAM, "failed to allocate buffer memory! ", status);
     }
 
     vkBindBufferMemory(device, buffer, bufferMemory, 0);

@@ -152,7 +152,8 @@ struct alignas(16) BoundingBox
     float animationSpeedMultiplier;
     float vertexMagnitudeMultiplier;
     bool isSwapYZNeeded;
-};
+    uint32_t vertBytes;   // Size of the vertex type in bytes
+    };
 }  // namespace md5_cuda_animation
 
 #ifndef defined(MD5_CUDA_VERBOSE_LOG)
@@ -301,6 +302,14 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
     // Allocate device memory for the interpolated skeleton
     cudaCheckError(cudaMalloc((void**)&cuda_interpolatedSkeleton, cuda_maxJointsPerSkeleton * sizeof(md5_cuda_animation::Joint)));
 
+    cuda_cleanupFunctions.push_back([this]() {
+        cudaCheckError(cudaFree(cuda_interpolatedSkeleton));
+        cudaCheckError(cudaFree(cuda_MD5Model));
+        cudaCheckError(cudaStreamDestroy((cudaStream_t)cuda_stream));
+        cudaCheckError(cudaDestroyExternalSemaphore((cudaExternalSemaphore_t)cuda_semaphoreHandle));
+        cudaCheckError(cudaFree(cuda_extrVkMappedBuffer));
+    });
+
     md5_cuda_animation::Model3D host_MD5Model;
 
     host_MD5Model.numSubsets = static_cast<int>(_MD5Model.subsets.size());
@@ -312,6 +321,7 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
     host_MD5Model.animationSpeedMultiplier = animationSpeedMultiplier;
     host_MD5Model.vertexMagnitudeMultiplier = vertexMagnitudeMultiplier;
     host_MD5Model.isSwapYZNeeded = isSwapYZNeeded;
+    host_MD5Model.vertBytes = sizeof(VertexData);
 
     thrust::host_vector<md5_cuda_animation::Joint> joints(_MD5Model.joints.size());
     for (size_t i = 0u; i < _MD5Model.joints.size(); ++i) {
@@ -326,6 +336,9 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         cudaCheckError(cudaMalloc((void**)&joints_device, joints_size));
         cudaCheckError(cudaMemcpy(joints_device, joints.data(), joints_size, cudaMemcpyHostToDevice));
         host_MD5Model.joints = joints_device;  // Set the pointer to the device memory
+
+        cuda_cleanupFunctions.push_back([joints_device]() {
+            cudaCheckError(cudaFree(joints_device)); });
     }
 
     // Allocate device memory for subsets
@@ -333,6 +346,10 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
     size_t subset_size = sizeof(md5_cuda_animation::ModelSubset);
     size_t subsets_size = _MD5Model.subsets.size() * subset_size;
     cudaMalloc((void**)&subsets_device, subsets_size);
+
+    cuda_cleanupFunctions.push_back([subsets_device]() {
+        cudaCheckError(cudaFree(subsets_device));
+    });
 
     thrust::host_vector<md5_cuda_animation::ModelSubset> subsets(_MD5Model.subsets.size());
 
@@ -375,9 +392,6 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         cudaCheckError(cudaMemcpy(gpuvertices_device, gpuVertices.data(), gpuvertices_size, cudaMemcpyHostToDevice));
         subsets[i].gpuVertices = gpuvertices_device;  // holds real device address
 
-        // TODO
-        gpu_vertices.push_back(gpuvertices_device);
-
         thrust::host_vector<uint32_t> indices(_MD5Model.subsets[i].indices.size());
         indices.assign(_MD5Model.subsets[i].indices.begin(), _MD5Model.subsets[i].indices.end());
 
@@ -405,6 +419,13 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
 
         // Copy subsets[i] to device
         cudaCheckError(cudaMemcpy(&subsets_device[i], &subsets[i], subset_size, cudaMemcpyHostToDevice));
+        
+        cuda_cleanupFunctions.push_back([weights_device, indices_device, gpuvertices_device, md5vertices_device]() {
+            cudaCheckError(cudaFree(weights_device)); 
+            cudaCheckError(cudaFree(indices_device));
+            cudaCheckError(cudaFree(gpuvertices_device));
+            cudaCheckError(cudaFree(md5vertices_device));
+        });
     }
 
     // Set the pointer to the device memory
@@ -415,6 +436,10 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
     size_t animation_size = sizeof(md5_cuda_animation::ModelAnimation);
     size_t animations_size = _MD5Model.animations.size() * animation_size;
     cudaMalloc((void**)&animations_device, animations_size);
+
+    cuda_cleanupFunctions.push_back([animations_device]() {
+        cudaCheckError(cudaFree(animations_device));
+    });
 
     thrust::host_vector<md5_cuda_animation::ModelAnimation> animations(_MD5Model.animations.size());
 
@@ -497,6 +522,13 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         cudaCheckError(cudaMalloc((void**)&frameSkeleton_device, frameSkeleton_size));
         //cudaCheckError(cudaMemcpy(&(animations_device[i].frameSkeleton), frameSkeleton_device, sizeof(md5_cuda_animation::Joint**), cudaMemcpyHostToDevice));
 
+        cuda_cleanupFunctions.push_back([jointInfos_device, frameData_device, baseFrameJoints_device, frameBounds_device]() {
+            cudaCheckError(cudaFree(jointInfos_device));
+            cudaCheckError(cudaFree(frameData_device));
+            cudaCheckError(cudaFree(baseFrameJoints_device));
+            cudaCheckError(cudaFree(frameBounds_device));
+        });
+
         thrust::host_vector<md5_cuda_animation::Joint*> frameSkeleton(_MD5Model.animations[i].frameSkeleton.size());
         for (size_t j = 0u; j < _MD5Model.animations[i].frameSkeleton.size(); ++j) {
             thrust::host_vector<md5_cuda_animation::Joint> frameSkeletonJoints(_MD5Model.animations[i].frameSkeleton[j].size());
@@ -512,6 +544,10 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
             cudaCheckError(cudaMalloc((void**)&frameSkeletonJoints_device, frameSkeletonJoints_size));
             cudaCheckError(cudaMemcpy(frameSkeletonJoints_device, frameSkeletonJoints.data(), frameSkeletonJoints_size, cudaMemcpyHostToDevice));
             frameSkeleton[j] = frameSkeletonJoints_device;
+
+            cuda_cleanupFunctions.push_back([frameSkeletonJoints_device]() {
+                cudaCheckError(cudaFree(frameSkeletonJoints_device));
+            });
         }
 
         cudaCheckError(cudaMemcpy(frameSkeleton_device, frameSkeleton.data(), frameSkeleton_size, cudaMemcpyHostToDevice));
@@ -525,6 +561,23 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
 
     // Copying the host model to device except the pointers
     cudaCheckError(cudaMemcpy(cuda_MD5Model, &host_MD5Model, sizeof(md5_cuda_animation::Model3D), cudaMemcpyHostToDevice));
+
+
+    // Update the device model with the initial data
+    // Indices data is copied only once
+    for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
+        auto& subset = cpu_MD5Model.subsets[i];
+
+        cudaDeviceSynchronize();  // Wait for kernel to be idle
+        
+        // Update the subset's buffer
+        const uint32_t indexBytes = sizeof(subset.indices[0]);
+        
+        const uint32_t indicesSize = indexBytes * subset.indices.size();
+        
+        cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
+                   cudaMemcpyHostToDevice);
+    }
 }
 
 __device__ void swapYandZ(glm::vec3& vertexData) {
@@ -550,17 +603,18 @@ __global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
     }
     md5_cuda_animation::ModelSubset& subset = cuda_MD5Model->subsets[subsetId];
 
+    /** Note use can use cuda_MD5Model.indexBytes and cuda_MD5Model.vertBytes instead of the shared memory to calculate and sync ecery time
     __shared__ uint32_t indexBytes;
     __shared__ uint32_t vertBytes;
 
     // init shared data on the first thread for each SM block
-    if (blockThreadXIndx == 0) {
+    if (blockThreadXIndx == 0 && cuda_MD5Model.indexBytes == 0) {
         indexBytes = sizeof(subset.indices[0]);
         vertBytes = sizeof(subset.gpuVertices[0]);
     }
 
     // Synchronize threads within the warp to ensure all threads have the same indexBytes, vertBytes values
-    __syncwarp();
+    __syncwarp();*/
 
     // Note: we have more indices than vertices, so we need to skip the globalThreadIndx that are out of bounds
 
@@ -605,15 +659,16 @@ __global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
             swapYandZ(gpuVertex.normal);
         }
 
-        memcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + (subset.vertOffset + globalThreadIndx) * vertBytes,
-               &subset.gpuVertices[globalThreadIndx], vertBytes);
+        memcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + (subset.vertOffset + globalThreadIndx) * cuda_MD5Model->vertBytes,
+               &subset.gpuVertices[globalThreadIndx], cuda_MD5Model->vertBytes);
     } 
     
+    // Note: we don't need to update indices every time, since they are static and already copied to the mapped buffer
     // Update the subset's buffer by copying i-th index to the mapped buffer
-    if (globalThreadIndx < subset.indicesCount) {
-        memcpy(cuda_extrVkMappedBuffer + (subset.indexOffset + globalThreadIndx) * indexBytes, &subset.indices[globalThreadIndx],
-               indexBytes);
-    }
+    /*if (globalThreadIndx < subset.indicesCount) {
+        memcpy(cuda_extrVkMappedBuffer + (subset.indexOffset + globalThreadIndx) * cuda_MD5Model->indexBytes,
+               &subset.indices[globalThreadIndx], cuda_MD5Model->indexBytes);
+    }*/
 }
 
 __device__ void calculateInterpolatedSkeleton(md5_cuda_animation::Model3D* cuda_MD5Model, int animationID,
@@ -746,37 +801,16 @@ void MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verti
     gpuKernelCheck();
     cudaDeviceSynchronize();  // Wait for cuda_interpolatedSkeleton completion before updating the subsets
 
-    //static bool isFirstUpdate = true;
-
     for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
         auto& subset = cpu_MD5Model.subsets[i];
-        int32_t subsetVertices = glm::max(subset.gpuVertices.size(), glm::max(subset.vertices.size(), subset.indices.size()));
+        int32_t subsetVertices = glm::max(subset.gpuVertices.size(),
+                     subset.vertices.size());  // subset.indices.size() is not used since indices are copied only once
         blocksPerGrid = subsetVertices / threadsPerBlock + 1;
         updateAnimationChunk<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
             cuda_MD5Model, cuda_interpolatedSkeleton, i, cuda_extrVkMappedBuffer, verticesBufferOffset);
 
         gpuKernelCheck();
-        
-        //if (isFirstUpdate) {
-        //    cudaDeviceSynchronize();  // Wait for kernel to finish
-        //
-        //    // Update the subset's buffer
-        //    const uint32_t indexBytes = sizeof(subset.indices[0]);
-        //    const uint32_t vertBytes = sizeof(subset.gpuVertices[0]);
-        //
-        //    const uint32_t indicesSize = indexBytes * subset.indices.size();
-        //    const uint32_t verticesSize = vertBytes * subset.gpuVertices.size();
-        //
-        //    cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
-        //               cudaMemcpyHostToDevice);
-        //    /*cudaMemcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + subset.vertOffset * vertBytes, gpu_vertices[i],
-        //               verticesSize, cudaMemcpyDeviceToHost);*/
-        //}
     }
-
-    /*if (isFirstUpdate) {
-        isFirstUpdate = false;
-    }*/
 
     // Signal vulkan to continue with the updated buffers
     cudaExternalSemaphoreSignalParams signalParams = {};
