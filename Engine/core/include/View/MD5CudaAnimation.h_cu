@@ -19,6 +19,7 @@ namespace cuda {
 class MD5CudaAnimation {
 public:
 	MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize, void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model,
+	                 uint64_t instancesBufferOffset, char* instancesData, uint64_t instancesSize,
 	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;

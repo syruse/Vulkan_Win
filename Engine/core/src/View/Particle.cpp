@@ -36,7 +36,7 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
 
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
-        uint32_t limit = static_cast<uint32_t>(m_zFar);
+        int32_t limit = static_cast<int32_t>(m_zFar);
         std::uniform_int_distribution<> distr(-limit, limit);  // define the range
         for (std::size_t i = 0u; i < m_instances.size(); ++i) {
             auto& instance = m_instances[i];

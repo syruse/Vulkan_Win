@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <random>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE  /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
@@ -109,13 +110,33 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    m_semiTransparentModels.emplace_back(new ObjModel(
-        *this, *mTextureFactory, "tree.obj"sv, static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 12.0f));
-    m_semiTransparentModels.emplace_back(
-        new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
-                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-                     static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 12.0f, 0.1f));
+    // we create 250 trees
+    {
+        std::vector<I3DModel::Instance> instances{250};
+
+        std::random_device rd;
+        std::mt19937 gen(rd());  // seed the generator
+        int32_t limit = static_cast<int32_t>(Z_FAR);
+        std::uniform_int_distribution<> distr(-limit, limit);  // define the range
+        std::uniform_real<> distrScale(0.5, 1.0);
+        for (std::size_t i = 0u; i < instances.size(); ++i) {
+            auto& instance = instances[i];
+            instance.posShift.z = distr(gen);
+            instance.posShift.x = distr(gen);
+            instance.posShift.y = 0.0f;
+
+            instance.scale = distrScale(gen);
+        }
+
+        m_semiTransparentModels.emplace_back(
+            new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+                         nullptr, 12.0f, instances));
+        m_semiTransparentModels.emplace_back(
+            new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+                         nullptr, 12.0f, 0.1f, true, instances));
+    }
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,

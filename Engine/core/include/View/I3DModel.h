@@ -29,24 +29,32 @@ public:
         std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
     };
 
+    struct alignas(16) Instance {
+        glm::vec3 posShift{0.0f};
+        float scale{1.0f};
+    };
+
     struct Vertex : VertexData {
 
         bool operator==(const Vertex& other) const {
             return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
         }
 
-        static const VkVertexInputBindingDescription& getBindingDescription() {
-            static VkVertexInputBindingDescription bindingDescription{};
+        static const std::array<VkVertexInputBindingDescription, 2u>& getBindingDescription() {
+            static std::array<VkVertexInputBindingDescription, 2u> bindingDescriptions{};
+            bindingDescriptions[0].binding = 0;
+            bindingDescriptions[0].stride = sizeof(Vertex);
+            bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-            bindingDescription.binding = 0;
-            bindingDescription.stride = sizeof(Vertex);
-            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+            bindingDescriptions[1].binding = 1;
+            bindingDescriptions[1].stride = sizeof(Instance);
+            bindingDescriptions[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-            return bindingDescription;
+            return bindingDescriptions;
         }
 
-        static const std::array<VkVertexInputAttributeDescription, 5>& getAttributeDescriptions() {
-            static std::array<VkVertexInputAttributeDescription, 5> attributeDescriptions{};
+        static const std::array<VkVertexInputAttributeDescription, 7>& getAttributeDescriptions() {
+            static std::array<VkVertexInputAttributeDescription, 7> attributeDescriptions{};
 
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;
@@ -73,16 +81,27 @@ public:
             attributeDescriptions[4].format = VK_FORMAT_R32G32B32_SFLOAT;
             attributeDescriptions[4].offset = offsetof(Vertex, bitangent);
 
+            attributeDescriptions[5].binding = 1;
+            attributeDescriptions[5].location = 5;
+            attributeDescriptions[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            attributeDescriptions[5].offset = offsetof(Instance, posShift);
+
+            attributeDescriptions[6].binding = 1;
+            attributeDescriptions[6].location = 6;
+            attributeDescriptions[6].format = VK_FORMAT_R32_SFLOAT;
+            attributeDescriptions[6].offset = offsetof(Instance, scale);
+
             return attributeDescriptions;
         }
     };
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f) noexcept(true);
+             PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
+             const std::vector<Instance>& instances = {}) noexcept(true);
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             float vertexMagnitudeMultiplier = 1.0f) noexcept(true)
-        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier) {
+             float vertexMagnitudeMultiplier = 1.0f, const std::vector<Instance>& instances = {}) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier, instances) {
     }
 
     virtual ~I3DModel() {
@@ -115,8 +134,10 @@ protected:
     PipelineCreatorFootprint* m_pipelineCreatorFootprint{nullptr};
     VulkanState::Model m_modelMtrx{glm::mat4(1.0f)};
     VkDeviceSize m_verticesBufferOffset{0U};
+    VkDeviceSize m_instancesBufferOffset{0U};
     VkBuffer m_generalBuffer{nullptr};
     VkDeviceMemory m_generalBufferMemory{nullptr};
+    std::vector<Instance> m_instances{};
 };
 
 namespace std {

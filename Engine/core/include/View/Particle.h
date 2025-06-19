@@ -15,12 +15,12 @@ public:
         DEFAULT = 0,      // regular particles effect(parallel to user face)
         ZPLANE_SPREADING  // spreading along z-plane(which perpendicular to z-plane)
     };
-    struct Origin {
+    struct alignas(16) Origin {
         glm::vec3 pos{0.0f};
         glm::vec3 scaleMin{1.0f};
         glm::vec3 scaleMax{1.0f};
     };
-    struct Instance {
+    struct alignas(16) Instance {
         glm::vec3 pos{0.0f};
         glm::vec3 acceleration{0.0f};
         float lifeDuration{1.0f};  // ms allocated for life of particle

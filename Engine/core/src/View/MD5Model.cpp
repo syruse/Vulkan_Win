@@ -21,13 +21,19 @@ void MD5Model::init() {
 
     std::vector<VertexData> vertices{};
     std::vector<uint32_t> indices{};
+    // Note: we must have at least one instance to draw
+    if (m_instances.empty()) {
+        m_instances.push_back({glm::vec3(0.0f), 1.0f});
+    }
 
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
         const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();
-        m_bufferSize = indicesSize + verticesSize;
+        m_instancesBufferOffset = indicesSize + verticesSize;
+        const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
+        m_bufferSize = m_instancesBufferOffset + instancesSize;
 
         // TODO we have always two buffers, one for CPU and one for CUDA, but we can use only one buffer
         // init CPU accessible clasic buffers
@@ -41,6 +47,7 @@ void MD5Model::init() {
             vkMapMemory(p_devide, m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU], 0, m_bufferSize, 0, &data);
             memcpy(data, indices.data(), (size_t)indicesSize);
             memcpy((char*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
+            memcpy((char*)data + m_instancesBufferOffset, m_instances.data(), instancesSize);
             vkUnmapMemory(p_devide, m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU]);
 
             m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU];
@@ -140,8 +147,8 @@ void MD5Model::init() {
                 }
             }
 
-            mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize,
-                                                 (void*)win32VkSemaphoreHandle, m_MD5Model, m_isSwapYZNeeded, 
+            mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
+                                                 m_MD5Model, m_instancesBufferOffset, (char*)m_instances.data(), instancesSize, m_isSwapYZNeeded, 
                                                  m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier, mWaitCudaSignalValue);
 
             m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
@@ -957,15 +964,16 @@ void MD5Model::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, ui
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
 
     for (const auto& subset : m_MD5Model.subsets) {
         vkCmdBindDescriptorSets(
             cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
             m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subset.realMaterialId), 1, &dynamicOffset);
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), 1, subset.indexOffset, subset.vertOffset, 0);
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_instances.size(), subset.indexOffset,
+                         subset.vertOffset, 0);
     }
 }
 
@@ -986,15 +994,16 @@ void MD5Model::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
 
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
 
     for (const auto& subset : m_MD5Model.subsets) {
         vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout, 0,
                                 1, pipelineCreator->getDescriptorSet(descriptorSetIndex, subset.realMaterialId), 1,
                                 &dynamicOffset);
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), 1, subset.indexOffset, subset.vertOffset, 0);
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_instances.size(), subset.indexOffset,
+                         subset.vertOffset, 0);
     }
 }
 

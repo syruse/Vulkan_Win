@@ -9,7 +9,7 @@ void PipelineCreatorFootprint::createPipeline() {
     assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    auto bindingDescription = I3DModel::Vertex::getBindingDescription();
+    auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
 
     std::array<VkVertexInputAttributeDescription, 2u> attributeDescriptions{};
     attributeDescriptions[0].binding = 0;
@@ -22,8 +22,8 @@ void PipelineCreatorFootprint::createPipeline() {
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[1].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::texCoord);
 
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 

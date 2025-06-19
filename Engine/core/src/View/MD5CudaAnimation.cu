@@ -240,7 +240,9 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
 }  // namespace cuda
 
 MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize,
-                                   void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, bool isSwapYZNeeded, float animationSpeedMultiplier,
+                                   void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, 
+                                   uint64_t instancesBufferOffset, char* instancesData,
+                                   uint64_t instancesSize, bool isSwapYZNeeded, float animationSpeedMultiplier,
                                    float vertexMagnitudeMultiplier, uint64_t cuda_signalVkValue)
     : cpu_MD5Model(_MD5Model), cuda_signalVkValue(cuda_signalVkValue) {
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
@@ -576,6 +578,13 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         const uint32_t indicesSize = indexBytes * subset.indices.size();
         
         cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
+                   cudaMemcpyHostToDevice);
+    }
+
+    // Instances data is copied only once
+    {
+        cudaDeviceSynchronize();  // Wait for kernel to be idle
+        cudaMemcpy((char*)cuda_extrVkMappedBuffer + instancesBufferOffset, instancesData, instancesSize,
                    cudaMemcpyHostToDevice);
     }
 }

@@ -105,11 +105,11 @@ Pipeliner::Pipeliner() {
     m_shaderStageCreateInfo[3].pName = "main";
 
     _vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    static auto bindingDescription = I3DModel::Vertex::getBindingDescription();
+    static auto bindingDescriptions = I3DModel::Vertex::getBindingDescription();
     static auto attributeDescriptions = I3DModel::Vertex::getAttributeDescriptions();
-    _vertexInputInfo.vertexBindingDescriptionCount = 1;
     _vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    _vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    _vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    _vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     _vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     _pipelineIACreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

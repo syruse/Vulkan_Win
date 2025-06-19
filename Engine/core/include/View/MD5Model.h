@@ -14,8 +14,10 @@ public:
     MD5Model(std::string_view md5ModelFileName, std::string_view md5AnimFileName, const VulkanState& vulkanState,
              TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
-             float animationSpeedMultiplier = 1.0f, bool isSwapYZNeeded = true) noexcept(true)
-        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier),
+             float animationSpeedMultiplier = 1.0f, bool isSwapYZNeeded = true,
+             const std::vector<Instance>& instances = {}) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier,
+                   instances),
           m_md5ModelFileName(md5ModelFileName),
           m_md5AnimFileName(md5AnimFileName),
           m_animationSpeedMultiplier(animationSpeedMultiplier),

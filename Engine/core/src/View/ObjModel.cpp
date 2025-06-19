@@ -16,10 +16,43 @@ void ObjModel::init() {
 
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
+    // Note: we must have at least one instance to draw
+    if (m_instances.empty()) {
+        m_instances.push_back({glm::vec3(0.0f), 1.0f});
+    }
 
     load(vertices, indices);
-    Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
-                               vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+    {
+        const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
+        m_verticesBufferOffset = indicesSize;
+        const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();
+        m_instancesBufferOffset = indicesSize + verticesSize;
+        const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
+        const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        Utils::VulkanCreateBuffer(p_device, m_vkState._core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
+                                  stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(p_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, indices.data(), (size_t)indicesSize);
+        memcpy((char*)data + m_verticesBufferOffset, vertices.data(), verticesSize);
+        memcpy((char*)data + m_instancesBufferOffset, m_instances.data(), instancesSize);
+        vkUnmapMemory(p_device, stagingBufferMemory);
+
+        Utils::VulkanCreateBuffer(
+            p_device, m_vkState._core.getPhysDevice(), bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_generalBuffer, m_generalBufferMemory);
+
+        Utils::VulkanCopyBuffer(p_device, m_vkState._queue, m_vkState._cmdBufPool, stagingBuffer, m_generalBuffer, bufferSize);
+
+        vkDestroyBuffer(p_device, stagingBuffer, nullptr);
+        vkFreeMemory(p_device, stagingBufferMemory, nullptr);
+    }
 }
 
 void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
@@ -193,9 +226,9 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     for (const auto& subObjects : m_SubObjects) {
@@ -204,7 +237,7 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
                 cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
                 m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subObjects[0].realMaterialId), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
-                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_instances.size(),
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);
             }
         }
@@ -225,9 +258,9 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     for (const auto& subObjects : m_SubObjects) {
@@ -235,7 +268,7 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
             vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout,
                                     0, 1, pipelineCreator->getDescriptorSet(descriptorSetIndex), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
-                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1,
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_instances.size(),
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);
             }
         }
@@ -257,9 +290,9 @@ void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetInde
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorFootprint->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(
@@ -267,7 +300,7 @@ void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetInde
         m_pipelineCreatorFootprint->getDescriptorSet(descriptorSetIndex, m_Tracks[0].realMaterialFootprintId), 1, &dynamicOffset);
 
     for (const auto& subObject : m_Tracks) {
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), 1, static_cast<uint32_t>(subObject.indexOffset), 0,
-                         0);
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_instances.size(),
+                         static_cast<uint32_t>(subObject.indexOffset), 0, 0);
     }
 }

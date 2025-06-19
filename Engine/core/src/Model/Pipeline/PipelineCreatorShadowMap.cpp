@@ -9,7 +9,7 @@ void PipelineCreatorShadowMap::createPipeline() {
     assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    auto bindingDescription = I3DModel::Vertex::getBindingDescription();
+    auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
 
     VkVertexInputAttributeDescription attributeDescription{};
     attributeDescription.binding = 0;
@@ -17,8 +17,8 @@ void PipelineCreatorShadowMap::createPipeline() {
     attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
     attributeDescription.offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::pos);
 
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     vertexInputInfo.vertexAttributeDescriptionCount = 1;
     vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
 
