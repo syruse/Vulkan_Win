@@ -25,6 +25,8 @@ public:
     Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target = glm::vec3(0.0f, 0.0f, 0.0f));
     void resetPerspective(const Perstective& perstective);
 
+    const Perstective& getPerspective() const { return m_Perstpective; }
+
     const ViewProj& viewProjMat() {
         return mViewProj;
     }
@@ -49,6 +51,7 @@ public:
     void move(EDirection dir);
 
 private:
+    Perstective m_Perstpective;
     glm::vec3 mTarget{0.0f, 0.0f, 0.0f};
     glm::vec3 mFromTargetToEye{0.0f, 0.0f, 0.0f};
     ViewProj mViewProj{};

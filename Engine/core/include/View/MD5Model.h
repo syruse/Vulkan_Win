@@ -42,7 +42,7 @@ public:
     void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
                                 uint32_t dynamicOffset) const override;
     void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const override;
-    void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true) override;
+    void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true, const glm::mat4& viewProj = glm::mat4(1.0f)) override;
     float radius() const override {
         return m_radius;
     }

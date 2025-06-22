@@ -127,4 +127,5 @@ private:
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
     Camera mCamera;
+    ViewProj mViewProj{};
 };

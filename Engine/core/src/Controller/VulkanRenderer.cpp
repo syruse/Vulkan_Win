@@ -30,6 +30,7 @@
 
 static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
+static constexpr float FOV = 65.0f;
 
 // light source position offset from the camera
 const static glm::vec3 _lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
@@ -44,7 +45,7 @@ float _footPrintRedrawingK = 0.7f;
 VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
     : VulkanState(appName, width, height),
       mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
-      mCamera({65.0f, static_cast<float>(width) / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
+      mCamera({FOV, static_cast<float>(width) / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
@@ -110,22 +111,31 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    // we create 250 trees
+    // we create a lot of trees
     {
         std::vector<I3DModel::Instance> instances{250};
 
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
         int32_t limit = static_cast<int32_t>(Z_FAR);
-        std::uniform_int_distribution<> distr(-limit, limit);  // define the range
         std::uniform_real<> distrScale(0.5, 1.0);
+        int32_t gridLen = std::floor(std::sqrt(instances.size()));
+        float step = 2.0f * limit / gridLen;
+        //std::uniform_real<> distr(0.0f, 0.1f * step);
+        const float startX = -limit;
+        const float startZ = -limit;
         for (std::size_t i = 0u; i < instances.size(); ++i) {
             auto& instance = instances[i];
-            instance.posShift.z = distr(gen);
-            instance.posShift.x = distr(gen);
+            //float xOffset = distr(gen);
+            //float zOffset = distr(gen);
             instance.posShift.y = 0.0f;
 
             instance.scale = distrScale(gen);
+
+            auto row = i / gridLen;
+            auto col = i % gridLen;
+            instance.posShift.x = startX + row * step;
+            instance.posShift.z = startZ + col * step;
         }
 
         m_semiTransparentModels.emplace_back(
@@ -348,42 +358,41 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& cameraViewProj = mCamera.viewProjMat();
     const auto& model = mCamera.targetModelMat();
 
-    static ViewProj viewProj{};
-    viewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
-    viewProj.viewProjInverse = glm::inverse(viewProj.viewProj);
-    viewProj.lightViewProj = m_lightViewProj;
-    viewProj.proj = cameraViewProj.proj;
-    viewProj.view = cameraViewProj.view;
-    viewProj.footPrintViewProj = m_footPrintViewProj;
+    mViewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
+    mViewProj.viewProjInverse = glm::inverse(mViewProj.viewProj);
+    mViewProj.lightViewProj = m_lightViewProj;
+    mViewProj.proj = cameraViewProj.proj;
+    mViewProj.view = cameraViewProj.view;
+    mViewProj.footPrintViewProj = m_footPrintViewProj;
 
     // Copy VP data
     void* data;
-    vkMapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage], 0, sizeof(viewProj), 0, &data);
-    memcpy(data, &viewProj, sizeof(viewProj));
+    vkMapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage], 0, sizeof(mViewProj), 0, &data);
+    memcpy(data, &mViewProj, sizeof(mViewProj));
     vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
     // Copy Model data except skybox
     for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->model = glm::mat4(1.0f);
-        pModel->MVP = viewProj.viewProj;
+        pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
     Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
     pModel->model = model;
-    pModel->MVP = viewProj.viewProj * pModel->model;
+    pModel->MVP = mViewProj.viewProj * pModel->model;
 
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
     skyboxRotationDegree += 0.0001f * kDelay;
     glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
     pModel->model = rotMat;
-    pModel->MVP = viewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
+    pModel->MVP = mViewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
     for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->model = glm::mat4(1.0f);
-        pModel->MVP = viewProj.viewProj;
+        pModel->MVP = mViewProj.viewProj;
     }
 
     _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
@@ -1031,7 +1040,7 @@ bool VulkanRenderer::renderScene() {
     ret_status = !windowQueueMSG.isQuited;
 
     if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
-        mCamera.resetPerspective({65.0f, (float)windowQueueMSG.width / windowQueueMSG.height, 0.01f, 1000.0f});
+        mCamera.resetPerspective({FOV, (float)windowQueueMSG.width / windowQueueMSG.height, Z_NEAR, Z_FAR});
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
         return ret_status;
     }
@@ -1080,15 +1089,16 @@ bool VulkanRenderer::renderScene() {
     submitInfo.signalSemaphoreCount = 1;
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
-    for (auto& model : m_models) {
-        model->update(deltaTime);
-    }
-    const bool isGPUCalculationFavorable =
-        windowQueueMSG.hmiStates ? windowQueueMSG.hmiStates->gpuAnimationEnabled.second : true;
-    for (auto& model : m_semiTransparentModels) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable);
-    }
     updateUniformBuffer(ImageIndex, deltaTime);
+    const bool isGPUCalculationFavorable = windowQueueMSG.hmiStates ? windowQueueMSG.hmiStates->gpuAnimationEnabled.second : true;
+
+    for (auto& model : m_models) {
+        model->update(deltaTime, 0, isGPUCalculationFavorable, mViewProj.viewProj);
+    }
+
+    for (auto& model : m_semiTransparentModels) {
+        model->update(deltaTime, 0, isGPUCalculationFavorable, mViewProj.viewProj);
+    }
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
     CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);

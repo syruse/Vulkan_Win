@@ -106,8 +106,14 @@ public:
 
     virtual ~I3DModel() {
         std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
-        vkDestroyBuffer(m_vkState._core.getDevice(), m_generalBuffer, nullptr);
-        vkFreeMemory(m_vkState._core.getDevice(), m_generalBufferMemory, nullptr);
+        if (m_generalBuffer)
+            vkDestroyBuffer(m_vkState._core.getDevice(), m_generalBuffer, nullptr);
+        if (m_generalBufferMemory)
+            vkFreeMemory(m_vkState._core.getDevice(), m_generalBufferMemory, nullptr);
+        if (m_instancesBuffer)
+            vkDestroyBuffer(m_vkState._core.getDevice(), m_instancesBuffer, nullptr);
+        if (m_instancesBufferMemory)
+            vkFreeMemory(m_vkState._core.getDevice(), m_instancesBufferMemory, nullptr);
     }
 
     virtual void init() = 0;
@@ -122,7 +128,12 @@ public:
         return 0.0f;
     }
 
-    virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true) {
+    /** Note: 
+    *   - param 'viewProj'
+    *   actual for models with many instances
+    *   sorting and discarding instances (which are outside the frustum)
+    */
+    virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true, const glm::mat4& viewProj = glm::mat4(1.0f)) {
         // actual for animated models
     }
 
@@ -138,6 +149,8 @@ protected:
     VkBuffer m_generalBuffer{nullptr};
     VkDeviceMemory m_generalBufferMemory{nullptr};
     std::vector<Instance> m_instances{};
+    VkBuffer m_instancesBuffer{nullptr};
+    VkDeviceMemory m_instancesBufferMemory{nullptr};
 };
 
 namespace std {

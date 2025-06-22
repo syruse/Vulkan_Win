@@ -6,7 +6,8 @@ glm::vec3 _leftDir = glm::vec3(-1.0f, 0.0f, 0.0f);
 glm::vec3 _upDir = glm::vec3(0.0f, 1.0f, 0.0f);
 };  // namespace
 
-Camera::Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target) : mTarget(target) {
+Camera::Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target)
+    : m_Perstpective(perstective), mTarget(target) {
     mFromTargetToEye = eye - target;
     mViewProj.view = glm::lookAt(eye, target, _upDir);
     mStartCameraRotation = glm::angleAxis(glm::radians(0.0f), _upDir);
@@ -15,6 +16,7 @@ Camera::Camera(const Perstective& perstective, const glm::vec3& eye, const glm::
 }
 
 void Camera::resetPerspective(const Perstective& perstective) {
+    m_Perstpective = perstective;
     mViewProj.proj = glm::perspective(glm::radians(perstective.fovy), perstective.aspect, perstective.near_, perstective.far_);
 
     /**

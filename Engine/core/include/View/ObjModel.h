@@ -12,6 +12,7 @@ public:
     }
 
     void init() override;
+    void update(float deltaTimeMS, int animationID, bool onGPU, const glm::mat4& viewProj = glm::mat4(1.0f)) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
     void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
                                 uint32_t dynamicOffset) const override;
@@ -28,4 +29,5 @@ private:
     std::vector<std::vector<SubObject>> m_SubObjects{};
     std::vector<SubObject> m_Tracks{};
     float mRadius{0.0f};
+    uint32_t m_activeInstances{0u};
 };
