@@ -110,10 +110,14 @@ public:
             vkDestroyBuffer(m_vkState._core.getDevice(), m_generalBuffer, nullptr);
         if (m_generalBufferMemory)
             vkFreeMemory(m_vkState._core.getDevice(), m_generalBufferMemory, nullptr);
-        if (m_instancesBuffer)
-            vkDestroyBuffer(m_vkState._core.getDevice(), m_instancesBuffer, nullptr);
-        if (m_instancesBufferMemory)
-            vkFreeMemory(m_vkState._core.getDevice(), m_instancesBufferMemory, nullptr);
+        for (auto& buf : m_instancesBuffer) {
+            if (buf)
+                vkDestroyBuffer(m_vkState._core.getDevice(), buf, nullptr);
+        }   
+        for (auto& mem : m_instancesBufferMemory) {
+            if (mem)
+                vkFreeMemory(m_vkState._core.getDevice(), mem, nullptr);
+        }
     }
 
     virtual void init() = 0;
@@ -133,7 +137,8 @@ public:
     *   actual for models with many instances
     *   sorting and discarding instances (which are outside the frustum)
     */
-    virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true, const glm::mat4& viewProj = glm::mat4(1.0f)) {
+    virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true,
+                        uint32_t currentImage = 0u, const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f) {
         // actual for animated models
     }
 
@@ -149,8 +154,8 @@ protected:
     VkBuffer m_generalBuffer{nullptr};
     VkDeviceMemory m_generalBufferMemory{nullptr};
     std::vector<Instance> m_instances{};
-    VkBuffer m_instancesBuffer{nullptr};
-    VkDeviceMemory m_instancesBufferMemory{nullptr};
+    std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBuffer{};
+    std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBufferMemory{};
 };
 
 namespace std {

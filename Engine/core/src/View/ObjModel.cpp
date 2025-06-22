@@ -30,18 +30,22 @@ void ObjModel::init() {
         m_instancesBufferOffset = 0u;  // separete buffer for instances instead common buffer
         const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
         const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
-        Utils::VulkanCreateBuffer(p_device, m_vkState._core.getPhysDevice(), bufferSize,
-                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-                                  m_instancesBuffer, m_instancesBufferMemory);
-        void* data;
-        vkMapMemory(p_device, m_instancesBufferMemory, 0, bufferSize, 0, &data);
-        memcpy((char*)data + m_instancesBufferOffset, m_instances.data(), instancesSize);
-        vkUnmapMemory(p_device, m_instancesBufferMemory);
+        for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; i++) {
+            Utils::VulkanCreateBuffer(p_device, m_vkState._core.getPhysDevice(), bufferSize,
+                                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      m_instancesBuffer[i], m_instancesBufferMemory[i]);
+            void* data;
+            vkMapMemory(p_device, m_instancesBufferMemory[i], 0, bufferSize, 0, &data);
+            memcpy((char*)data + m_instancesBufferOffset, m_instances.data(), instancesSize);
+            vkUnmapMemory(p_device, m_instancesBufferMemory[i]);
+        }
     }
 }
 
-void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, const glm::mat4& viewProj) {
+void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,
+                      float z_far) {
+    assert(currentImage < VulkanState::MAX_FRAMES_IN_FLIGHT);
     if (m_instances.size() <= 1u ) {
         // nothing to update
         return; 
@@ -49,7 +53,7 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, const glm:
     std::vector<Instance> instances;
     instances.reserve(m_instances.size());
 
-    const float biasValue = mRadius + 0.1f * 1000.0f; //TODO
+    const float biasValue = mRadius + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the camera
     glm::vec4 biasCubeValues[9] = { 
                                viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f),  // -Y
                                viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f),
@@ -88,9 +92,9 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, const glm:
     const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
 
     void* data;
-    vkMapMemory(p_device, m_instancesBufferMemory, 0, bufferSize, 0, &data);
+    vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
     memcpy((char*)data + m_instancesBufferOffset, instances.data(), instancesSize);
-    vkUnmapMemory(p_device, m_instancesBufferMemory);
+    vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
 }
 
 void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
@@ -264,7 +268,7 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer};
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer[descriptorSetIndex]};
     VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
     vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -296,7 +300,7 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer};
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer[descriptorSetIndex]};
     VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
     vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -328,7 +332,7 @@ void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetInde
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorFootprint->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer};
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_instancesBuffer[descriptorSetIndex]};
     VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
     vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);

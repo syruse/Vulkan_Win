@@ -117,7 +117,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
-        int32_t limit = static_cast<int32_t>(Z_FAR);
+        float limit = Z_FAR;
         std::uniform_real<> distrScale(0.5, 1.0);
         int32_t gridLen = std::floor(std::sqrt(instances.size()));
         float step = 2.0f * limit / gridLen;
@@ -1088,17 +1088,18 @@ bool VulkanRenderer::renderScene() {
     submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
     submitInfo.signalSemaphoreCount = 1;
 
-    recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
     updateUniformBuffer(ImageIndex, deltaTime);
     const bool isGPUCalculationFavorable = windowQueueMSG.hmiStates ? windowQueueMSG.hmiStates->gpuAnimationEnabled.second : true;
 
     for (auto& model : m_models) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, mViewProj.viewProj);
+        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR);
     }
 
     for (auto& model : m_semiTransparentModels) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, mViewProj.viewProj);
+        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR);
     }
+
+    recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
 
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
     CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);

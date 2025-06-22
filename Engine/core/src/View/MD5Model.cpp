@@ -486,7 +486,8 @@ void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID) 
     vkUnmapMemory(p_device, m_generalBufferMemory);
 }
 
-void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU, const glm::mat4& viewProj) {
+void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,
+                      float z_far) {
     if (m_MD5Model.animations.size() <= animationID) {
         Utils::printLog(ERROR_PARAM, "wrong animationID: ", animationID);
         return;

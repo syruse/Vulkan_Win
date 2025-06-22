@@ -12,7 +12,8 @@ public:
     }
 
     void init() override;
-    void update(float deltaTimeMS, int animationID, bool onGPU, const glm::mat4& viewProj = glm::mat4(1.0f)) override;
+    void update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage = 0u,
+                const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
     void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
                                 uint32_t dynamicOffset) const override;
