@@ -26,6 +26,8 @@ void MD5Model::init() {
         m_instances.push_back({glm::vec3(0.0f), 1.0f});
     }
 
+    m_activeInstances = m_instances.size();
+
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
@@ -148,7 +150,7 @@ void MD5Model::init() {
             }
 
             mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
-                                                 m_MD5Model, m_instancesBufferOffset, (char*)m_instances.data(), instancesSize, m_isSwapYZNeeded, 
+                                                 m_MD5Model, m_instancesBufferOffset, m_instances, m_isSwapYZNeeded, 
                                                  m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier, mWaitCudaSignalValue);
 
             m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
@@ -379,16 +381,16 @@ bool MD5Model::loadMD5Anim() {
     return true;
 }
 
-void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID) {
+void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
-        mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset);
+        m_activeInstances = mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset, viewProj, z_far);
     } else {
         Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
     }
 }
 
-void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID) {
+void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
 
     // Update the subsets vertex buffer in worker_threads
@@ -499,11 +501,11 @@ void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
     if (mCudaAnimator && onGPU) {
         m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
         m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
-        updateAnimationOnGPU(deltaTimeMS, animationID);
+        updateAnimationOnGPU(deltaTimeMS, animationID, viewProj, z_far);
     } else {
         m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU];
         m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CPU];
-        updateAnimationOnCPU(deltaTimeMS, animationID);
+        updateAnimationOnCPU(deltaTimeMS, animationID, viewProj, z_far);
     }
 }
 
@@ -973,7 +975,7 @@ void MD5Model::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, ui
         vkCmdBindDescriptorSets(
             cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
             m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subset.realMaterialId), 1, &dynamicOffset);
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_instances.size(), subset.indexOffset,
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_activeInstances, subset.indexOffset,
                          subset.vertOffset, 0);
     }
 }
@@ -1003,7 +1005,7 @@ void MD5Model::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
         vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout, 0,
                                 1, pipelineCreator->getDescriptorSet(descriptorSetIndex, subset.realMaterialId), 1,
                                 &dynamicOffset);
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_instances.size(), subset.indexOffset,
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subset.indices.size()), m_activeInstances, subset.indexOffset,
                          subset.vertOffset, 0);
     }
 }

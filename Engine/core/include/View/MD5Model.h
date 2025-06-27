@@ -55,8 +55,8 @@ private:
     void updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo);
     void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
                                        std::size_t indexFrom, std::size_t indexTo);
-    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID);
-    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID);
+    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far);
+    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far);
     inline void waitForCudaSignal(uint32_t descriptorSetIndex) const;
 
 private:
@@ -78,4 +78,5 @@ private:
     // CPU accessible buffer and CUDA\GPU accessible buffer
     VkBuffer m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
     VkDeviceMemory m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
+    uint32_t m_activeInstances{0u};
 };

@@ -29,11 +29,6 @@ public:
         std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
     };
 
-    struct alignas(16) Instance {
-        glm::vec3 posShift{0.0f};
-        float scale{1.0f};
-    };
-
     struct Vertex : VertexData {
 
         bool operator==(const Vertex& other) const {

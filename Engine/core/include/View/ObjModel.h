@@ -25,10 +25,12 @@ public:
 
 private:
     void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+    void filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
+                         std::vector<Instance>& activeInstances);
 
     std::string m_path{};
     std::vector<std::vector<SubObject>> m_SubObjects{};
     std::vector<SubObject> m_Tracks{};
     float mRadius{0.0f};
-    uint32_t m_activeInstances{0u};
+    std::vector<Instance> m_activeInstances{};
 };

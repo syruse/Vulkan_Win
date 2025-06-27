@@ -1,6 +1,16 @@
 #pragma once
 
+// it can be included in regular cpp files
+
 #include "VertexData.h"
+
+#ifdef __CUDACC__
+#define CUDA_VERSION 8000  // GLM works with ver higher than 8.0
+#define GLM_FORCE_CUDA
+#include <glm/mat4x4.hpp>
+#else
+#include <glm/mat4x4.hpp>
+#endif
 
 #ifndef NDEBUG
 #define MD5_CUDA_VERBOSE_LOG
@@ -19,7 +29,7 @@ namespace cuda {
 class MD5CudaAnimation {
 public:
 	MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize, void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model,
-	                 uint64_t instancesBufferOffset, char* instancesData, uint64_t instancesSize,
+	                 uint64_t instancesBufferOffset, const std::vector<Instance>& instances,
 	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
@@ -29,7 +39,7 @@ public:
 		}
 	}
 
-	void update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset);
+	uint32_t update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, const glm::mat4& viewProj, float z_far);
 private:
     md5_animation::Model3D& cpu_MD5Model;
 	void* cuda_stream;
@@ -42,4 +52,11 @@ private:
 	void* cuda_semaphoreHandle = nullptr;
 	uint64_t cuda_signalVkValue = 1; // informs the Vulkan semaphore that the animation is ready
 	std::vector<std::function<void()>> cuda_cleanupFunctions;
+	glm::mat4* cuda_ViewProj = nullptr;
+	uint64_t cuda_instancesBufferOffset = 0u;
+    uint32_t cuda_numInstances = 0u;
+	Instance* cuda_instances_original = nullptr;
+	uint32_t* cuda_instances_flags = nullptr; // whether the instance is active or not
+	Instance* cuda_instances_filtered = nullptr;
+	uint32_t* cuda_activeInstancesCount = nullptr;
 };

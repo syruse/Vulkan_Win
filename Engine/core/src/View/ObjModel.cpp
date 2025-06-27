@@ -9,6 +9,7 @@
 #include <tiny_obj_loader.h>
 #include <algorithm>
 #include <unordered_map>
+#include <future>
 
 void ObjModel::init() {
     auto p_device = m_vkState._core.getDevice();
@@ -21,7 +22,8 @@ void ObjModel::init() {
         m_instances.push_back({glm::vec3(0.0f), 1.0f});
     }
 
-    m_activeInstances = static_cast<uint32_t>(m_instances.size());
+    m_activeInstances.reserve(m_instances.size());
+    m_activeInstances.assign(m_instances.begin(), m_instances.end());
 
     load(vertices, indices);
     Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
@@ -50,25 +52,72 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
         // nothing to update
         return; 
     }
-    std::vector<Instance> instances;
-    instances.reserve(m_instances.size());
+
+    m_activeInstances.clear();
 
     const float biasValue = mRadius + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the camera
-    glm::vec4 biasCubeValues[9] = { 
-                               viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f),  // -Y
-                               viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f),
-                               viewProj * glm::vec4(-biasValue, -biasValue, biasValue, 1.0f),
-                               viewProj * glm::vec4(biasValue, -biasValue, biasValue, 1.0f),
-                               viewProj * glm::vec4(-biasValue, biasValue, -biasValue, 1.0f), // +Y
-                               viewProj * glm::vec4(biasValue, biasValue, -biasValue, 1.0f),
-                               viewProj * glm::vec4(-biasValue, biasValue, biasValue, 1.0f),
-                               viewProj * glm::vec4(biasValue, biasValue, biasValue, 1.0f),
-                               glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)  // no bias (for center point)
-    };
+
 
     static const float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
 
-    for (const auto& instance : m_instances) {
+    std::array<std::future<void>, 4u> workerThreads;
+    std::array<std::vector<Instance>, 4u> activeInstances;
+    std::size_t chunkOffset{0u};
+    std::size_t indexFrom{0u};
+    std::size_t indexTo{0u};
+    std::size_t workerThreadIndexPlusOne{0u};
+
+    chunkOffset = m_instances.size() / workerThreads.size();
+    for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
+        workerThreadIndexPlusOne = workerThreadIndex + 1U;
+        indexFrom = workerThreadIndex * chunkOffset;
+        indexTo = workerThreadIndexPlusOne >= workerThreads.size() ? m_instances.size()
+                                                                   : workerThreadIndexPlusOne * chunkOffset;
+        workerThreads[workerThreadIndex] = std::async(std::launch::async, &ObjModel::filterInstances, this,
+                                                      indexFrom, indexTo, biasValue, std::cref(viewProj), std::ref(activeInstances[workerThreadIndex]));
+    }
+
+    for (auto& thread : workerThreads) {
+        thread.wait();
+    }
+
+    m_activeInstances.clear();
+    for (const auto& instances : activeInstances) {
+        m_activeInstances.insert(m_activeInstances.end(), instances.begin(), instances.end());
+    }
+
+    auto p_device = m_vkState._core.getDevice();
+    assert(p_device);
+    const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
+    const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
+
+    void* data;
+    vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
+    memcpy((char*)data + m_instancesBufferOffset, m_activeInstances.data(), instancesSize);
+    vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
+}
+
+void ObjModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
+                               std::vector<Instance>& activeInstances) {
+    assert(indexFrom < m_instances.size() && indexTo <= m_instances.size());
+    static const float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
+
+    activeInstances.clear();
+
+    glm::vec4 biasCubeValues[9] = {
+        viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f),  // -Y
+        viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f),
+        viewProj * glm::vec4(-biasValue, -biasValue, biasValue, 1.0f),
+        viewProj * glm::vec4(biasValue, -biasValue, biasValue, 1.0f),
+        viewProj * glm::vec4(-biasValue, biasValue, -biasValue, 1.0f),  // +Y
+        viewProj * glm::vec4(biasValue, biasValue, -biasValue, 1.0f),
+        viewProj * glm::vec4(-biasValue, biasValue, biasValue, 1.0f),
+        viewProj * glm::vec4(biasValue, biasValue, biasValue, 1.0f),
+        glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)  // no bias (for center point)
+    };
+
+    for (std::size_t i = indexFrom; i < indexTo; i++) {
+        Instance& instance = m_instances[i];
         glm::vec4 clipOrig = viewProj * glm::vec4(instance.scale * instance.posShift, 1.0f);
         bool isTestPassed = false;
         for (const auto& bias : biasCubeValues) {
@@ -82,19 +131,8 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
             }
         }
         if (isTestPassed)
-            instances.push_back(instance);
+            activeInstances.push_back(instance);
     }
-    m_activeInstances = static_cast<uint32_t>(instances.size());
-
-    auto p_device = m_vkState._core.getDevice();
-    assert(p_device);
-    const VkDeviceSize instancesSize = sizeof(instances[0]) * m_activeInstances;
-    const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
-
-    void* data;
-    vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
-    memcpy((char*)data + m_instancesBufferOffset, instances.data(), instancesSize);
-    vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
 }
 
 void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
@@ -279,7 +317,7 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
                 cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
                 m_pipelineCreatorTextured->getDescriptorSet(descriptorSetIndex, subObjects[0].realMaterialId), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
-                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances,
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances.size(),
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);
             }
         }
@@ -310,7 +348,7 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
             vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout,
                                     0, 1, pipelineCreator->getDescriptorSet(descriptorSetIndex), 1, &dynamicOffset);
             for (const auto& subObject : subObjects) {
-                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances,
+                vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances.size(),
                                  static_cast<uint32_t>(subObject.indexOffset), 0, 0);
             }
         }
@@ -342,7 +380,7 @@ void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetInde
         m_pipelineCreatorFootprint->getDescriptorSet(descriptorSetIndex, m_Tracks[0].realMaterialFootprintId), 1, &dynamicOffset);
 
     for (const auto& subObject : m_Tracks) {
-        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances,
+        vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances.size(),
                          static_cast<uint32_t>(subObject.indexOffset), 0, 0);
     }
 }

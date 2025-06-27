@@ -6,8 +6,8 @@
 #include <device_launch_parameters.h>
 #include <device_functions.h>
 
-#include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
 
 #define CUDA_VERSION 8000  // GLM works with ver higher than 8.0
 #define GLM_FORCE_CUDA
@@ -241,12 +241,14 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
 
 MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize,
                                    void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, 
-                                   uint64_t instancesBufferOffset, char* instancesData,
-                                   uint64_t instancesSize, bool isSwapYZNeeded, float animationSpeedMultiplier,
+                                   uint64_t instancesBufferOffset, const std::vector<Instance>& instances, 
+                                   bool isSwapYZNeeded, float animationSpeedMultiplier,
                                    float vertexMagnitudeMultiplier, uint64_t cuda_signalVkValue)
-    : cpu_MD5Model(_MD5Model), cuda_signalVkValue(cuda_signalVkValue) {
+    : cpu_MD5Model(_MD5Model), cuda_signalVkValue(cuda_signalVkValue), cuda_instancesBufferOffset(instancesBufferOffset) {
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
            _MD5Model.joints.size() > 0u);
+
+    cudaCheckError(cudaMalloc((void**)&cuda_ViewProj, sizeof(glm::mat4)));
 
     // import the Vulkan buffer memory to CUDA space
     {
@@ -310,6 +312,7 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         cudaCheckError(cudaStreamDestroy((cudaStream_t)cuda_stream));
         cudaCheckError(cudaDestroyExternalSemaphore((cudaExternalSemaphore_t)cuda_semaphoreHandle));
         cudaCheckError(cudaFree(cuda_extrVkMappedBuffer));
+        cudaCheckError(cudaFree(cuda_ViewProj));
     });
 
     md5_cuda_animation::Model3D host_MD5Model;
@@ -577,15 +580,33 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         
         const uint32_t indicesSize = indexBytes * subset.indices.size();
         
-        cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
-                   cudaMemcpyHostToDevice);
+        cudaCheckError(cudaMemcpy((char*)cuda_extrVkMappedBuffer + subset.indexOffset * indexBytes, subset.indices.data(), indicesSize,
+                   cudaMemcpyHostToDevice));
     }
 
-    // Instances data is copied only once
+    // Instances data initialization
     {
         cudaDeviceSynchronize();  // Wait for kernel to be idle
-        cudaMemcpy((char*)cuda_extrVkMappedBuffer + instancesBufferOffset, instancesData, instancesSize,
-                   cudaMemcpyHostToDevice);
+        const uint64_t instancesSize = sizeof(instances[0]) * instances.size();
+        cudaCheckError(cudaMalloc((void**)&cuda_instances_original, instancesSize));
+        cudaCheckError(cudaMalloc((void**)&cuda_instances_filtered, instancesSize));
+        cudaCheckError(cudaMemcpy(cuda_instances_original, instances.data(), instancesSize, cudaMemcpyHostToDevice));
+        cudaCheckError(cudaMemcpy((char*)cuda_extrVkMappedBuffer + instancesBufferOffset, cuda_instances_original, instancesSize,
+                                  cudaMemcpyDeviceToDevice));
+        cudaCheckError(cudaMemcpy(cuda_instances_filtered, cuda_instances_original, instancesSize, cudaMemcpyDeviceToDevice));
+        cudaCheckError(cudaMalloc((void**)&cuda_instances_flags, instancesSize));
+        cudaCheckError(cudaMemset(cuda_instances_flags, 0, instancesSize));
+
+        cudaCheckError(cudaMallocHost((void**)&cuda_activeInstancesCount, sizeof(uint32_t)));   
+
+        cuda_cleanupFunctions.push_back([this]() {
+            cudaCheckError(cudaFree(cuda_instances_original));
+            cudaCheckError(cudaFree(cuda_instances_filtered));
+            cudaCheckError(cudaFree(cuda_instances_flags));
+            cudaCheckError(cudaFree(cuda_activeInstancesCount));
+        });
+
+        cuda_numInstances = instances.size();
     }
 }
 
@@ -796,19 +817,99 @@ __global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
     //}
 }
 
-void MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset) {
+__global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instance* cuda_instances_original, uint32_t* cuda_instances_flags, 
+                                      Instance* cuda_instances_filtered, glm::mat4* cuda_viewProj, uint32_t cuda_numInstances,
+                                      char* cuda_extrVkMappedBuffer, uint64_t cuda_instancesBufferOffset, float z_far) {
+    // Unique thread index among all blocks
+    int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
+    // thread index within one block
+    int blockThreadXIndx = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+
+    if (globalThreadIndx >= cuda_numInstances) {
+        return;  // Out of bounds
+    }
+
+    glm::mat4& viewProj = *cuda_viewProj;
+
+    __shared__ float biasValue;
+    __shared__ glm::vec4 biasCubeValues[9];
+
+    // init shared data on the first thread for each SM block
+    if (blockThreadXIndx == 0) {
+        biasValue = 228;  // 10 /*TODO mRadius*/ + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the
+                          // camera
+        biasCubeValues[0] = viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f);  // -Y
+        biasCubeValues[1] = viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f);
+        biasCubeValues[2] = viewProj * glm::vec4(-biasValue, -biasValue, biasValue, 1.0f);
+        biasCubeValues[3] = viewProj * glm::vec4(biasValue, -biasValue, biasValue, 1.0f);
+        biasCubeValues[4] = viewProj * glm::vec4(-biasValue, biasValue, -biasValue, 1.0f);  // +Y
+        biasCubeValues[5] = viewProj * glm::vec4(biasValue, biasValue, -biasValue, 1.0f);
+        biasCubeValues[6] = viewProj * glm::vec4(-biasValue, biasValue, biasValue, 1.0f);
+        biasCubeValues[7] = viewProj * glm::vec4(biasValue, biasValue, biasValue, 1.0f);
+        biasCubeValues[8] = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);  // no bias (for center point)
+    }
+
+    // Synchronize threads within the warp to ensure all threads have the same bias values
+    __syncwarp();
+
+    const float maxLimitVal = 1.0f + FLT_EPSILON;  // float epsilon is used to avoid precision issues
+    Instance& instance = cuda_instances_original[globalThreadIndx];
+    glm::vec4 clipOrig = viewProj * glm::vec4(instance.scale * instance.posShift, 1.0f);
+    cuda_instances_flags[globalThreadIndx] = 0;
+    for (const auto& bias : biasCubeValues) {
+        glm::vec4 clip = clipOrig + bias;
+        glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
+        // z is in range [0, 1] for NDC, so we can check it against 0.0f and maxLimitVal
+        if (glm::abs(ndc.x) <= maxLimitVal && glm::abs(ndc.y) <= maxLimitVal && ndc.z <= maxLimitVal &&
+            ndc.z >= 0.0f - FLT_EPSILON) {
+            cuda_instances_flags[globalThreadIndx] = 1;  // visible instance
+            break;
+        }
+    }
+    // Synchronize threads to ensure all threads have completed the calculation of i'th instance before proceeding
+    __syncthreads();
+
+    // Update the filtered instances buffer
+    if (globalThreadIndx == 0) {
+        uint32_t visibleInstances = 0;
+        for (uint32_t i = 0; i < cuda_numInstances; i++) {
+            if (cuda_instances_flags[i] == 1) {
+                cuda_instances_filtered[visibleInstances] = cuda_instances_original[i];
+                visibleInstances++;
+            }
+        }
+        const uint64_t instancesSize = sizeof(Instance) * visibleInstances;
+        memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, (char*)cuda_instances_filtered, instancesSize);
+        *out_activeInstancesCount = visibleInstances;  // Update the count of active instances
+    }
+}
+
+uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, const glm::mat4& viewProj,
+                              float z_far) {
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
+
+    cudaCheckError(cudaMemcpy(cuda_ViewProj, &viewProj, sizeof(glm::mat4), cudaMemcpyHostToDevice));
+
     int threadsPerBlock = cuda_warpSize;
     int blocksPerGrid = cuda_SMs;
 
-    blocksPerGrid = cpu_MD5Model.animations[animationID].numJoints / threadsPerBlock + 1;
+    // Filter instances based on the view projection matrix and z_far
+    if (cuda_numInstances > 1u) {
+        blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
+        cuda_filter_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
+            cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,
+            cuda_numInstances, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset, z_far);
+        gpuKernelCheck();
+    }
 
+    blocksPerGrid = cpu_MD5Model.animations[animationID].numJoints / threadsPerBlock + 1;
     cuda_md5_update<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(cuda_MD5Model, cuda_interpolatedSkeleton,
                                                                                       deltaTimeMS, animationID);
-    
     gpuKernelCheck();
     cudaDeviceSynchronize();  // Wait for cuda_interpolatedSkeleton completion before updating the subsets
+
+    uint32_t activeInstancesCount = *cuda_activeInstancesCount;
 
     for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
         auto& subset = cpu_MD5Model.subsets[i];
@@ -828,4 +929,6 @@ void MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verti
     cudaExternalSemaphore_t cudaSem = (cudaExternalSemaphore_t)cuda_semaphoreHandle;
     cudaCheckError(cudaSignalExternalSemaphoresAsync(&cudaSem, &signalParams, 1, (cudaStream_t)cuda_stream));
     cuda_signalVkValue++;  // increment signal value for next synchronization with next Vulkan swapchain
+
+    return activeInstancesCount;
 }

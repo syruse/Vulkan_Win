@@ -22,6 +22,11 @@ struct alignas(16) VertexData
     glm::vec3 bitangent{0.0f};
 };
 
+struct alignas(16) Instance {
+    glm::vec3 posShift{0.0f};
+    float scale{1.0f};
+};
+
 namespace md5_animation {
 struct MD5Vertex {
     // gpu data

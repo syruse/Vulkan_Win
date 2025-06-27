@@ -113,7 +113,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     // we create a lot of trees
     {
-        std::vector<I3DModel::Instance> instances{250};
+        std::vector<Instance> instances{250};
 
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
