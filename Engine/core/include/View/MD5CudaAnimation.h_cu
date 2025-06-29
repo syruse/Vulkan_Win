@@ -29,7 +29,7 @@ namespace cuda {
 class MD5CudaAnimation {
 public:
 	MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize, void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model,
-	                 uint64_t instancesBufferOffset, const std::vector<Instance>& instances,
+	                 uint64_t instancesBufferOffset, const std::vector<Instance>& instances, float radius,
 	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
@@ -59,4 +59,5 @@ private:
 	uint32_t* cuda_instances_flags = nullptr; // whether the instance is active or not
 	Instance* cuda_instances_filtered = nullptr;
 	uint32_t* cuda_activeInstancesCount = nullptr;
+	float cuda_radius = 1.0f;
 };

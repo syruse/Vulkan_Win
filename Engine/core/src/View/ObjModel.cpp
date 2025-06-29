@@ -118,10 +118,10 @@ void ObjModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float
 
     for (std::size_t i = indexFrom; i < indexTo; i++) {
         Instance& instance = m_instances[i];
-        glm::vec4 clipOrig = viewProj * glm::vec4(instance.scale * instance.posShift, 1.0f);
+        glm::vec4 clipOrig = viewProj * glm::vec4(instance.posShift, 1.0f);
         bool isTestPassed = false;
         for (const auto& bias : biasCubeValues) {
-            glm::vec4 clip = clipOrig + bias;
+            glm::vec4 clip = clipOrig + instance.scale * bias;
             glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
             // z is in range [0, 1] for NDC, so we can check it against 0.0f and maxLimitVal
             if (glm::abs(ndc.x) <= maxLimitVal && glm::abs(ndc.y) <= maxLimitVal && ndc.z <= maxLimitVal &&

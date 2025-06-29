@@ -11,6 +11,8 @@
 
 #define CUDA_VERSION 8000  // GLM works with ver higher than 8.0
 #define GLM_FORCE_CUDA
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE  /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -242,9 +244,12 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
 MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize,
                                    void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, 
                                    uint64_t instancesBufferOffset, const std::vector<Instance>& instances, 
-                                   bool isSwapYZNeeded, float animationSpeedMultiplier,
+                                   float radius, bool isSwapYZNeeded, float animationSpeedMultiplier,
                                    float vertexMagnitudeMultiplier, uint64_t cuda_signalVkValue)
-    : cpu_MD5Model(_MD5Model), cuda_signalVkValue(cuda_signalVkValue), cuda_instancesBufferOffset(instancesBufferOffset) {
+    : cpu_MD5Model(_MD5Model),
+      cuda_signalVkValue(cuda_signalVkValue),
+      cuda_instancesBufferOffset(instancesBufferOffset),
+      cuda_radius(radius) {
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
            _MD5Model.joints.size() > 0u);
 
@@ -818,8 +823,8 @@ __global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
 }
 
 __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instance* cuda_instances_original, uint32_t* cuda_instances_flags, 
-                                      Instance* cuda_instances_filtered, glm::mat4* cuda_viewProj, uint32_t cuda_numInstances,
-                                      char* cuda_extrVkMappedBuffer, uint64_t cuda_instancesBufferOffset, float z_far) {
+                                      Instance* cuda_instances_filtered, glm::mat4* cuda_viewProj, uint32_t cuda_numInstances, char* cuda_extrVkMappedBuffer,
+                                      uint64_t cuda_instancesBufferOffset, float z_far, float radius) {
     // Unique thread index among all blocks
     int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
     // thread index within one block
@@ -836,8 +841,7 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
 
     // init shared data on the first thread for each SM block
     if (blockThreadXIndx == 0) {
-        biasValue = 228;  // 10 /*TODO mRadius*/ + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the
-                          // camera
+        biasValue = radius + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the  camera
         biasCubeValues[0] = viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f);  // -Y
         biasCubeValues[1] = viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f);
         biasCubeValues[2] = viewProj * glm::vec4(-biasValue, -biasValue, biasValue, 1.0f);
@@ -854,16 +858,18 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
 
     const float maxLimitVal = 1.0f + FLT_EPSILON;  // float epsilon is used to avoid precision issues
     Instance& instance = cuda_instances_original[globalThreadIndx];
-    glm::vec4 clipOrig = viewProj * glm::vec4(instance.scale * instance.posShift, 1.0f);
+    glm::vec4 clipOrig = viewProj * glm::vec4(instance.posShift, 1.0f);
     cuda_instances_flags[globalThreadIndx] = 0;
     for (const auto& bias : biasCubeValues) {
-        glm::vec4 clip = clipOrig + bias;
+        glm::vec4 clip = clipOrig + instance.scale * bias;
         glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
         // z is in range [0, 1] for NDC, so we can check it against 0.0f and maxLimitVal
         if (glm::abs(ndc.x) <= maxLimitVal && glm::abs(ndc.y) <= maxLimitVal && ndc.z <= maxLimitVal &&
             ndc.z >= 0.0f - FLT_EPSILON) {
             cuda_instances_flags[globalThreadIndx] = 1;  // visible instance
-            break;
+            /** Note: we don't have to use 'break' since gpu driver can not understand what thread of warp is stopped, it affects warp overall
+            * break; 
+            */
         }
     }
     // Synchronize threads to ensure all threads have completed the calculation of i'th instance before proceeding
@@ -889,7 +895,7 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
 
-    cudaCheckError(cudaMemcpy(cuda_ViewProj, &viewProj, sizeof(glm::mat4), cudaMemcpyHostToDevice));
+    cudaCheckError(cudaMemcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4), cudaMemcpyHostToDevice));
 
     int threadsPerBlock = cuda_warpSize;
     int blocksPerGrid = cuda_SMs;
@@ -899,7 +905,7 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
         blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
         cuda_filter_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
             cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,
-            cuda_numInstances, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset, z_far);
+            cuda_numInstances, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset, z_far, cuda_radius);
         gpuKernelCheck();
     }
 

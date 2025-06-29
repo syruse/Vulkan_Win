@@ -29,6 +29,10 @@ void MD5Model::init() {
     m_activeInstances = m_instances.size();
 
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
+        {
+            auto& bounds = m_MD5Model.animations[0].frameBounds[0];
+            m_radius = m_vertexMagnitudeMultiplier * glm::distance(bounds.min, bounds.max);
+        }
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
@@ -150,7 +154,7 @@ void MD5Model::init() {
             }
 
             mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
-                                                 m_MD5Model, m_instancesBufferOffset, m_instances, m_isSwapYZNeeded, 
+                                                 m_MD5Model, m_instancesBufferOffset, m_instances, m_radius, m_isSwapYZNeeded, 
                                                  m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier, mWaitCudaSignalValue);
 
             m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
