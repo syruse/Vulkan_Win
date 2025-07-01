@@ -123,8 +123,8 @@ public:
     virtual void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     }
 
-    virtual float radius() const {
-        return 0.0f;
+    virtual float radius() const final {
+        return m_radius;
     }
 
     /** Note: 
@@ -138,8 +138,16 @@ public:
     }
 
 protected:
+    void sortInstances(uint32_t currentImage, const glm::mat4& viewProj, float z_far, uint32_t activePoolThreads = 4u);
+
+private:
+    void filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
+                         std::vector<Instance>& activeInstances);
+
+protected:
     const VulkanState& m_vkState;
     TextureFactory& m_textureFactory;
+    float m_radius{0.0f};
     float m_vertexMagnitudeMultiplier{1.0f};
     PipelineCreatorTextured* m_pipelineCreatorTextured{nullptr};
     PipelineCreatorFootprint* m_pipelineCreatorFootprint{nullptr};
@@ -149,6 +157,7 @@ protected:
     VkBuffer m_generalBuffer{nullptr};
     VkDeviceMemory m_generalBufferMemory{nullptr};
     std::vector<Instance> m_instances{};
+    std::vector<Instance> m_activeInstances{};
     std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBuffer{};
     std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBufferMemory{};
 };

@@ -9,7 +9,6 @@
 #include <tiny_obj_loader.h>
 #include <algorithm>
 #include <unordered_map>
-#include <future>
 
 void ObjModel::init() {
     auto p_device = m_vkState._core.getDevice();
@@ -47,44 +46,7 @@ void ObjModel::init() {
 
 void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,
                       float z_far) {
-    assert(currentImage < VulkanState::MAX_FRAMES_IN_FLIGHT);
-    if (m_instances.size() <= 1u ) {
-        // nothing to update
-        return; 
-    }
-
-    m_activeInstances.clear();
-
-    const float biasValue = mRadius + 0.15f * z_far;  // to avoid choppy clipping of the model edges nearby the camera
-
-
-    static const float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
-
-    std::array<std::future<void>, 4u> workerThreads;
-    std::array<std::vector<Instance>, 4u> activeInstances;
-    std::size_t chunkOffset{0u};
-    std::size_t indexFrom{0u};
-    std::size_t indexTo{0u};
-    std::size_t workerThreadIndexPlusOne{0u};
-
-    chunkOffset = m_instances.size() / workerThreads.size();
-    for (std::size_t workerThreadIndex = 0u; workerThreadIndex < workerThreads.size(); ++workerThreadIndex) {
-        workerThreadIndexPlusOne = workerThreadIndex + 1U;
-        indexFrom = workerThreadIndex * chunkOffset;
-        indexTo = workerThreadIndexPlusOne >= workerThreads.size() ? m_instances.size()
-                                                                   : workerThreadIndexPlusOne * chunkOffset;
-        workerThreads[workerThreadIndex] = std::async(std::launch::async, &ObjModel::filterInstances, this,
-                                                      indexFrom, indexTo, biasValue, std::cref(viewProj), std::ref(activeInstances[workerThreadIndex]));
-    }
-
-    for (auto& thread : workerThreads) {
-        thread.wait();
-    }
-
-    m_activeInstances.clear();
-    for (const auto& instances : activeInstances) {
-        m_activeInstances.insert(m_activeInstances.end(), instances.begin(), instances.end());
-    }
+    sortInstances(currentImage, viewProj, z_far);
 
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
@@ -95,44 +57,6 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
     vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
     memcpy((char*)data + m_instancesBufferOffset, m_activeInstances.data(), instancesSize);
     vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
-}
-
-void ObjModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
-                               std::vector<Instance>& activeInstances) {
-    assert(indexFrom < m_instances.size() && indexTo <= m_instances.size());
-    static const float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
-
-    activeInstances.clear();
-
-    glm::vec4 biasCubeValues[9] = {
-        viewProj * glm::vec4(-biasValue, -biasValue, -biasValue, 1.0f),  // -Y
-        viewProj * glm::vec4(biasValue, -biasValue, -biasValue, 1.0f),
-        viewProj * glm::vec4(-biasValue, -biasValue, biasValue, 1.0f),
-        viewProj * glm::vec4(biasValue, -biasValue, biasValue, 1.0f),
-        viewProj * glm::vec4(-biasValue, biasValue, -biasValue, 1.0f),  // +Y
-        viewProj * glm::vec4(biasValue, biasValue, -biasValue, 1.0f),
-        viewProj * glm::vec4(-biasValue, biasValue, biasValue, 1.0f),
-        viewProj * glm::vec4(biasValue, biasValue, biasValue, 1.0f),
-        glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)  // no bias (for center point)
-    };
-
-    for (std::size_t i = indexFrom; i < indexTo; i++) {
-        Instance& instance = m_instances[i];
-        glm::vec4 clipOrig = viewProj * glm::vec4(instance.posShift, 1.0f);
-        bool isTestPassed = false;
-        for (const auto& bias : biasCubeValues) {
-            glm::vec4 clip = clipOrig + instance.scale * bias;
-            glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
-            // z is in range [0, 1] for NDC, so we can check it against 0.0f and maxLimitVal
-            if (glm::abs(ndc.x) <= maxLimitVal && glm::abs(ndc.y) <= maxLimitVal && ndc.z <= maxLimitVal &&
-                ndc.z >= 0.0f - std::numeric_limits<float>::epsilon()) {
-                isTestPassed = true;
-                break;
-            }
-        }
-        if (isTestPassed)
-            activeInstances.push_back(instance);
-    }
 }
 
 void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
@@ -213,8 +137,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
             if (uniqueVertices.find(vertex) == uniqueVertices.end()) {
                 uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
                 float radius = glm::length(vertex.pos);
-                if (radius > mRadius) {
-                    mRadius = radius;
+                if (radius > m_radius) {
+                    m_radius = radius;
                 }
                 vertices.push_back(vertex);
             }

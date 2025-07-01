@@ -884,8 +884,9 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
                 visibleInstances++;
             }
         }
-        const uint64_t instancesSize = sizeof(Instance) * visibleInstances;
-        memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, (char*)cuda_instances_filtered, instancesSize);
+        //updating on one single thread is not efficient, let's do it by cuda functional(it will be more efficient\optimized)
+        //const uint64_t instancesSize = sizeof(Instance) * visibleInstances;
+        //memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, (char*)cuda_instances_filtered, instancesSize);
         *out_activeInstancesCount = visibleInstances;  // Update the count of active instances
     }
 }
@@ -915,7 +916,13 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
     gpuKernelCheck();
     cudaDeviceSynchronize();  // Wait for cuda_interpolatedSkeleton completion before updating the subsets
 
-    uint32_t activeInstancesCount = *cuda_activeInstancesCount;
+    uint32_t activeInstancesCount = 1u;
+    if (cuda_numInstances > 1u) {
+        activeInstancesCount = *cuda_activeInstancesCount;
+        const uint64_t instancesSize = sizeof(Instance) * activeInstancesCount;
+        cudaCheckError(cudaMemcpy(cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, cuda_instances_filtered, instancesSize,
+                                  cudaMemcpyDeviceToDevice));
+    }
 
     for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
         auto& subset = cpu_MD5Model.subsets[i];

@@ -44,9 +44,6 @@ public:
     void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const override;
     void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true, uint32_t currentImage = 0u,
                 const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f) override;
-    float radius() const override {
-        return m_radius;
-    }
 
 private:
     bool loadMD5Anim();
@@ -55,14 +52,15 @@ private:
     void updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo);
     void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
                                        std::size_t indexFrom, std::size_t indexTo);
-    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far);
-    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, const glm::mat4& viewProj, float z_far);
+    inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
+                                     float z_far);
+    inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
+                                     float z_far);
     inline void waitForCudaSignal(uint32_t descriptorSetIndex) const;
 
 private:
     std::string_view m_md5ModelFileName{};
     std::string_view m_md5AnimFileName{};
-    float m_radius{0.0f};
     float m_animationSpeedMultiplier{1.0f};
     bool m_isSwapYZNeeded{true};  // due to different coordinate systems
     VkDeviceSize m_bufferSize{0u};
@@ -78,5 +76,5 @@ private:
     // CPU accessible buffer and CUDA\GPU accessible buffer
     VkBuffer m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
     VkDeviceMemory m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_SIZE]{nullptr};
-    uint32_t m_activeInstances{0u};
+    uint32_t mActiveInstancesAmount{1};
 };
