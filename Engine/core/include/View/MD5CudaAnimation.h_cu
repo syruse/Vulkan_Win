@@ -39,7 +39,8 @@ public:
 		}
 	}
 
-	uint32_t update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, const glm::mat4& viewProj, float z_far);
+	uint32_t update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, bool isInstancesUpdating = false, 
+	                const glm::mat4& viewProj = glm::mat4(0.0f), float z_far = 0.0f);
 private:
     md5_animation::Model3D& cpu_MD5Model;
 	void* cuda_stream;

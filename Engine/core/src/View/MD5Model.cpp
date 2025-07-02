@@ -404,7 +404,23 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
                                     float z_far) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
-        mActiveInstancesAmount = mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset, viewProj, z_far);
+        mActiveInstancesAmount =
+            mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset, SORT_INSTANCES_ON_CUDA, viewProj, z_far);
+
+        if (SORT_INSTANCES_ON_CUDA == 0) {
+            auto p_device = m_vkState._core.getDevice();
+            assert(p_device);
+            sortInstances(currentImage, viewProj, z_far);
+
+            const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
+
+            void* data;
+            vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, instancesSize, 0, &data);
+            memcpy((char*)data, m_activeInstances.data(), instancesSize);
+            vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
+
+            mActiveInstancesAmount = m_activeInstances.size();
+        }
     } else {
         Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
     }
@@ -1003,7 +1019,7 @@ void MD5Model::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, ui
 
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    if (mCudaAnimator && mIsCudaCalculationRequested) {
+    if (SORT_INSTANCES_ON_CUDA && mCudaAnimator && mIsCudaCalculationRequested) {
         VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
         VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
         vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
@@ -1039,7 +1055,7 @@ void MD5Model::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
 
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
-    if (mCudaAnimator && mIsCudaCalculationRequested) {
+    if (SORT_INSTANCES_ON_CUDA && mCudaAnimator && mIsCudaCalculationRequested) {
         VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
         VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
         vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);

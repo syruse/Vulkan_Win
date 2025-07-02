@@ -924,8 +924,8 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
     }
 }
 
-uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, const glm::mat4& viewProj,
-                              float z_far) {
+uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset,
+                                  bool isInstancesUpdating, const glm::mat4& viewProj, float z_far) {
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
 
@@ -937,7 +937,7 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
 
     uint32_t activeInstancesCount = 1u;
     // Filter instances based on the view projection matrix and z_far
-    if (cuda_numInstances > 1u) {
+    if (isInstancesUpdating && cuda_numInstances > 1u) {
         blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
         cuda_filter_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
             cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,

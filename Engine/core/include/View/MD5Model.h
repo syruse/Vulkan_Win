@@ -2,6 +2,9 @@
 
 #include "I3DModel.h"
 
+// due to synchronization with CUDA to get the new amount of instances, it is not efficient at least for small amount of instances
+#define SORT_INSTANCES_ON_CUDA 0
+
 class MD5CudaAnimation;
 
 class MD5Model : public I3DModel {
