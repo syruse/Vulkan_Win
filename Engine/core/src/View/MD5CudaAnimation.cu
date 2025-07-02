@@ -253,7 +253,9 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
            _MD5Model.joints.size() > 0u);
 
-    cudaCheckError(cudaMalloc((void**)&cuda_ViewProj, sizeof(glm::mat4)));
+    cudaCheckError(cudaMallocHost((void**)&cuda_ViewProj, sizeof(glm::mat4)));
+
+    cudaCheckError(cudaMalloc((void**)&cuda_interpolatedSkeletonMutex, sizeof(uint32_t)));
 
     // import the Vulkan buffer memory to CUDA space
     {
@@ -317,7 +319,8 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
         cudaCheckError(cudaStreamDestroy((cudaStream_t)cuda_stream));
         cudaCheckError(cudaDestroyExternalSemaphore((cudaExternalSemaphore_t)cuda_semaphoreHandle));
         cudaCheckError(cudaFree(cuda_extrVkMappedBuffer));
-        cudaCheckError(cudaFree(cuda_ViewProj));
+        cudaCheckError(cudaFreeHost(cuda_ViewProj));
+        cudaCheckError(cudaFree(cuda_interpolatedSkeletonMutex));
     });
 
     md5_cuda_animation::Model3D host_MD5Model;
@@ -608,7 +611,7 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
             cudaCheckError(cudaFree(cuda_instances_original));
             cudaCheckError(cudaFree(cuda_instances_filtered));
             cudaCheckError(cudaFree(cuda_instances_flags));
-            cudaCheckError(cudaFree(cuda_activeInstancesCount));
+            cudaCheckError(cudaFreeHost(cuda_activeInstancesCount));
         });
 
         cuda_numInstances = instances.size();
@@ -622,7 +625,7 @@ __device__ void swapYandZ(glm::vec3& vertexData) {
     vertexData.z *= -1.0f;
 }
 
-__global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
+__global__ void updateAnimationChunk(uint32_t* cuda_interpolatedSkeletonMutex, md5_cuda_animation::Model3D* cuda_MD5Model,
                                      md5_cuda_animation::Joint* cuda_interpolatedSkeleton, int subsetId,
                                      char* cuda_extrVkMappedBuffer, uint64_t verticesBufferOffset) {
     // Unique thread index among all blocks
@@ -636,6 +639,16 @@ __global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
         printf("updateAnimationChunk: subsetId is out of range\n");
         return;
     }
+
+    if (globalThreadIndx == 0) {
+        // we have several 'updateAnimationChunk' being ongoing since we need to have '1' signaling the skeleton is ready
+        while (atomicCAS(cuda_interpolatedSkeletonMutex, 1, 1) != 1) {
+            // Wait until the mutex is free
+        }
+    }
+
+    __syncthreads();
+
     md5_cuda_animation::ModelSubset& subset = cuda_MD5Model->subsets[subsetId];
 
     /** Note use can use cuda_MD5Model.indexBytes and cuda_MD5Model.vertBytes instead of the shared memory to calculate and sync ecery time
@@ -698,6 +711,11 @@ __global__ void updateAnimationChunk(md5_cuda_animation::Model3D* cuda_MD5Model,
                &subset.gpuVertices[globalThreadIndx], cuda_MD5Model->vertBytes);
     } 
     
+    __syncthreads();
+    if (globalThreadIndx == 0) {
+        // reset the mutex
+        *cuda_interpolatedSkeletonMutex = 0u;
+    }
     // Note: we don't need to update indices every time, since they are static and already copied to the mapped buffer
     // Update the subset's buffer by copying i-th index to the mapped buffer
     /*if (globalThreadIndx < subset.indicesCount) {
@@ -745,7 +763,7 @@ __device__ void calculateInterpolatedSkeleton(md5_cuda_animation::Model3D* cuda_
     }
 }
 
-__global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
+__global__ void cuda_md5_update(uint32_t* cuda_interpolatedSkeletonMutex, md5_cuda_animation::Model3D* cuda_MD5Model,
                                 md5_cuda_animation::Joint* cuda_interpolatedSkeleton, float deltaTimeMS, int animationID) {
     // Unique thread index among all blocks
     int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -761,6 +779,12 @@ __global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
         if (globalThreadIndx == 0)
             printf("numFrames <= 1\n");
         return;
+    }
+
+    if (globalThreadIndx == 0) {
+        while (atomicCAS(cuda_interpolatedSkeletonMutex, 0, 0) != 0) {
+            // Wait until the mutex is free
+        }
     }
 
     ///if (GPU_DEBUG_ENABLED && globalThreadIndx == 0) {
@@ -811,6 +835,10 @@ __global__ void cuda_md5_update(md5_cuda_animation::Model3D* cuda_MD5Model,
     // Update the current animation time in the model only once per animation update
     if (globalThreadIndx == 0) {
         cuda_MD5Model->animations[animationID].currAnimTime = currAnimTime;
+
+        __threadfence();  // everything before this point must be visible to other threads before we set the mutex
+
+        *cuda_interpolatedSkeletonMutex = 1u;  // Set the mutex to indicate that the interpolated skeleton is ready for use
     }
 
     // Print out the 10th joint of the interpolated skeleton for debugging purposes
@@ -884,10 +912,15 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
                 visibleInstances++;
             }
         }
-        //updating on one single thread is not efficient, let's do it by cuda functional(it will be more efficient\optimized)
-        //const uint64_t instancesSize = sizeof(Instance) * visibleInstances;
-        //memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, (char*)cuda_instances_filtered, instancesSize);
         *out_activeInstancesCount = visibleInstances;  // Update the count of active instances
+    }
+
+    __syncthreads();
+    // Copy the filtered instances to the mapped buffer
+    if (globalThreadIndx < *out_activeInstancesCount) {
+        // Copy the filtered instance to the mapped buffer
+        memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset + globalThreadIndx * sizeof(Instance),
+               &cuda_instances_filtered[globalThreadIndx], sizeof(Instance));
     }
 }
 
@@ -896,11 +929,13 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
 
-    cudaCheckError(cudaMemcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4), cudaMemcpyHostToDevice));
+    // cpu memory resident variable without sync can be filled directly
+    memcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4));
 
     int threadsPerBlock = cuda_warpSize;
     int blocksPerGrid = cuda_SMs;
 
+    uint32_t activeInstancesCount = 1u;
     // Filter instances based on the view projection matrix and z_far
     if (cuda_numInstances > 1u) {
         blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
@@ -908,21 +943,15 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
             cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,
             cuda_numInstances, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset, z_far, cuda_radius);
         gpuKernelCheck();
+        // cudaMemcpy garantees the cuda_activeInstancesCount is copied only after the kernel execution is completed
+        // 'pinned' memory is not copied to host since it is already in host memory
+        cudaCheckError(cudaMemcpy(&activeInstancesCount, cuda_activeInstancesCount, sizeof(uint32_t), cudaMemcpyDeviceToHost));
     }
 
     blocksPerGrid = cpu_MD5Model.animations[animationID].numJoints / threadsPerBlock + 1;
-    cuda_md5_update<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(cuda_MD5Model, cuda_interpolatedSkeleton,
+    cuda_md5_update<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(cuda_interpolatedSkeletonMutex, cuda_MD5Model, cuda_interpolatedSkeleton,
                                                                                       deltaTimeMS, animationID);
     gpuKernelCheck();
-    cudaDeviceSynchronize();  // Wait for cuda_interpolatedSkeleton completion before updating the subsets
-
-    uint32_t activeInstancesCount = 1u;
-    if (cuda_numInstances > 1u) {
-        activeInstancesCount = *cuda_activeInstancesCount;
-        const uint64_t instancesSize = sizeof(Instance) * activeInstancesCount;
-        cudaCheckError(cudaMemcpy(cuda_extrVkMappedBuffer + cuda_instancesBufferOffset, cuda_instances_filtered, instancesSize,
-                                  cudaMemcpyDeviceToDevice));
-    }
 
     for (int32_t i = 0; i < cpu_MD5Model.numSubsets; i++) {
         auto& subset = cpu_MD5Model.subsets[i];
@@ -930,7 +959,8 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
                      subset.vertices.size());  // subset.indices.size() is not used since indices are copied only once
         blocksPerGrid = subsetVertices / threadsPerBlock + 1;
         updateAnimationChunk<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
-            cuda_MD5Model, cuda_interpolatedSkeleton, i, cuda_extrVkMappedBuffer, verticesBufferOffset);
+            cuda_interpolatedSkeletonMutex, cuda_MD5Model, cuda_interpolatedSkeleton, i, cuda_extrVkMappedBuffer,
+            verticesBufferOffset);
 
         gpuKernelCheck();
     }

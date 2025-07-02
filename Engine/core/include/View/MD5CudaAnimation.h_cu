@@ -59,5 +59,6 @@ private:
 	uint32_t* cuda_instances_flags = nullptr; // whether the instance is active or not
 	Instance* cuda_instances_filtered = nullptr;
 	uint32_t* cuda_activeInstancesCount = nullptr;
+	uint32_t* cuda_interpolatedSkeletonMutex = nullptr;
 	float cuda_radius = 1.0f;
 };
