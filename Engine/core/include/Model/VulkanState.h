@@ -59,11 +59,11 @@ struct VulkanState {
         VkImage depthImage{nullptr};
         VkDeviceMemory depthImageMemory{nullptr};
         VkImageView depthImageView{nullptr};
-    };
+        uint16_t& width;
+        uint16_t& height;
 
-    struct FootPrintBuffer : DepthBuffer {
-        uint32_t width{8000};
-        uint32_t height{8000};
+        DepthBuffer(uint16_t& width, uint16_t& height) : width(width), height(height) {
+        }
     };
 
     struct ColorBuffer {
@@ -99,6 +99,8 @@ struct VulkanState {
 
     uint16_t _width{0u};
     uint16_t _height{0u};
+    uint16_t _footPrintWidthAndHeight{8000u};
+    uint16_t _shadowMapWidthAndHeight{2500u};
     VulkanCore _core{nullptr};
     SwapChain _swapChain{};
     VkQueue _queue{nullptr};
@@ -107,13 +109,13 @@ struct VulkanState {
     UBO _ubo{};
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};
-    DepthBuffer _depthBuffer{};
-    DepthBuffer _depthTempBuffer{};
-    DepthBuffer _shadowMapBuffer{};
+    DepthBuffer _depthBuffer{_width, _height};
+    DepthBuffer _depthTempBuffer{_width, _height};
+    DepthBuffer _shadowMapBuffer{_shadowMapWidthAndHeight, _shadowMapWidthAndHeight};
     ColorBuffer _colorBuffer{};
     ColorBuffer _ssaoBuffer{};
     ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
-    FootPrintBuffer _footprintBuffer{};
+    DepthBuffer _footprintBuffer{_footPrintWidthAndHeight, _footPrintWidthAndHeight};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};
     PushConstant _pushConstant{};

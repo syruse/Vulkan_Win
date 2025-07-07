@@ -68,7 +68,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[SKYBOX].reset(
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[SHADOWMAP].reset(
-        new PipelineCreatorShadowMap(*this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
+        new PipelineCreatorShadowMap(this->_shadowMapBuffer, *this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
     m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 2u, m_pushConstantRange));
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
@@ -84,12 +84,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[BLOOM].reset(new PipelineCreatorQuad(*this, m_renderPassBloom, "vert_bloom.spv", "frag_bloom.spv",
                                                             &this->_bloomBuffer[0],
                                                             PipelineCreatorQuad::BLEND::SRC_ONE_AND_DST_ONE));
-    m_pipelineCreators[DEPTH].reset(
-        new PipelineCreatorShadowMap(*this, m_renderPassDepth, "vert_depthWriter.spv", "frag_depthWriter.spv"));
+    m_pipelineCreators[DEPTH].reset(new PipelineCreatorShadowMap(this->_depthBuffer, *this, m_renderPassDepth,
+                                                                 "vert_depthWriter.spv", "frag_depthWriter.spv"));
     m_pipelineCreators[SSAO].reset(
         new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u, m_pushConstantRange));
     m_pipelineCreators[FOOTPRINT].reset(
-        new PipelineCreatorFootprint(*this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
+        new PipelineCreatorFootprint(this->_footprintBuffer, *this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
     m_pipelineCreators[SSAO_BLUR].reset(new PipelineCreatorQuad(*this, m_renderPassSSAOblur, "vert_ssaoBlur.spv",
                                                                 "frag_ssaoBlur.spv", &this->_shadingBuffer,
                                                                 PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA));
@@ -536,8 +536,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     renderPassdepthWriterInfo.renderPass = m_renderPassDepth;
     renderPassdepthWriterInfo.renderArea.offset.x = 0;
     renderPassdepthWriterInfo.renderArea.offset.y = 0;
-    renderPassdepthWriterInfo.renderArea.extent.width = _width;
-    renderPassdepthWriterInfo.renderArea.extent.height = _height;
+    renderPassdepthWriterInfo.renderArea.extent.width = _depthBuffer.width;
+    renderPassdepthWriterInfo.renderArea.extent.height = _depthBuffer.height;
     renderPassdepthWriterInfo.clearValueCount = 1;
     renderPassdepthWriterInfo.pClearValues = &depthWriterClearValues;
     renderPassdepthWriterInfo.framebuffer = m_fbsDepth[currentImage];
@@ -563,8 +563,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     renderPassShadowMapInfo.renderPass = m_renderPassShadowMap;
     renderPassShadowMapInfo.renderArea.offset.x = 0;
     renderPassShadowMapInfo.renderArea.offset.y = 0;
-    renderPassShadowMapInfo.renderArea.extent.width = _width;
-    renderPassShadowMapInfo.renderArea.extent.height = _height;
+    renderPassShadowMapInfo.renderArea.extent.width = _shadowMapBuffer.width;
+    renderPassShadowMapInfo.renderArea.extent.height = _shadowMapBuffer.height;
     renderPassShadowMapInfo.clearValueCount = 1;
     renderPassShadowMapInfo.pClearValues = &shadowMapClearValues;
     renderPassShadowMapInfo.framebuffer = m_fbsShadowMap[currentImage];
@@ -1962,8 +1962,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassShadowMap;
         fbCreateInfo.attachmentCount = 1;
         fbCreateInfo.pAttachments = &attachment;
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _shadowMapBuffer.width;
+        fbCreateInfo.height = _shadowMapBuffer.height;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsShadowMap[i]);
@@ -1980,8 +1980,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassDepth;
         fbCreateInfo.attachmentCount = 1;
         fbCreateInfo.pAttachments = &attachment;
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _depthBuffer.width;
+        fbCreateInfo.height = _depthBuffer.height;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsDepth[i]);
@@ -2113,22 +2113,22 @@ void VulkanRenderer::createDepthResources() {
         return;
     }
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _shadowMapBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _shadowMapBuffer.width, _shadowMapBuffer.height,
+                             _shadowMapBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _depthBuffer.width, _depthBuffer.height,
+                             _depthBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthBuffer.depthImage, _depthBuffer.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
                                  _depthBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, _depthTempBuffer.depthFormat,
-                             VK_IMAGE_TILING_OPTIMAL,
+    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _depthTempBuffer.width, _depthTempBuffer.height,
+                             _depthTempBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthTempBuffer.depthImage, _depthTempBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthTempBuffer.depthImage, _depthTempBuffer.depthFormat,

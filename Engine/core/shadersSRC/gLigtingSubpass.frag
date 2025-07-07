@@ -38,7 +38,7 @@ layout(location = 2) out vec4 out_shading;
 // #define DEBUG_SHADOW 1
 
 const float shiness = 8.5;
-const float softShadingFactor = 0.65; // soft shading by minimum factor limitation
+const float softShadingFactor = 0.45; // soft shading by minimum factor limitation
 const float brightness = 2.7;
 
 float getShading(vec3 world, float bias)

@@ -29,9 +29,9 @@ void PipelineCreatorShadowMap::createPipeline() {
     rasterInfo.depthClampEnable =
         VK_TRUE;  // fragments that are beyond the near and far planes are clamped to them as opposed to discarding them
 
-    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
-                                                         m_subpassAmount, m_pushConstantRange);
+    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_depthBuffer.width, m_depthBuffer.height,
+        *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
+        m_subpassAmount, m_pushConstantRange);
     assert(m_pipeline);
 }
 
