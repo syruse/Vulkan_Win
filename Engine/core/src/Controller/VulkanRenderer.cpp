@@ -33,7 +33,7 @@ static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
 
 // light source position offset from the camera
-const static glm::vec3 _lightPos = glm::vec3(500.0f, 500.0f, 0.0f);
+const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, -Z_FAR);
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
@@ -50,6 +50,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     using namespace std::literals;
 
     _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
+    _pushConstant.lightPos = _lightPos;
 
     calculateAdditionalMat();
 
@@ -103,13 +104,9 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
-    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
-                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
     const std::array<std::string_view, 6> skyBoxTextures{"sky_ft.png", "sky_bk.png", "sky_dn.png",
                                                          "sky_up.png", "sky_lt.png", "sky_rt.png"};
-    m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
-                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
     // we create a lot of trees
     {
@@ -138,9 +135,9 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
             instance.posShift.z = startZ + col * step;
         }
 
-        m_semiTransparentModels.emplace_back(
+        m_models.emplace_back(
             new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                          nullptr, 12.0f, instances));
         m_semiTransparentModels.emplace_back(
             new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
@@ -148,15 +145,21 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                          nullptr, 12.0f, 0.1f, true, instances));
     }
 
-    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush.png",
+    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
+                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
+
+    m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
+                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
+
+    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
-                                                0.85 * Z_FAR, glm::vec3(5.0f, 8.0f, 5.0f));
+                                                0.85 * Z_FAR, glm::vec3(10.0f, 19.0f, 10.0f));
     m_particles[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
                                                 0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
     m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
-                                                0.85 * Z_FAR, glm::vec3(12.0f, 17.0f, 12.0f));
+                                                0.85 * Z_FAR, glm::vec3(7.0f, 10.0f, 7.0f));
     m_particles[3] =
         std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
@@ -395,9 +398,12 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->MVP = mViewProj.viewProj;
     }
 
-    _pushConstant.lightPos = mCamera.targetPos() + _lightPos;
+    if (glm::distance(_pushConstant.lightPos, glm::vec3(_pushConstant.lightPos.x, _pushConstant.lightPos.y, mCamera.targetPos().z)) >
+        0.5f * Z_FAR) {
+        _pushConstant.lightPos = glm::vec3(_pushConstant.lightPos.x, _pushConstant.lightPos.y, mCamera.targetPos().z);
+    }
     m_lightViewProj = glm::ortho(Z_FAR, -Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
-                      glm::lookAt(_pushConstant.lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::lookAt(_pushConstant.lightPos, glm::vec3(-_lightPos.x, 0.0f, -_lightPos.z), glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
 
     // Map the list of model data
@@ -566,7 +572,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassShadowMapInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // draw shadow of 3d mesh only
-    for (uint32_t meshIndex = 0u; meshIndex < 1u; ++meshIndex) {
+    for (uint32_t meshIndex = 0u; meshIndex < m_models.size() - 2u; ++meshIndex) {
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);

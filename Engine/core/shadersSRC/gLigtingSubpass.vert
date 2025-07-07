@@ -1,9 +1,19 @@
 #version 450
 
-layout(location = 0) out vec2 out_uv;
+// Array for triangle that fills screen
+vec2 positions[6] = vec2[](
+    vec2(1.0, -1.0),
+    vec2(-1.0, -1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(1.0, 1.0),
+    vec2(1.0, -1.0)
+);
+
+layout(location = 0) out vec2 fragTexCoord;
 
 void main()
 {
-    out_uv = vec2(gl_VertexIndex & 2, (gl_VertexIndex << 1) & 2);
-    gl_Position = vec4(out_uv * 2.0f - 1.0f, 0.0f, 1.0f);
+    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+    fragTexCoord = clamp(gl_Position.xy, vec2(0.0, 0.0), vec2(1.0, 1.0));
 }

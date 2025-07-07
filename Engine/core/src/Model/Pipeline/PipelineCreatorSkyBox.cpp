@@ -9,12 +9,12 @@ void PipelineCreatorSkyBox::createPipeline() {
     assert(m_vkState._core.getDevice());
 
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
-    constexpr auto bindingDescription = Skybox::Vertex::getBindingDescription();
-    constexpr auto attributeDescriptions = Skybox::Vertex::getAttributeDescription();
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = 1;
-    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions;
+    const auto& bindingDescriptions = Skybox::Vertex::getBindingDescriptions();
+    const auto& attributeDescriptions = Skybox::Vertex::getAttributeDescription();
+    vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     auto& raster = Pipeliner::getInstance().getRasterizationInfo();
     raster.frontFace = VK_FRONT_FACE_CLOCKWISE;

@@ -698,16 +698,61 @@ void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCom
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
+template <class T>
+void createGeneral3in1Buffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
+                         const std::vector<uint32_t>& indices, const std::vector<T>& vertices,
+                         const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
+                         VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory) {
+    /** Note: general buffer keeping both geometry data,
+              index buffer is placed first and next to index buffer the vertex buffer placed
+    */
+    const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
+    verticesBufferOffset = indicesSize;
+    const VkDeviceSize verticesSize = sizeof(vertices[0]) * vertices.size();
+    const VkDeviceSize instancesSize = sizeof(instances[0]) * instances.size();
+    instancesBufferOffset = indicesSize + verticesSize;
+    const VkDeviceSize bufferSize = indicesSize + verticesSize + instancesSize;
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    Utils::VulkanCreateBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
+                              stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, indices.data(), (size_t)indicesSize);
+    memcpy((char*)data + verticesBufferOffset, (char*)vertices.data(), verticesSize);
+    memcpy((char*)data + instancesBufferOffset, (char*)instances.data(), instancesSize);
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    Utils::VulkanCreateBuffer(
+        device, physicalDevice, bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, generalBuffer, generalBufferMemory);
+
+    Utils::VulkanCopyBuffer(device, queue, cmdBufPool, stagingBuffer, generalBuffer, bufferSize);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+
 // Explicit template instantiation
 template void createGeneralBuffer<I3DModel::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
                                                     VkQueue queue, const std::vector<uint32_t>& indices,
                                                     const std::vector<I3DModel::Vertex>& vertices,
                                                     VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
                                                     VkDeviceMemory& generalBufferMemory);
-template void createGeneralBuffer<Skybox::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
-                                                  VkQueue queue, const std::vector<uint32_t>& indices,
-                                                  const std::vector<Skybox::Vertex>& vertices, VkDeviceSize& verticesBufferOffset,
-                                                  VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
+template void createGeneral3in1Buffer<I3DModel::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
+                                                    VkQueue queue, const std::vector<uint32_t>& indices,
+                                                    const std::vector<I3DModel::Vertex>& vertices,
+                                                    const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
+                                                    VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer,
+                                                    VkDeviceMemory& generalBufferMemory);
+template void createGeneral3in1Buffer<Skybox::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
+                                                    VkQueue queue, const std::vector<uint32_t>& indices, const std::vector<Skybox::Vertex>& vertices,
+                                                    const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
+                                                    VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
 template void createGeneralBuffer<Particle::Instance>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
                                                       VkQueue queue, const std::vector<uint32_t>& indices,
                                                       const std::vector<Particle::Instance>& vertices,

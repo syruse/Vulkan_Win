@@ -11,6 +11,10 @@ layout(location = 2) in vec2 inTexCoord;
 layout(location = 3) in vec4 inTangent; // last component indicates availability of bump-mapping applying
 layout(location = 4) in vec3 inBitangent;
 
+// Instance attributes
+layout(location = 5) in vec3 posShift;
+layout (location = 6) in float scale;
+
 layout(location = 0) 
 out VS_OUT {
     vec2 TexCoord;
@@ -19,7 +23,8 @@ out VS_OUT {
 } vs_out;
 
 void main() {
-    gl_Position = dynamicUBO.MVP * vec4(inPosition, 1.0f);
+	vec3 pos = inPosition + posShift;
+    gl_Position = dynamicUBO.MVP * vec4(scale*(pos), 1.0f);
     vec3 T = vec3(0.0, 0.0, 0.0);
     vec3 B = vec3(0.0, 0.0, 0.0);
     vec3 N = normalize(mat3(dynamicUBO.model) * inNormal);

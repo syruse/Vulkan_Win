@@ -16,6 +16,11 @@ layout(set = 0, binding = 1) uniform DynamicUBO {
 
 layout(location = 0) in vec3 inPosition;
 
+// Instance attributes
+layout(location = 5) in vec3 posShift;
+layout (location = 6) in float scale;
+
 void main() {
-    gl_Position = uboViewProjection.lightViewProj * dynamicUBO.model * vec4(inPosition, 1.0f);
+	vec3 pos = inPosition + posShift;
+    gl_Position = uboViewProjection.lightViewProj * dynamicUBO.model * vec4(scale*(pos), 1.0f);
 }

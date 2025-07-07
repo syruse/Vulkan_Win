@@ -156,7 +156,7 @@ void main()
 		if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
 			out_hdr = final_color;
 		// now shading (shadows + ambientOcclusion) is moved to separate pass where blurring is applied for SSAO
-		out_shading = vec4(shading * ambientOcclusion);
+		out_shading = vec4(vec3(shading * ambientOcclusion), 1.0);
 	}
 #endif
 }

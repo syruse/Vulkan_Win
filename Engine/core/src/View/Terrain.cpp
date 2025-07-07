@@ -69,8 +69,14 @@ void Terrain::init() {
         }
     }
 
-    Utils::createGeneralBuffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, m_indices,
-                               m_vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+    // Note: we must have at least one instance to draw
+    if (m_instances.empty()) {
+        m_instances.push_back({glm::vec3(0.0f), 1.0f});
+    }
+
+    Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, m_indices,
+                                   m_vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
+                                   m_generalBufferMemory);
 }
 
 void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
@@ -86,9 +92,9 @@ void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t
 
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -112,9 +118,9 @@ void Terrain::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCom
     
     vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipeline);
     
-    VkBuffer vertexBuffers[] = {m_generalBuffer};
-    VkDeviceSize offsets[] = {m_verticesBufferOffset};
-    vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = {m_generalBuffer, m_generalBuffer};
+    VkDeviceSize offsets[] = {m_verticesBufferOffset, m_instancesBufferOffset};
+    vkCmdBindVertexBuffers(cmdBuf, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuf, m_generalBuffer, 0, VK_INDEX_TYPE_UINT32);
     
     vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline().get()->pipelineLayout, 0, 1,
