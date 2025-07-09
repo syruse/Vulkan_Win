@@ -987,14 +987,14 @@ void MD5Model::waitForCudaSignal(uint32_t descriptorSetIndex) const {
 
         static uint32_t lastDescriptorSetIndex = -1;
 
-        VkSemaphoreWaitInfo semaphoreWaitInfo = {};
-        semaphoreWaitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        semaphoreWaitInfo.pSemaphores = &mVkCudaSyncObject;
-        semaphoreWaitInfo.semaphoreCount = 1;
-        semaphoreWaitInfo.pValues = &mWaitCudaSignalValue;
-        vkWaitSemaphores(p_device, &semaphoreWaitInfo, UINT64_MAX);
-
         if (lastDescriptorSetIndex != descriptorSetIndex) {
+            VkSemaphoreWaitInfo semaphoreWaitInfo = {};
+            semaphoreWaitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            semaphoreWaitInfo.pSemaphores = &mVkCudaSyncObject;
+            semaphoreWaitInfo.semaphoreCount = 1;
+            semaphoreWaitInfo.pValues = &mWaitCudaSignalValue;
+            vkWaitSemaphores(p_device, &semaphoreWaitInfo, UINT64_MAX);
+
             lastDescriptorSetIndex = descriptorSetIndex;
             // increment wait value to avoid deadlock in case of multiple draw calls for different swapchains
             mWaitCudaSignalValue++;  

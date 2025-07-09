@@ -100,7 +100,7 @@ struct VulkanState {
     uint16_t _width{0u};
     uint16_t _height{0u};
     uint16_t _footPrintWidthAndHeight{8000u};
-    uint16_t _shadowMapWidthAndHeight{2500u};
+    uint16_t _shadowMapWidthAndHeight{8000u};
     VulkanCore _core{nullptr};
     SwapChain _swapChain{};
     VkQueue _queue{nullptr};

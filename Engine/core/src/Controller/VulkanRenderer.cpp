@@ -105,8 +105,14 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
 
+    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
+                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
+
     const std::array<std::string_view, 6> skyBoxTextures{"sky_ft.png", "sky_bk.png", "sky_dn.png",
                                                          "sky_up.png", "sky_lt.png", "sky_rt.png"};
+
+    m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
+                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
     // we create a lot of trees
     {
@@ -135,21 +141,15 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
             instance.posShift.z = startZ + col * step;
         }
 
-        m_models.emplace_back(
+        m_semiTransparentModels.emplace_back(
             new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
                          nullptr, 12.0f, instances));
         m_semiTransparentModels.emplace_back(
             new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
                          nullptr, 12.0f, 0.1f, true, instances));
     }
-
-    m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
-                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
-
-    m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
-                                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
                                                 static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
@@ -519,12 +519,17 @@ void VulkanRenderer::createCommandBuffer() {
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmiRenderData) {
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+    static VkCommandBufferBeginInfo beginInfo {
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        nullptr,
+        VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+        nullptr
+    };
 
     VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
     CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
+
+    const static VkClearValue zeroClearValues{{0.0f, 0.0f, 0.0f, 0.0f}};
 
     //---------------------------------------------------------------------------------------------//
     /// depth writing pass
@@ -576,6 +581,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);
+    }
+
+    for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
+        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
+        m_semiTransparentModels[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
+                                                            dynamicOffset);
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -684,9 +695,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     //---------------------------------------------------------------------------------------------//
     // SSAO BLUR
-    std::array<VkClearValue, 2> ssaoBlurClearValues{};
-    ssaoBlurClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
-    ssaoBlurClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    static std::array<VkClearValue, 2> ssaoBlurClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassSSAOblurInfo = {};
     renderPassSSAOblurInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -721,9 +730,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     // 3 times gauss blurring
     for (int32_t t = 0; t < 3; ++t) {
         /// GAUSS X Bloom render pass
-        std::array<VkClearValue, 2> gaussXBloomClearValues{};
-        gaussXBloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
-        gaussXBloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+        static std::array<VkClearValue, 2> gaussXBloomClearValues{zeroClearValues, zeroClearValues};
 
         VkRenderPassBeginInfo renderPassGaussXBloomInfo = {};
         renderPassGaussXBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -750,9 +757,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
         vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
         /// GAUSS Y Bloom render pass
-        std::array<VkClearValue, 2> gaussYBloomClearValues{};
-        gaussYBloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
-        gaussYBloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+        static std::array<VkClearValue, 2> gaussYBloomClearValues{zeroClearValues, zeroClearValues};
 
         VkRenderPassBeginInfo renderPassGaussYBloomInfo = {};
         renderPassGaussYBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -782,9 +787,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     //---------------------------------------------------------------------------------------------//
     /// BLOOM
 
-    std::array<VkClearValue, 2> bloomClearValues{};
-    bloomClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
-    bloomClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    static std::array<VkClearValue, 2> bloomClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassBloomInfo = {};
     renderPassBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -818,9 +821,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
 
-    std::array<VkClearValue, 2> semiTransClearValues{};
-    semiTransClearValues[0].color = {0.0f, 0.0f, 0.0f, 0.0f};
-    semiTransClearValues[1].color = {0.0f, 0.0f, 0.0f, 0.0f};
+    static std::array<VkClearValue, 2> semiTransClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassSemiTransInfo = {};
     renderPassSemiTransInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -863,7 +864,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     //---------------------------------------------------------------------------------------------//
     /// FXAA render pass
 
-    std::array<VkClearValue, 2> fxaaClearValues{};
+    static std::array<VkClearValue, 2> fxaaClearValues;
     fxaaClearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
     fxaaClearValues[1].color = {0.0f, 0.0f, 0.0f, 1.0f};
 
