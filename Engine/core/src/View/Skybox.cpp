@@ -59,9 +59,8 @@ void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t 
 	assert(m_pipelineCreatorTextured);
 	assert(m_pipelineCreatorTextured->getPipeline().get());
 
-	vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
-                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
+	vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout, VulkanState::PUSH_CONSTANT_STAGE_FLAGS,
+                       0, sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
 
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineCreatorTextured->getPipeline().get()->pipeline);
 

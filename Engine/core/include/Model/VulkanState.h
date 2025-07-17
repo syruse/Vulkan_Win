@@ -33,6 +33,9 @@ struct VulkanState {
     */
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 5;
 
+    static constexpr VkShaderStageFlags PUSH_CONSTANT_STAGE_FLAGS =
+        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+
     struct Model {
         alignas(16) glm::mat4 model;
         alignas(16) glm::mat4 MVP;

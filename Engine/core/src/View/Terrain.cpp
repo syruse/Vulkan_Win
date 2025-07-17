@@ -86,7 +86,7 @@ void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t
 
     if (m_pipelineCreatorTextured->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                           VulkanState::PUSH_CONSTANT_STAGE_FLAGS,
                            0, sizeof(VulkanState::PushConstant), &m_vkState._pushConstant);
     }
 
@@ -110,8 +110,7 @@ void Terrain::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCom
     assert(pipelineCreator->getPipeline().get());
 
     if (pipelineCreator->isPushContantActive()) {
-        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0,
+        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout, VulkanState::PUSH_CONSTANT_STAGE_FLAGS, 0,
                            sizeof(VulkanState::PushConstant),
                            &m_vkState._pushConstant);
     }

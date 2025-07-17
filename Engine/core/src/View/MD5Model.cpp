@@ -1011,7 +1011,8 @@ void MD5Model::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, ui
 
     if (m_pipelineCreatorTextured->isPushContantActive()) {
         vkCmdPushConstants(cmdBuf, m_pipelineCreatorTextured->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VulkanState::PushConstant),
+                           VulkanState::PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(VulkanState::PushConstant),
                            &m_vkState._pushConstant);
     }
 
@@ -1047,8 +1048,8 @@ void MD5Model::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
     waitForCudaSignal(descriptorSetIndex);
 
     if (pipelineCreator->isPushContantActive()) {
-        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(VulkanState::PushConstant),
+        vkCmdPushConstants(cmdBuf, pipelineCreator->getPipeline()->pipelineLayout, VulkanState::PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(VulkanState::PushConstant),
                            &m_vkState._pushConstant);
     }
 

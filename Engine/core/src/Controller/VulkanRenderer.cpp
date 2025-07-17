@@ -55,8 +55,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     calculateAdditionalMat();
 
     // TODO consider combining into one object with _pushConstant
-    m_pushConstantRange.stageFlags =
-        VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+    m_pushConstantRange.stageFlags = PUSH_CONSTANT_STAGE_FLAGS;
     m_pushConstantRange.offset = 0;
     m_pushConstantRange.size = sizeof(PushConstant);
 
@@ -113,7 +112,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
-
+ 
     // we create a lot of trees
     {
         std::vector<Instance> instances{250};
@@ -664,7 +663,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS,
                            0, sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -681,8 +680,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[POST_LIGHTING];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
 
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -693,7 +692,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-
+    
     //---------------------------------------------------------------------------------------------//
     // SSAO BLUR
     static std::array<VkClearValue, 2> ssaoBlurClearValues{zeroClearValues, zeroClearValues};
@@ -787,7 +786,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     //---------------------------------------------------------------------------------------------//
     /// BLOOM
-
+    
     static std::array<VkClearValue, 2> bloomClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassBloomInfo = {};
@@ -818,10 +817,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-
+    
     //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
-
+    
     static std::array<VkClearValue, 2> semiTransClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassSemiTransInfo = {};
@@ -844,8 +843,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSemiTransInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
         for (auto& particle : m_particles) {
             particle->draw(_cmdBufs[currentImage], currentImage);
         }
@@ -854,13 +853,13 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
         // TODO
         const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
         m_semiTransparentModels[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-
+    
     //---------------------------------------------------------------------------------------------//
     /// FXAA render pass
 
@@ -888,8 +887,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -1294,7 +1293,7 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     subpassDependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    // Subpass 2 layout (color/depth) to Subpass 2 layout (shader read)
+    // Subpass 2 layout (color/depth) to Subpass 3 layout (shader read)
     subpassDependencies[2].srcSubpass = 1;
     subpassDependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     subpassDependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
@@ -1665,10 +1664,12 @@ void VulkanRenderer::createRenderPass() {
 
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;  // store previous 'clear' operation
+    // layout transition happens here from depth 'clear'
+    dependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
+    dependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // also we read 'cleared' depth buffer
     dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoShadowMap = {};
@@ -1701,10 +1702,12 @@ void VulkanRenderer::createRenderPass() {
 
     dependencyDepthSSAO.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyDepthSSAO.dstSubpass = 0;
-    dependencyDepthSSAO.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyDepthSSAO.dstStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencyDepthSSAO.srcAccessMask = 0;
-    dependencyDepthSSAO.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyDepthSSAO.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // store previous 'clear' operation
+    // layout transition happens here from depth 'clear'
+    dependencyDepthSSAO.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
+    dependencyDepthSSAO.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
+    dependencyDepthSSAO.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // also we read 'cleared' depth buffer
     dependencyDepthSSAO.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoDepthForSSAO = {};
@@ -1746,10 +1749,11 @@ void VulkanRenderer::createRenderPass() {
 
     dependencyFootPrint.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFootPrint.dstSubpass = 0;
-    dependencyFootPrint.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyFootPrint.srcAccessMask = 0;
-    dependencyFootPrint.dstStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencyFootPrint.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyFootPrint.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencyFootPrint.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyFootPrint.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencyFootPrint.dstAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoFootPrint = {};
     renderPassCreateInfoFootPrint.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
