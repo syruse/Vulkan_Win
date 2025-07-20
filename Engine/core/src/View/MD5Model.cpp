@@ -11,7 +11,7 @@
 #include <vulkan/vulkan_win32.h>
 #endif
 
-#include "MD5CudaAnimation.h_cu"
+#include "MD5CudaAnimation.cuh"
 
 using namespace md5_animation;
 
@@ -170,7 +170,7 @@ void MD5Model::init() {
 
             mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
                                                  m_MD5Model, m_instancesBufferOffset, m_instances, m_radius, m_isSwapYZNeeded, 
-                                                 m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier, mWaitCudaSignalValue);
+                                                 m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier);
 
             m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
             m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
@@ -404,8 +404,9 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
                                     float z_far) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
-        mActiveInstancesAmount =
-            mCudaAnimator->update(deltaTimeMS, animationID, m_verticesBufferOffset, SORT_INSTANCES_ON_CUDA, viewProj, z_far);
+        mWaitCudaSignalValue = currentImage;
+        mActiveInstancesAmount = mCudaAnimator->update(deltaTimeMS, mWaitCudaSignalValue, animationID, m_verticesBufferOffset,
+                                                       SORT_INSTANCES_ON_CUDA, viewProj, z_far);
 
         if (SORT_INSTANCES_ON_CUDA == 0) {
             auto p_device = m_vkState._core.getDevice();
@@ -996,8 +997,6 @@ void MD5Model::waitForCudaSignal(uint32_t descriptorSetIndex) const {
             vkWaitSemaphores(p_device, &semaphoreWaitInfo, UINT64_MAX);
 
             lastDescriptorSetIndex = descriptorSetIndex;
-            // increment wait value to avoid deadlock in case of multiple draw calls for different swapchains
-            mWaitCudaSignalValue++;  
         }
     }
 }

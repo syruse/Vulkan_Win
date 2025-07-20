@@ -30,7 +30,7 @@ class MD5CudaAnimation {
 public:
 	MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem, uint64_t vkBufSize, void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model,
 	                 uint64_t instancesBufferOffset, const std::vector<Instance>& instances, float radius,
-	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f, uint64_t cuda_signalVkValue = 1);
+	                 bool isSwapYZNeeded = false, float animationSpeedMultiplier = 1.0f, float vertexMagnitudeMultiplier = 1.0f);
 	MD5CudaAnimation(const MD5CudaAnimation&) = delete;
 	MD5CudaAnimation(MD5CudaAnimation&&) = delete;
 	~MD5CudaAnimation() {
@@ -39,7 +39,7 @@ public:
 		}
 	}
 
-	uint32_t update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset, bool isInstancesUpdating = false, 
+	uint32_t update(float deltaTimeMS, uint64_t cuda_signalVkValue, int animationID, uint64_t verticesBufferOffset, bool isInstancesUpdating = false, 
 	                const glm::mat4& viewProj = glm::mat4(0.0f), float z_far = 0.0f);
 private:
     md5_animation::Model3D& cpu_MD5Model;
@@ -51,7 +51,6 @@ private:
 	uint32_t cuda_maxJointsPerSkeleton = 0u;
 	char* cuda_extrVkMappedBuffer;
 	void* cuda_semaphoreHandle = nullptr;
-	uint64_t cuda_signalVkValue = 1; // informs the Vulkan semaphore that the animation is ready
 	std::vector<std::function<void()>> cuda_cleanupFunctions;
 	glm::mat4* cuda_ViewProj = nullptr;
 	uint64_t cuda_instancesBufferOffset = 0u;

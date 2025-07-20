@@ -35,7 +35,7 @@ if(WIN32)
 	        set(CMAKE_CUDA_STANDARD 17)
 			set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 			file(GLOB_RECURSE cuda_include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
-		    file(GLOB_RECURSE CUDA_HEADERS "${CMAKE_SOURCE_DIR}/include/*.h_cu")
+		    file(GLOB_RECURSE CUDA_HEADERS "${CMAKE_SOURCE_DIR}/include/*.cuh")
 		    file(GLOB_RECURSE CUDA_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cu")
             add_library(md5_anim_cuda STATIC ${CUDA_SOURCES} ${CUDA_HEADERS})
 			set_target_properties(md5_anim_cuda PROPERTIES

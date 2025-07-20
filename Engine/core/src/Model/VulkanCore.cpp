@@ -20,7 +20,7 @@ VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController) : m_winControl
 }
 
 VulkanCore::~VulkanCore() {
-#ifdef _DEBUG
+#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
     // Get the address to the vkCreateDebugReportCallbackEXT function
     auto func =
         reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_inst, "vkDestroyDebugUtilsMessengerEXT"));
@@ -148,7 +148,7 @@ void VulkanCore::createInstance() {
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
     const char* pInstExt[] = {
-#ifdef _DEBUG
+#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif
         VK_KHR_SURFACE_EXTENSION_NAME, 
@@ -158,14 +158,14 @@ void VulkanCore::createInstance() {
 #endif
         m_winController->getVulkanWindowSurfaceExtension().data()};
 
-#ifdef _DEBUG
+#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
     const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
 #endif
 
     VkInstanceCreateInfo instInfo = {};
     instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instInfo.pApplicationInfo = &appInfo;
-#ifdef _DEBUG
+#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
     instInfo.enabledLayerCount = ARRAY_SIZE_IN_ELEMENTS(pInstLayers);
     instInfo.ppEnabledLayerNames = pInstLayers;
 #endif
@@ -175,7 +175,7 @@ void VulkanCore::createInstance() {
     VkResult res = vkCreateInstance(&instInfo, nullptr, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
 
-#ifdef _DEBUG
+#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
     // Get the address to the vkCreateDebugReportCallbackEXT function
     PFN_vkCreateDebugReportCallbackEXT my_vkCreateDebugReportCallbackEXT =
         reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));

@@ -92,14 +92,14 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[SSAO_BLUR].reset(new PipelineCreatorQuad(*this, m_renderPassSSAOblur, "vert_ssaoBlur.spv",
                                                                 "frag_ssaoBlur.spv", &this->_shadingBuffer,
                                                                 PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA));
-#ifndef NDEBUG
+    // validation
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
             Utils::printLog(ERROR_PARAM, "nullptr pipeline");
-            return;
+            abort();
         }
     }
-#endif
+
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
@@ -295,7 +295,6 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
     }
-
     vkDestroyDescriptorPool(_core.getDevice(), mImguiPool, nullptr);
     ImGui_ImplVulkan_Shutdown();
 }
@@ -786,7 +785,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     //---------------------------------------------------------------------------------------------//
     /// BLOOM
-    
+
     static std::array<VkClearValue, 2> bloomClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassBloomInfo = {};
@@ -817,7 +816,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-    
+
     //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
     
@@ -1081,6 +1080,15 @@ bool VulkanRenderer::renderScene() {
     uint32_t ImageIndex = 0;
     VkResult res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
                                          VK_NULL_HANDLE, &ImageIndex);
+    {
+        // Note: for some reason with enabled Cuda we can have the same ImageIndex as previous one
+        // since we have strict order of swap chain (FIFO model), we can handle this situation
+        static uint32_t last_ImageIndex = -1;
+        if (last_ImageIndex == ImageIndex) {
+            ImageIndex = ++ImageIndex % MAX_FRAMES_IN_FLIGHT;
+        }
+        last_ImageIndex = ImageIndex;
+    }
     CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
 
     VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -1095,7 +1103,10 @@ bool VulkanRenderer::renderScene() {
     submitInfo.signalSemaphoreCount = 1;
 
     updateUniformBuffer(ImageIndex, deltaTime);
-    const bool isGPUCalculationFavorable = windowQueueMSG.hmiStates ? windowQueueMSG.hmiStates->gpuAnimationEnabled.second : true;
+    static bool isGPUCalculationFavorable = false;
+    if (windowQueueMSG.hmiStates) {
+        isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
+    }
 
     for (auto& model : m_models) {
         model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR);
@@ -2073,7 +2084,6 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     pool_info.poolSizeCount = std::size(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
 
-    VkDescriptorPool mImguiPool;
     auto res = vkCreateDescriptorPool(_core.getDevice(), &pool_info, nullptr, &mImguiPool);
     CHECK_VULKAN_ERROR("ImGui reation failed", res);
 

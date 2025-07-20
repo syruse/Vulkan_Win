@@ -17,7 +17,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "MD5CudaAnimation.h_cu"
+#include "MD5CudaAnimation.cuh"
 
 namespace md5_cuda_animation {
 #ifdef __CUDACC__
@@ -160,24 +160,26 @@ struct alignas(16) BoundingBox
 
 #ifndef defined(MD5_CUDA_VERBOSE_LOG)
     constexpr bool gpu_debug_enabled = true;
+
+    //  Error checking macro
+    #define cudaCheckError(ans)                   \
+        {                                         \
+            gpuAssert((ans), __FILE__, __LINE__); \
+        }
+    inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
+        if (code != cudaSuccess) {
+            fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+            if (abort)
+                exit(code);
+        }
+    }
 #else
-    constexpr bool gpu_debug_enabled = false;    
+    constexpr bool gpu_debug_enabled = false;
+    //  Disable error checking in release mode
+    #define cudaCheckError(ans) ((void)0)
 #endif
 
 __device__  __constant__ bool GPU_DEBUG_ENABLED;
-
-//  Error checking macro
-#define cudaCheckError(ans)                   \
-    {                                         \
-        gpuAssert((ans), __FILE__, __LINE__); \
-    }
-inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
-    if (code != cudaSuccess) {
-        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort)
-            exit(code);
-    }
-}
 
 #define gpuKernelCheck()                     \
     {                                        \
@@ -245,9 +247,8 @@ MD5CudaAnimation::MD5CudaAnimation(int cudaDevice, void* winMemHandleOfVkBufMem,
                                    void* winVkSemaphoreHandle, md5_animation::Model3D& _MD5Model, 
                                    uint64_t instancesBufferOffset, const std::vector<Instance>& instances, 
                                    float radius, bool isSwapYZNeeded, float animationSpeedMultiplier,
-                                   float vertexMagnitudeMultiplier, uint64_t cuda_signalVkValue)
+                                   float vertexMagnitudeMultiplier)
     : cpu_MD5Model(_MD5Model),
-      cuda_signalVkValue(cuda_signalVkValue),
       cuda_instancesBufferOffset(instancesBufferOffset),
       cuda_radius(radius) {
     assert(_MD5Model.animations.size() > 0u && _MD5Model.subsets.size() > 0u &&
@@ -636,7 +637,7 @@ __global__ void updateAnimationChunk(uint32_t* cuda_interpolatedSkeletonMutex, m
     ///     printf("updateAnimationChunk subsetId:%d\n", subsetId);
     /// }
     if (cuda_MD5Model->numSubsets <= subsetId) {
-        printf("updateAnimationChunk: subsetId is out of range\n");
+        //printf("updateAnimationChunk: subsetId is out of range\n");
         return;
     }
 
@@ -740,7 +741,7 @@ __device__ void calculateInterpolatedSkeleton(md5_cuda_animation::Model3D* cuda_
     ///           cuda_MD5Model->numSubsets, cuda_MD5Model->numAnimations);
     ///}
     if (0 > animation.numJoints || animation.frameSkeletonCount <= frame0 || animation.frameSkeletonCount <= frame1) {
-        printf("out of range\n");
+        //printf("out of range\n");
         return;
     }
 
@@ -924,20 +925,19 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
     }
 }
 
-uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t verticesBufferOffset,
+uint32_t MD5CudaAnimation::update(float deltaTimeMS, uint64_t cuda_signalVkValue, int animationID, uint64_t verticesBufferOffset,
                                   bool isInstancesUpdating, const glm::mat4& viewProj, float z_far) {
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
 
-    // cpu memory resident variable without sync can be filled directly
-    memcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4));
-
-    int threadsPerBlock = cuda_warpSize;
-    int blocksPerGrid = cuda_SMs;
+    static int threadsPerBlock = cuda_warpSize;
+    static int blocksPerGrid = cuda_SMs;
 
     uint32_t activeInstancesCount = 1u;
     // Filter instances based on the view projection matrix and z_far
     if (isInstancesUpdating && cuda_numInstances > 1u) {
+        // cpu memory resident variable without sync can be filled directly
+        memcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4));
         blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
         cuda_filter_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
             cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,
@@ -971,7 +971,6 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, int animationID, uint64_t v
     signalParams.params.fence.value = cuda_signalVkValue;
     cudaExternalSemaphore_t cudaSem = (cudaExternalSemaphore_t)cuda_semaphoreHandle;
     cudaCheckError(cudaSignalExternalSemaphoresAsync(&cudaSem, &signalParams, 1, (cudaStream_t)cuda_stream));
-    cuda_signalVkValue++;  // increment signal value for next synchronization with next Vulkan swapchain
 
     return activeInstancesCount;
 }
