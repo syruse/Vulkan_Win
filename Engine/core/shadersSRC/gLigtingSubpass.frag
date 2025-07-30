@@ -40,6 +40,8 @@ layout(location = 2) out vec4 out_shading;
 const float shiness = 8.5;
 const float softShadingFactor = 0.45; // soft shading by minimum factor limitation
 const float brightness = 2.7;
+const float contrastSSAOFactor = 7;
+
 
 float getShading(vec3 world, float bias)
 {
@@ -124,6 +126,7 @@ void main()
 		vec3 normal = 2.0 * normalRange_0_1 - 1.0;
 		
 		float ambientOcclusion = subpassLoad(inputSSAO).r;
+		ambientOcclusion = pow(ambientOcclusion, contrastSSAOFactor);
 		
 		// Blinn-Phong lighting model calculation
         vec3 lightDir   = normalize(pushConstant.lightPos - world);

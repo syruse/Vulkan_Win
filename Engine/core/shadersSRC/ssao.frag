@@ -21,6 +21,8 @@ layout(set = 0, binding = 4) uniform UBOViewProjectionObject {
 	mat4 footPrintViewProj;
 } uboViewProjection;
 
+layout(binding = 5) uniform sampler2D inputViewSpacePos;
+
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
     vec3 lightPos;
@@ -33,7 +35,7 @@ layout(location = 0) out vec4 out_color;
 
 const float noiseScale = 256.0; // oversampling multiplier apllied for 4x4 noise texture
 const float radius = 0.95; // semi-sphera kernel radius
-const float bias = 0.006;
+const float bias = 0.003;
 const int contrastFactor = 7;
 
 void main()
@@ -41,47 +43,58 @@ void main()
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
     // skybox etc has zero length normal
     if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
-        vec3 normal = 2.0 * normalRange_0_1 - 1.0;
-        
-		float depth = texture(inputDepth, in_uv).r;
-        vec4 clip = vec4(in_uv * 2.0 - 1.0, depth, 1.0);
-        vec4 world_w = uboViewProjection.viewProjInverse * clip;
-        vec4 world = world_w / world_w.w;
-        vec4 posInViewSpace = uboViewProjection.view * world;
-        
-        vec3 randomVec = texture(inputNoise, in_uv * noiseScale).xyz * 2.0 - 1.0;
-        
-        // The Gram–Schmidt process for generation of tilted orthogonal basis (we don't need accurancy like precalculated tangent)
-		vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
-        vec3 bitangent = cross(normal, tangent);
-        mat3 TBN = mat3(tangent, bitangent, normal);
+        vec4 posInViewSpace = texture(inputViewSpacePos, in_uv);
 		
-		float nearPlane = pushConstant.windowSize.w;
-        float farPlane = pushConstant.windowSize.z;
-        float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
-        
-        float occlusion = 0.0;
-        for(int i = 0; i < SSAO_KERNEL_SIZE; ++i)
+		float distance = distance(vec3(0.0, 0.0, 0.0), posInViewSpace.xyz);
+		if (distance > 0.30 * pushConstant.windowSize.z) // we generate SSAO fo 30 percentage of far plane
         {
-            vec3 sample_ = TBN * uboKernel.samples[i].xyz;
-            sample_ = posInViewSpace.xyz + sample_ * radius; 
-            vec4 offset = vec4(sample_, 1.0);
-            offset = uboViewProjection.proj * offset;
-            offset.xyz /= offset.w;
+            out_color = vec4(1.0);
+        } else {
+		    vec3 normal = 2.0 * normalRange_0_1 - 1.0;
+		    float depth = texture(inputDepth, in_uv).r;
+			/* Note: alternative way to calculate over depth texture (memory optimized but affacts performance)
+		    * vec4 clip = vec4(in_uv * 2.0 - 1.0, depth, 1.0);
+            * vec4 world_w = uboViewProjection.viewProjInverse * clip;
+            * vec4 world = world_w / world_w.w;
+            * vec4 posInViewSpace = uboViewProjection.view * world;
+		    */
+			vec3 randomVec = texture(inputNoise, in_uv * noiseScale).xyz * 2.0 - 1.0;
 			
-			float sampleDepth = texture(inputDepth, offset.xy * 0.5 + vec2(0.5)).r;
-			clip = vec4(offset.xy, sampleDepth, 1.0);
-            world_w = uboViewProjection.viewProjInverse * clip;
-            world = world_w / world_w.w;
-            vec4 sampleView = uboViewProjection.view * world;
-
-			float linearSampleDepth = (2.0 * nearPlane) / (farPlane + nearPlane - sampleDepth * (farPlane - nearPlane));
-			float rangeCheck = smoothstep(0.0, 1.0, radius / abs(posInViewSpace.z - sampleView.z));
-            occlusion += (linearDepth - bias > linearSampleDepth ? 1.0 : 0.0) * rangeCheck;
-        }
-		
-		occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
-        out_color = vec4(pow(occlusion, contrastFactor), 0.0, 0.0, 1.0);
+			// The Gram–Schmidt process for generation of tilted orthogonal basis (we don't need accurancy like precalculated tangent)
+			vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
+			vec3 bitangent = cross(normal, tangent);
+			mat3 TBN = mat3(tangent, bitangent, normal);
+			
+			float nearPlane = pushConstant.windowSize.w;
+			float farPlane = pushConstant.windowSize.z;
+			float linearDepth = (2.0 * nearPlane) / (farPlane + nearPlane - depth * (farPlane - nearPlane));
+			
+			float occlusion = 0.0;
+			for(int i = 0; i < SSAO_KERNEL_SIZE; ++i)
+			{
+				vec3 sample_ = TBN * uboKernel.samples[i].xyz;
+				sample_ = posInViewSpace.xyz + sample_ * radius; 
+				vec4 offset = vec4(sample_, 1.0);
+				offset = uboViewProjection.proj * offset;
+				offset.xyz /= offset.w;
+				
+				float sampleDepth = texture(inputDepth, offset.xy * 0.5 + vec2(0.5)).r;
+				vec4 sampleView = texture(inputViewSpacePos, offset.xy * 0.5 + vec2(0.5));
+				/* Note: alternative way to calculate over depth texture (memory optimized but affacts performance)
+				* clip = vec4(offset.xy, sampleDepth, 1.0);
+				* world_w = uboViewProjection.viewProjInverse * clip;
+				* world = world_w / world_w.w;
+				* vec4 sampleView = uboViewProjection.view * world;
+				*/
+	
+				float linearSampleDepth = (2.0 * nearPlane) / (farPlane + nearPlane - sampleDepth * (farPlane - nearPlane));
+				float rangeCheck = smoothstep(0.0, 1.0, radius / abs(posInViewSpace.z - sampleView.z));
+				occlusion += (linearDepth - bias > linearSampleDepth ? 1.0 : 0.0) * rangeCheck;
+			}
+			
+			occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
+			out_color = vec4(pow(occlusion, contrastFactor), 0.0, 0.0, 1.0);
+		}
     } else {
         out_color = vec4(0.0);
     }

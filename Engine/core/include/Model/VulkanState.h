@@ -116,6 +116,7 @@ struct VulkanState {
     DepthBuffer _depthTempBuffer{_width, _height};
     DepthBuffer _shadowMapBuffer{_shadowMapWidthAndHeight, _shadowMapWidthAndHeight};
     ColorBuffer _colorBuffer{};
+    ColorBuffer _viewSpaceBuffer{}; // this is for ssao generation
     ColorBuffer _ssaoBuffer{};
     ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
     DepthBuffer _footprintBuffer{_footPrintWidthAndHeight, _footPrintWidthAndHeight};

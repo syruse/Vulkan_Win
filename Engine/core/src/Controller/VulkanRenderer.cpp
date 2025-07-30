@@ -233,6 +233,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImage(_core.getDevice(), _ssaoBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _ssaoBuffer.colorBufferImageMemory[i], nullptr);
 
+        vkDestroyImageView(_core.getDevice(), _viewSpaceBuffer.colorBufferImageView[i], nullptr);
+        vkDestroyImage(_core.getDevice(), _viewSpaceBuffer.colorBufferImage[i], nullptr);
+        vkFreeMemory(_core.getDevice(), _viewSpaceBuffer.colorBufferImageMemory[i], nullptr);
+
         vkDestroyImageView(_core.getDevice(), _shadingBuffer.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _shadingBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _shadingBuffer.colorBufferImageMemory[i], nullptr);
@@ -532,8 +536,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
 
     //---------------------------------------------------------------------------------------------//
     /// depth writing pass
-    VkClearValue depthWriterClearValues{};
-    depthWriterClearValues.depthStencil.depth = 1.0f;
+    static std::array<VkClearValue, 2> depthWriterClearValues{zeroClearValues, zeroClearValues};
+    depthWriterClearValues[0].depthStencil.depth = 1.0f;
 
     VkRenderPassBeginInfo renderPassdepthWriterInfo = {};
     renderPassdepthWriterInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -542,8 +546,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     renderPassdepthWriterInfo.renderArea.offset.y = 0;
     renderPassdepthWriterInfo.renderArea.extent.width = _depthBuffer.width;
     renderPassdepthWriterInfo.renderArea.extent.height = _depthBuffer.height;
-    renderPassdepthWriterInfo.clearValueCount = 1;
-    renderPassdepthWriterInfo.pClearValues = &depthWriterClearValues;
+    renderPassdepthWriterInfo.clearValueCount = static_cast<uint32_t>(depthWriterClearValues.size());
+    renderPassdepthWriterInfo.pClearValues = depthWriterClearValues.data();
     renderPassdepthWriterInfo.framebuffer = m_fbsDepth[currentImage];
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassdepthWriterInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -925,6 +929,7 @@ void VulkanRenderer::createColorBufferImage() {
                                           _gPassBuffer.normal.colorFormat)) {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
+    _viewSpaceBuffer.colorFormat = _gPassBuffer.normal.colorFormat;
 
     auto HDRFormat = VK_FORMAT_UNDEFINED;
     if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT},
@@ -995,6 +1000,16 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _ssaoBuffer.colorBufferImage[i], _ssaoBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _ssaoBuffer.colorBufferImageView[i]);
+
+        // view space position render target
+        Utils::VulkanCreateImage(
+            _core.getDevice(), _core.getPhysDevice(), _width, _height, _viewSpaceBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            _viewSpaceBuffer.colorBufferImage[i],
+            _viewSpaceBuffer.colorBufferImageMemory[i]);
+
+        Utils::VulkanCreateImageView(_core.getDevice(), _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorFormat,
+                                     VK_IMAGE_ASPECT_COLOR_BIT, _viewSpaceBuffer.colorBufferImageView[i]);
 
         // SHADING render target
         Utils::VulkanCreateImage(
@@ -1201,6 +1216,11 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentDescription footPrintLoadAttachment = depthSSAOReadyAttachment;
 
+    VkAttachmentDescription viewSpacePosAttachment = colorAttachment;
+    viewSpacePosAttachment.format = _viewSpaceBuffer.colorFormat;
+    viewSpacePosAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    viewSpacePosAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1231,11 +1251,13 @@ void VulkanRenderer::createRenderPass() {
     // Set up Subpass 2 (SSAO)
 
     // References to attachments that subpass will take input from
-    std::array<VkAttachmentReference, 2> inputSSAOReferences;
+    std::array<VkAttachmentReference, 3> inputSSAOReferences;
     inputSSAOReferences[0].attachment = 1;
     inputSSAOReferences[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputSSAOReferences[1].attachment = 4;
     inputSSAOReferences[1].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    inputSSAOReferences[2].attachment = 10;
+    inputSSAOReferences[2].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentSSAOReference = {};
     colorAttachmentSSAOReference.attachment = 3;
@@ -1269,6 +1291,10 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentReference shadingAttachmentRef{};
     shadingAttachmentRef.attachment = 9;
     shadingAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference viewSpacePosAttachmentRef{};
+    viewSpacePosAttachmentRef.attachment = 10;
+    viewSpacePosAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     std::array<VkAttachmentReference, 3u> colorAndHdrAttachmentRef{colorAttachmentRef, hdrAttachmentRef, shadingAttachmentRef};
     subpasses[2].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -1339,10 +1365,10 @@ void VulkanRenderer::createRenderPass() {
     // temporary depth buffer for correct geometry output in g-Pass since depthAttachment is already formed before g-pass started
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
 
-    std::array<VkAttachmentDescription, 10> renderPassAttachments = {
+    std::array<VkAttachmentDescription, 11> renderPassAttachments = {
         colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO,
         depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,   depthTemporaryAttachment,
-        footPrintLoadAttachment,  colorAttachmentShading};
+        footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -1698,37 +1724,55 @@ void VulkanRenderer::createRenderPass() {
     Utils::printLog(INFO_PARAM, "Created a render pass SHADOW MAP");
 
     //-------------------------------------------------------//
-    // Create info for Render Pass DEPTH writing
+    // Create info for Render Pass DEPTH writing and viewSpace positions for SSAO
     VkAttachmentReference depthAttachmentForSSAORef{};
     depthAttachmentForSSAORef.attachment = 0;
     depthAttachmentForSSAORef.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference viewSpacePosAttachmentForSSAORef{};
+    viewSpacePosAttachmentForSSAORef.attachment = 1;
+    viewSpacePosAttachmentForSSAORef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpassesDepthSSAO{};
     subpassesDepthSSAO.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassesDepthSSAO.colorAttachmentCount = 0;
+    subpassesDepthSSAO.colorAttachmentCount = 1;
+    subpassesDepthSSAO.pColorAttachments = &viewSpacePosAttachmentForSSAORef;
     subpassesDepthSSAO.pDepthStencilAttachment = &depthAttachmentForSSAORef;
 
     // Subpass dependencies for layout transitions
-    VkSubpassDependency dependencyDepthSSAO;
+    std::array<VkSubpassDependency, 2u> dependencyDepthAndViewSpacePosForSSAO;
 
-    dependencyDepthSSAO.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencyDepthSSAO.dstSubpass = 0;
-    dependencyDepthSSAO.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // store previous 'clear' operation
+    // depth
+    dependencyDepthAndViewSpacePosForSSAO[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyDepthAndViewSpacePosForSSAO[0].dstSubpass = 0;
+    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // store previous 'clear' operation
     // layout transition happens here from depth 'clear'
-    dependencyDepthSSAO.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
-    dependencyDepthSSAO.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
-    dependencyDepthSSAO.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+    dependencyDepthAndViewSpacePosForSSAO[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
+    dependencyDepthAndViewSpacePosForSSAO[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
+    dependencyDepthAndViewSpacePosForSSAO[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // also we read 'cleared' depth buffer
-    dependencyDepthSSAO.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    dependencyDepthAndViewSpacePosForSSAO[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // viewspace pos color
+    dependencyDepthAndViewSpacePosForSSAO[1].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyDepthAndViewSpacePosForSSAO[1].dstSubpass = 0;
+    dependencyDepthAndViewSpacePosForSSAO[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // store previous 'clear' operation
+    dependencyDepthAndViewSpacePosForSSAO[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyDepthAndViewSpacePosForSSAO[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;  // 'clear' writes to color buffer
+    dependencyDepthAndViewSpacePosForSSAO[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    dependencyDepthAndViewSpacePosForSSAO[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkAttachmentDescription colorAttachmentViewSpacePos = colorAttachment;
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsSSAO = {depthAttachment, colorAttachmentViewSpacePos};
 
     VkRenderPassCreateInfo renderPassCreateInfoDepthForSSAO = {};
     renderPassCreateInfoDepthForSSAO.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassCreateInfoDepthForSSAO.attachmentCount = 1;
-    renderPassCreateInfoDepthForSSAO.pAttachments = &depthAttachment;
+    renderPassCreateInfoDepthForSSAO.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsSSAO.size());
+    renderPassCreateInfoDepthForSSAO.pAttachments = renderPassAttachmentsSSAO.data();
     renderPassCreateInfoDepthForSSAO.subpassCount = 1;
     renderPassCreateInfoDepthForSSAO.pSubpasses = &subpassesDepthSSAO;
-    renderPassCreateInfoDepthForSSAO.dependencyCount = 1;
-    renderPassCreateInfoDepthForSSAO.pDependencies = &dependencyDepthSSAO;
+    renderPassCreateInfoDepthForSSAO.dependencyCount = dependencyDepthAndViewSpacePosForSSAO.size();
+    renderPassCreateInfoDepthForSSAO.pDependencies = dependencyDepthAndViewSpacePosForSSAO.data();
 
     res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoDepthForSSAO, nullptr, &m_renderPassDepth);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
@@ -1843,7 +1887,7 @@ void VulkanRenderer::createRenderPass() {
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        std::array<VkImageView, 10> attachments = {_colorBuffer.colorBufferImageView[i],
+        std::array<VkImageView, 11> attachments = {_colorBuffer.colorBufferImageView[i],
                                                    _gPassBuffer.normal.colorBufferImageView[i],
                                                    _gPassBuffer.color.colorBufferImageView[i],
                                                    _ssaoBuffer.colorBufferImageView[i],
@@ -1852,7 +1896,8 @@ void VulkanRenderer::createFramebuffer() {
                                                    _bloomBuffer[0].colorBufferImageView[i],
                                                    _depthTempBuffer.depthImageView,
                                                    _footprintBuffer.depthImageView,
-                                                   _shadingBuffer.colorBufferImageView[i]};
+                                                   _shadingBuffer.colorBufferImageView[i],
+                                                   _viewSpaceBuffer.colorBufferImageView[i]};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -1987,15 +2032,15 @@ void VulkanRenderer::createFramebuffer() {
     }
 
     //-------------------------------------------------------//
-    // FBO DEPTH PASS (for SSAO)
+    // FBO DEPTH PASS AND VIEW SPACE POS (for SSAO)
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkImageView attachment = _depthBuffer.depthImageView;
+        std::array<VkImageView, 2> attachments = {_depthBuffer.depthImageView, _viewSpaceBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
         fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         fbCreateInfo.renderPass = m_renderPassDepth;
-        fbCreateInfo.attachmentCount = 1;
-        fbCreateInfo.pAttachments = &attachment;
+        fbCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        fbCreateInfo.pAttachments = attachments.data();
         fbCreateInfo.width = _depthBuffer.width;
         fbCreateInfo.height = _depthBuffer.height;
         fbCreateInfo.layers = 1;

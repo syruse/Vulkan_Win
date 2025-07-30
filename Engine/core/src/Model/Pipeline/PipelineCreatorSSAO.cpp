@@ -177,8 +177,15 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding UBOKernelLayoutBinding = UBOLayoutBinding;
     UBOKernelLayoutBinding.binding = 4;
 
-    std::array<VkDescriptorSetLayoutBinding, 5u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, normalInputLayoutBinding,
-                                                               depthInputLayoutBinding, UBOKernelLayoutBinding};
+    // View Space Position attachment
+    VkDescriptorSetLayoutBinding viewSpacePosLayoutBinding{};
+    viewSpacePosLayoutBinding.binding = 5;
+    viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    viewSpacePosLayoutBinding.descriptorCount = 1;
+    viewSpacePosLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 6u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, normalInputLayoutBinding,
+                                                               depthInputLayoutBinding, UBOKernelLayoutBinding, viewSpacePosLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -212,8 +219,10 @@ void PipelineCreatorSSAO::createDescriptorPool() {
 
     VkDescriptorPoolSize uboKernelPoolSize = uboPoolSize;
 
-    std::array<VkDescriptorPoolSize, 5u> poolSize{uboPoolSize, texturePoolSize, gNormalInputPoolSize, depthInputPoolSize,
-                                                  uboKernelPoolSize};
+    VkDescriptorPoolSize viewSpacePosInputPoolSize = depthInputPoolSize;
+
+    std::array<VkDescriptorPoolSize, 6u> poolSize{uboPoolSize, texturePoolSize, gNormalInputPoolSize, depthInputPoolSize,
+                                                  uboKernelPoolSize, viewSpacePosInputPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -329,8 +338,24 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         uboDescriptorWrite.descriptorCount = 1;
         uboDescriptorWrite.pBufferInfo = &bufferInfo;
 
-        std::array<VkWriteDescriptorSet, 5u> descriptorSets{gNormalWrite, depthWrite, textureSetWrite, uboKernelDescriptorWrite,
-                                                            uboDescriptorWrite};
+        // View Space Position Attachment
+        VkDescriptorImageInfo viewSpacePosInfo{};
+        viewSpacePosInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        viewSpacePosInfo.imageView = m_vkState._viewSpaceBuffer.colorBufferImageView[i];
+        viewSpacePosInfo.sampler = VK_NULL_HANDLE;
+
+        // View Space Position Attachment Descriptor Write
+        VkWriteDescriptorSet viewSpacePosWrite = {};
+        viewSpacePosWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        viewSpacePosWrite.dstSet = m_descriptorSets[i];
+        viewSpacePosWrite.dstBinding = 5;
+        viewSpacePosWrite.dstArrayElement = 0;
+        viewSpacePosWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        viewSpacePosWrite.descriptorCount = 1;
+        viewSpacePosWrite.pImageInfo = &viewSpacePosInfo;
+
+        std::array<VkWriteDescriptorSet, 6u> descriptorSets{gNormalWrite, depthWrite, textureSetWrite, uboKernelDescriptorWrite,
+                                                            uboDescriptorWrite, viewSpacePosWrite};
 
         // Update descriptor sets
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);

@@ -14,6 +14,8 @@ layout(set = 0, binding = 1) uniform DynamicUBO {
     mat4 MVP;
 } dynamicUBO;
 
+layout(location = 0) out vec4 outPosInViewSpace;
+
 layout(location = 0) in vec3 inPosition;
 
 // Instance attributes
@@ -22,5 +24,7 @@ layout (location = 6) in float scale;
 
 void main() {
 	vec3 pos = inPosition + posShift;
-    gl_Position = uboViewProjection.viewProj * dynamicUBO.model * vec4(scale*(pos), 1.0f);
+	vec4 worldSpacePos = dynamicUBO.model * vec4(scale*(pos), 1.0f);
+	outPosInViewSpace = uboViewProjection.view * worldSpacePos;
+    gl_Position = uboViewProjection.viewProj * worldSpacePos;
 }
