@@ -82,13 +82,19 @@ void Win32Control::init() {
 
     ImGui_ImplWin32_Init(m_hwnd);
 
-    ShowWindow(m_hwnd, SW_SHOW);
+    // Make the window border-less so that the client area can fill the screen.
+    SetWindowLong(m_hwnd, GWL_STYLE, style & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME));
+
+    ShowWindow(m_hwnd, SW_SHOWMAXIMIZED);
 }
 
-void Win32Control::imGuiNewFrame() const {
+void Win32Control::imGuiNewFrame(VkCommandBuffer command_buffer) {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+
+    _windowQueueMsg.hmiStates = &mUi.updateAndDraw();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }
 
 VkSurfaceKHR Win32Control::createSurface(VkInstance& inst) const {
@@ -150,12 +156,7 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     _windowQueueMsg.mouseY = mMouse->GetState().y;
 
     // if menu invoked
-    _windowQueueMsg.hmiRenderData = nullptr; 
-    if (escPressed) {
-        imGuiNewFrame();
-        _windowQueueMsg.hmiStates = &mUi.updateAndDraw();
-        _windowQueueMsg.hmiRenderData = ImGui::GetDrawData();
-    }
+    _windowQueueMsg.hmiRenderData = escPressed;
 
     IControl::WindowQueueMSG windowQueueMsg(_windowQueueMsg);
     _windowQueueMsg.reset();

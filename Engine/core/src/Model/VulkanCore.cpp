@@ -104,6 +104,9 @@ const VkSurfaceCapabilitiesKHR& VulkanCore::getSurfaceCaps() const {
 }
 
 void VulkanCore::selectPhysicalDevice() {
+    bool foundGfxDevice = false;
+    uint32_t* pQueueFamilyCount = nullptr;
+
     for (size_t i = 0; i < m_physDevices.m_devices.size(); ++i) {
         for (size_t j = 0; j < m_physDevices.m_qFamilyProps[i].size(); ++j) {
             VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[i][j];
@@ -114,27 +117,119 @@ void VulkanCore::selectPhysicalDevice() {
                         (flags & VK_QUEUE_GRAPHICS_BIT) ? "Yes" : "No", (flags & VK_QUEUE_COMPUTE_BIT) ? "Yes" : "No",
                         (flags & VK_QUEUE_TRANSFER_BIT) ? "Yes" : "No", (flags & VK_QUEUE_SPARSE_BINDING_BIT) ? "Yes" : "No");
 
-            if ((flags & VK_QUEUE_GRAPHICS_BIT)) {
-                if (!m_physDevices.m_qSupportsPresent[i][j]) {
-                    Utils::printLog(INFO_PARAM, "Present is not supported");
-                    continue;
-                }
-
+            if ((flags & VK_QUEUE_GRAPHICS_BIT) && m_physDevices.m_qSupportsPresent[i][j] && QFamilyProp.queueCount > 0u) {
                 m_gfxDevIndex = i;
-                m_gfxQueueFamily = j;
-                INFO_FORMAT("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_gfxQueueFamily);
+                m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex = j;
+                INFO_FORMAT("Using GFX device %d and queue family %d\n", m_gfxDevIndex, m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex);
+
+                pQueueFamilyCount = &QFamilyProp.queueCount;
 
                 if (m_physDevices.m_devProps[i].deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
                     INFO_FORMAT("DISCRETE GPU FOUND!\n");
-                    return;
+                    foundGfxDevice = true;
+                    break;
                 }
             }
+        }
+
+        if (foundGfxDevice) {
+            break;
         }
     }
 
     if (m_gfxDevIndex == -1) {
         Utils::printLog(INFO_PARAM, "No GFX device found!");
         assert(0);
+    } else if (pQueueFamilyCount) {
+        --(*pQueueFamilyCount);  // reduce queue count by one since we will use one queue for main thread
+    }
+
+    // look up FSR 3 required queues
+    // 1. FSRPresent
+    for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+        VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+        INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+        VkQueueFlags flags = QFamilyProp.queueFlags;
+
+        if ((flags & VK_QUEUE_GRAPHICS_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) &&
+            m_physDevices.m_qSupportsPresent[m_gfxDevIndex][j] && QFamilyProp.queueCount > 0) {
+            m_queues.at(Queue_family::FSR_PRESENT_QUEUE_FAMILY).familyIndex = j;
+            --QFamilyProp.queueCount;
+            INFO_FORMAT("FSRPresent uses queue family %d\n", m_queues.at(Queue_family::FSR_PRESENT_QUEUE_FAMILY).familyIndex);
+        }
+    }
+    // 2. FSRImageAcquire
+    for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+        VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+        INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+        VkQueueFlags flags = QFamilyProp.queueFlags;
+
+        if (!(flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_TRANSFER_BIT) &&
+            QFamilyProp.queueCount > 0) {
+            m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex = j;
+            --QFamilyProp.queueCount;
+            INFO_FORMAT("FSRImageAcquire uses queue family %d\n", m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex);
+        }
+    }
+    if (m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex == -1) {
+        // no image acquire queue was found, look for a more general queue
+        for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+            VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+            INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+            VkQueueFlags flags = QFamilyProp.queueFlags;
+
+            if (!(flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && QFamilyProp.queueCount > 0) {
+                m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex = j;
+                --QFamilyProp.queueCount;
+                INFO_FORMAT("FSRImageAcquire uses queue family %d\n", m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex);
+            }
+        }
+    }
+    if (m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex == -1) {
+        // no image acquire queue was found, look for a more general queue
+        for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+            VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+            INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+            VkQueueFlags flags = QFamilyProp.queueFlags;
+
+            if (!(flags & VK_QUEUE_GRAPHICS_BIT) && QFamilyProp.queueCount > 0) {
+                m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex = j;
+                --QFamilyProp.queueCount;
+                INFO_FORMAT("FSRImageAcquire uses queue family %d\n", m_queues.at(Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY).familyIndex);
+            }
+        }
+    }
+    // 3. FSRAsyncCompute
+    for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+        VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+        INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+        VkQueueFlags flags = QFamilyProp.queueFlags;
+
+        if ((flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && QFamilyProp.queueCount > 0) {
+            m_queues.at(Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY).familyIndex = j;
+            --QFamilyProp.queueCount;
+            INFO_FORMAT("FSRAsyncCompute uses queue family %d\n", m_queues.at(Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY).familyIndex);
+        }
+    }
+    if (m_queues.at(Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY).familyIndex == -1) {
+        // no async compute was found, look for a more general queue
+        for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+            VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+
+            INFO_FORMAT("Family %d Num queues: %d\n", j, QFamilyProp.queueCount);
+            VkQueueFlags flags = QFamilyProp.queueFlags;
+
+            if ((flags & VK_QUEUE_COMPUTE_BIT) && QFamilyProp.queueCount > 0) {
+                m_queues.at(Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY).familyIndex = j;
+                --QFamilyProp.queueCount;
+                INFO_FORMAT("FSRAsyncCompute uses queue family %d\n", m_queues.at(Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY).familyIndex);
+            }
+        }
     }
 }
 
@@ -196,17 +291,39 @@ void VulkanCore::createInstance() {
 }
 
 void VulkanCore::createLogicalDevice() {
-    VkDeviceQueueCreateInfo qInfo = {};
-    qInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    using familyIndexType = int;
+    std::map<familyIndexType, std::vector<Queue_family>> queueFamilies;
 
-    float qPriorities = 1.0f;
-    qInfo.queueCount = 1;
-    qInfo.pQueuePriorities = &qPriorities;
-    qInfo.queueFamilyIndex = m_gfxQueueFamily;
+    for (auto& queue : m_queues) {
+        if (queue.second.familyIndex > -1) {
+            queueFamilies[queue.second.familyIndex].push_back(queue.first);
+            queue.second.queueIndex = queueFamilies[queue.second.familyIndex].size() - 1;
+        }
+    }
+
+    std::vector<float> queuePriorities(m_queues.size(), 1.0f);  // all queues have the same priority
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    for (const auto& [key, value] : queueFamilies) {
+        VkDeviceQueueCreateInfo qInfo = {};
+        qInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        qInfo.queueFamilyIndex = key;
+        qInfo.queueCount = static_cast<uint32_t>(value.size());
+        qInfo.pQueuePriorities = queuePriorities.data();
+        queueCreateInfos.push_back(qInfo);
+    }
+
+    VkDeviceCreateInfo devInfo = {};
 
 #if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
     const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
-                             VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME};
+                             VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME};
+
+    VkPhysicalDeviceVulkan12Features deviceFeatures12;
+    deviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    deviceFeatures12.pNext = nullptr;
+    deviceFeatures12.timelineSemaphore = true;
+
+    devInfo.pNext = &deviceFeatures12;
 #else
     const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 #endif  
@@ -215,12 +332,11 @@ void VulkanCore::createLogicalDevice() {
     deviceFeatures.samplerAnisotropy = VK_TRUE;
     deviceFeatures.tessellationShader = VK_TRUE;
 
-    VkDeviceCreateInfo devInfo = {};
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     devInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pDevExt);
     devInfo.ppEnabledExtensionNames = pDevExt;
-    devInfo.queueCreateInfoCount = 1;
-    devInfo.pQueueCreateInfos = &qInfo;
+    devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    devInfo.pQueueCreateInfos = queueCreateInfos.data();
     devInfo.pEnabledFeatures = &deviceFeatures;
 
     VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, nullptr, &m_device);
@@ -228,4 +344,10 @@ void VulkanCore::createLogicalDevice() {
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Device created");
+
+    for (auto& queue : m_queues) {
+        if (queue.second.familyIndex > -1) {
+            vkGetDeviceQueue(m_device, queue.second.familyIndex, queue.second.queueIndex, &queue.second.queue);
+        }
+    }
 }

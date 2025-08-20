@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include "IControl.h"
 #include "Utils.h"
@@ -8,6 +9,19 @@ class IControl;
 
 class VulkanCore {
 public:
+    enum Queue_family {
+        GFX_QUEUE_FAMILY = 0,
+        FSR_PRESENT_QUEUE_FAMILY,
+        FSR_IMAGE_ACQUIRE_QUEUE_FAMILY,
+        FSR_ASYNC_COMPUTE_QUEUE_FAMILY
+    };
+
+    struct Queue {
+        int familyIndex = -1;  // index in m_physDevices.m_qFamilyProps[m_gfxDevIndex]
+        int queueIndex = -1;   // index in m_physDevices.m_qFamilyProps[m_gfxDevIndex][familyIndex].queueCount
+        VkQueue queue = nullptr;
+    };
+
     explicit VulkanCore(std::unique_ptr<IControl>&& winController);
 
     ~VulkanCore();
@@ -27,7 +41,7 @@ public:
     }
 
     int getQueueFamily() const {
-        return m_gfxQueueFamily;
+        return m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
     }
 
     VkInstance getInstance() const {
@@ -40,6 +54,10 @@ public:
 
     const std::unique_ptr<IControl>& getWinController() const {
         return m_winController;
+    }
+
+    const std::map<Queue_family, Queue>& getAllQueues() const {
+        return m_queues;
     }
 
 private:
@@ -56,7 +74,11 @@ private:
     Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
 
-    // Internal stuff
+    // gpu adapter index
     int m_gfxDevIndex = -1;
-    int m_gfxQueueFamily = -1;
+
+    std::map<Queue_family, Queue> m_queues{{GFX_QUEUE_FAMILY, {-1, 0, nullptr}},
+                                           {FSR_PRESENT_QUEUE_FAMILY, {-1, 0, nullptr}},
+                                           {FSR_IMAGE_ACQUIRE_QUEUE_FAMILY, {-1, 0, nullptr}},
+                                           {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}}};
 };

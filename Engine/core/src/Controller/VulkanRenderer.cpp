@@ -28,6 +28,11 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 
+#include <ffx_api/vk/ffx_api_vk.hpp>
+#include <FidelityFX/host/backends/vk/ffx_vk.h>
+#include <ffx_api/ffx_framegeneration.hpp>
+#include <ffx_api/ffx_upscale.hpp>
+
 static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
@@ -173,10 +178,14 @@ VulkanRenderer::~VulkanRenderer() {
     Pipeliner::getInstance().saveCache();
 
     cleanupSwapChain();
+    if (mFSRSwapChainContext)
+        ffxDestroyContext(&mFSRSwapChainContext, nullptr);
 
     mTextureFactory.reset(nullptr);
 
     _aligned_free(mp_modelTransferSpace);
+
+    m_semiTransparentModels.clear();
 
     for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroyBuffer(_core.getDevice(), _ubo.buffers[i], nullptr);
@@ -283,7 +292,11 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
     }
 
-    vkDestroySwapchainKHR(_core.getDevice(), _swapChain.handle, nullptr);
+    if (mFSRSwapChainContext) {
+        mFSRReplacementFunctions.pOutDestroySwapchainFFXAPI(_core.getDevice(), _swapChain.handle, nullptr, mFSRSwapChainContext);
+    } else {
+        vkDestroySwapchainKHR(_core.getDevice(), _swapChain.handle, nullptr); 
+    }
 
     vkDestroyRenderPass(_core.getDevice(), m_renderPass, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
@@ -317,7 +330,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
 
-        createSwapChain();
+        auto swapchainCreateInfo = createSwapChain();
         createCommandBuffer();
         createDepthResources();
         createColorBufferImage();
@@ -327,6 +340,100 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         createFramebuffer();
         createPipeline();
         createDescriptorPoolForImGui();
+
+        createFSRContext(swapchainCreateInfo);
+    }
+}
+
+// FSR 3 frame generation
+void VulkanRenderer::createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateInfo) {
+    if (mFSRSwapChainContext || FSR_DISABLED) {
+        return;
+    }
+
+    ffx::CreateContextDescFrameGenerationSwapChainVK createSwapChainDesc{};
+    createSwapChainDesc.device = _core.getDevice();
+    createSwapChainDesc.physicalDevice = _core.getPhysDevice();
+    createSwapChainDesc.swapchain = &_swapChain.handle;
+    createSwapChainDesc.createInfo = swapchainCreateInfo;
+    createSwapChainDesc.allocator = nullptr;
+
+    createSwapChainDesc.gameQueue.queue = _queue;
+    createSwapChainDesc.gameQueue.familyIndex = _core.getQueueFamily();
+    createSwapChainDesc.gameQueue.submitFunc =
+        nullptr;  // this queue is only used in vkQueuePresentKHR, hence doesn't need a callback
+    auto& asyncComputeQueue = _core.getAllQueues().at(VulkanCore::Queue_family::FSR_ASYNC_COMPUTE_QUEUE_FAMILY);
+    createSwapChainDesc.asyncComputeQueue.queue = asyncComputeQueue.queue;
+    createSwapChainDesc.asyncComputeQueue.familyIndex = asyncComputeQueue.familyIndex;
+    createSwapChainDesc.asyncComputeQueue.submitFunc = nullptr;
+    auto& presentQueue = _core.getAllQueues().at(VulkanCore::Queue_family::FSR_PRESENT_QUEUE_FAMILY);
+    createSwapChainDesc.presentQueue.queue = presentQueue.queue;
+    createSwapChainDesc.presentQueue.familyIndex = presentQueue.familyIndex;
+    createSwapChainDesc.presentQueue.submitFunc = nullptr;
+    auto& imageAcquireQueue = _core.getAllQueues().at(VulkanCore::Queue_family::FSR_IMAGE_ACQUIRE_QUEUE_FAMILY);
+    createSwapChainDesc.imageAcquireQueue.queue = imageAcquireQueue.queue;
+    createSwapChainDesc.imageAcquireQueue.familyIndex = imageAcquireQueue.familyIndex;
+    createSwapChainDesc.imageAcquireQueue.submitFunc = nullptr;
+
+    auto convertQueueInfo = [](VkQueueInfoFFXAPI queueInfo) {
+        VkQueueInfoFFX info;
+        info.queue = queueInfo.queue;
+        info.familyIndex = queueInfo.familyIndex;
+        info.submitFunc = queueInfo.submitFunc;
+        return info;
+    };
+
+    VkFrameInterpolationInfoFFX frameInterpolationInfo = {};
+    frameInterpolationInfo.device = createSwapChainDesc.device;
+    frameInterpolationInfo.physicalDevice = createSwapChainDesc.physicalDevice;
+    frameInterpolationInfo.pAllocator = createSwapChainDesc.allocator;
+    frameInterpolationInfo.gameQueue = convertQueueInfo(createSwapChainDesc.gameQueue);
+    frameInterpolationInfo.asyncComputeQueue = convertQueueInfo(createSwapChainDesc.asyncComputeQueue);
+    frameInterpolationInfo.presentQueue = convertQueueInfo(createSwapChainDesc.presentQueue);
+    frameInterpolationInfo.imageAcquireQueue = convertQueueInfo(createSwapChainDesc.imageAcquireQueue);
+
+    ffx::ReturnCode retCode = ffx::CreateContext(mFSRSwapChainContext, nullptr, createSwapChainDesc);
+    if (retCode != ffx::ReturnCode::Ok) {
+        Utils::printLog(ERROR_PARAM, "Failed to create FSR SwapChain context", static_cast<uint32_t>(retCode));
+    }
+    // Get replacement function pointers
+    ffx::Query(mFSRSwapChainContext, mFSRReplacementFunctions);
+
+    ffx::QueryDescGetVersions versionQuery{};
+    versionQuery.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+    uint64_t versionCount = 0;
+    versionQuery.outputCount = &versionCount;
+    ffxQuery(nullptr, &versionQuery.header);
+
+    std::vector<const char*> versionNames;
+    std::vector<uint64_t> m_FsrVersionIds;
+    m_FsrVersionIds.resize(versionCount);
+    versionNames.resize(versionCount);
+    versionQuery.versionIds = m_FsrVersionIds.data();
+    versionQuery.versionNames = versionNames.data();
+    ffxQuery(nullptr, &versionQuery.header);
+
+    ffx::ConfigureDescFrameGenerationSwapChainKeyValueVK m_swapchainKeyValueConfig{};
+    m_swapchainKeyValueConfig.key = FFX_API_CONFIGURE_FG_SWAPCHAIN_KEY_WAITCALLBACK;
+    m_swapchainKeyValueConfig.ptr = nullptr;
+    ffx::Configure(mFSRSwapChainContext, m_swapchainKeyValueConfig);
+
+    ffx::CreateBackendVKDesc backendDesc{};
+    backendDesc.vkDevice = _core.getDevice();
+    backendDesc.vkPhysicalDevice = _core.getPhysDevice();
+    backendDesc.vkDeviceProcAddr = vkGetDeviceProcAddr;
+
+    ffx::CreateContextDescFrameGeneration createFg{};
+    createFg.displaySize = {_width, _height};
+    createFg.maxRenderSize = {_width, _height};
+    createFg.flags = FFX_FRAMEGENERATION_ENABLE_DEBUG_CHECKING;
+    createFg.flags |= FFX_FRAMEGENERATION_ENABLE_ASYNC_WORKLOAD_SUPPORT;
+
+    createFg.backBufferFormat = ffxApiGetSurfaceFormatVK(_core.getSurfaceFormat().format);
+
+    //retCode = ffx::CreateContext(mFSRFrameGenContext, nullptr, createFg, backendDesc);
+    if (retCode != ffx::ReturnCode::Ok) {
+        Utils::printLog(ERROR_PARAM, "Failed to create FSR FG context: ", static_cast<uint32_t>(retCode));
     }
 }
 
@@ -433,7 +540,7 @@ void VulkanRenderer::createDescriptorPool() {
     }
 }
 
-void VulkanRenderer::createSwapChain() {
+VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     const VkSurfaceCapabilitiesKHR& SurfaceCaps = _core.getSurfaceCaps();
     static const VkPresentModeKHR presentMode = _core.getPresentMode();
 
@@ -460,18 +567,36 @@ void VulkanRenderer::createSwapChain() {
     SwapChainCreateInfo.clipped = VK_TRUE;
     SwapChainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
-    VkResult res = vkCreateSwapchainKHR(_core.getDevice(), &SwapChainCreateInfo, nullptr, &_swapChain.handle);
+    VkResult res;
+    if (mFSRSwapChainContext) {
+        res = mFSRReplacementFunctions.pOutCreateSwapchainFFXAPI(_core.getDevice(), &SwapChainCreateInfo, nullptr,
+                                                                 &_swapChain.handle, mFSRSwapChainContext);
+    } else {
+        res = vkCreateSwapchainKHR(_core.getDevice(), &SwapChainCreateInfo, nullptr, &_swapChain.handle);
+    }   
     CHECK_VULKAN_ERROR("vkCreateSwapchainKHR error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Swap chain created");
 
     uint32_t NumSwapChainImages = 0;
-    res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, nullptr);
+    if (mFSRSwapChainContext) {
+        res = mFSRReplacementFunctions.pOutGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages,
+                                                                 nullptr);
+    } else {
+        res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, nullptr);
+    } 
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
     assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
-    res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
+    if (mFSRSwapChainContext) {
+        res = mFSRReplacementFunctions.pOutGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages,
+                                                                 &(_swapChain.images[0]));
+    } else {
+        res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
+    }
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
+
+    return SwapChainCreateInfo;
 }
 
 void VulkanRenderer::createUniformBuffers() {
@@ -521,7 +646,7 @@ void VulkanRenderer::createCommandBuffer() {
     Utils::printLog(INFO_PARAM, "Created command buffers");
 }
 
-void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmiRenderData) {
+void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderData) {
     static VkCommandBufferBeginInfo beginInfo {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         nullptr,
@@ -901,7 +1026,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, ImDrawData* hmi
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     if (hmiRenderData) {
-        ImGui_ImplVulkan_RenderDrawData(hmiRenderData, _cmdBufs[currentImage]);
+        _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -1054,7 +1179,7 @@ bool VulkanRenderer::renderScene() {
     static auto endTime = std::chrono::high_resolution_clock::now();
     static float deltaTime = 0.0f;
 
-    mCamera.update(deltaTime, false);
+    mCamera.update(deltaTime, true);
 
     auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;
@@ -1093,14 +1218,23 @@ bool VulkanRenderer::renderScene() {
     vkResetFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
 
     uint32_t ImageIndex = 0;
-    VkResult res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
-                                         VK_NULL_HANDLE, &ImageIndex);
+    VkResult res;
+    if (mFSRSwapChainContext) {
+        res = mFSRReplacementFunctions.pOutAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX,
+                                                               m_presentCompleteSem[m_currentFrame], VK_NULL_HANDLE, &ImageIndex);
+    } else {
+        res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
+                                    VK_NULL_HANDLE, &ImageIndex);
+    }
+
+    // Note: it's just fall back sover for emergency situation
+    // since we have strict order of swap chain (FIFO model), we can handle this situation
     {
-        // Note: for some reason with enabled Cuda we can have the same ImageIndex as previous one
-        // since we have strict order of swap chain (FIFO model), we can handle this situation
         static uint32_t last_ImageIndex = -1;
         if (last_ImageIndex == ImageIndex) {
             ImageIndex = ++ImageIndex % MAX_FRAMES_IN_FLIGHT;
+            //Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned the same ImageIndex", last_ImageIndex,
+            //                " as last one, trying to acquire next image manually !");
         }
         last_ImageIndex = ImageIndex;
     }
@@ -1144,7 +1278,12 @@ bool VulkanRenderer::renderScene() {
     presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
     presentInfo.waitSemaphoreCount = 1;
 
-    res = vkQueuePresentKHR(_queue, &presentInfo);
+    if (mFSRSwapChainContext) {
+        res = mFSRReplacementFunctions.pOutQueuePresentKHR(_queue, &presentInfo);
+    } else {
+        res = vkQueuePresentKHR(_queue, &presentInfo);
+    }
+
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain(_width, _height);
     } else {
@@ -2207,9 +2346,13 @@ void VulkanRenderer::init() {
     // Get properties of our new device
     vkGetPhysicalDeviceProperties(_core.getPhysDevice(), &mDeviceProperties);
 
-    vkGetDeviceQueue(_core.getDevice(), _core.getQueueFamily(), 0, &_queue);
+    _queue = _core.getAllQueues().at(VulkanCore::Queue_family::GFX_QUEUE_FAMILY).queue;
+    if (!_queue) {
+        Utils::printLog(ERROR_PARAM, "failed to get graphics queue!");
+        return;
+    }
 
-    createSwapChain();
+    auto swapchainCreateInfo = createSwapChain();
     createCommandPool();
     createCommandBuffer();
     createDepthResources();
@@ -2223,4 +2366,6 @@ void VulkanRenderer::init() {
     loadModels();
     createSemaphores();
     createDescriptorPoolForImGui();
+
+    createFSRContext(swapchainCreateInfo);
 }

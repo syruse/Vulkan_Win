@@ -4,12 +4,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <ffx_api/vk/ffx_api_vk.hpp>
+
 #include <array>
 
 #include "Camera.h"
 #include "Particle.h"
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
+
+#define FSR_DISABLED 1
 
 class VulkanRenderer : public VulkanState {
 public:
@@ -45,7 +49,7 @@ private:
     void cleanupSwapChain();
     void recreateSwapChain(uint16_t width, uint16_t height);
 
-    void createSwapChain();
+    VkSwapchainCreateInfoKHR createSwapChain();
     void createUniformBuffers();
     void createCommandPool();
     void createCommandBuffer();
@@ -56,14 +60,14 @@ private:
     void createDescriptorPool();
     void createFramebuffer();
     void createPipeline();
-    void recordCommandBuffers(uint32_t currentImage, ImDrawData* hmiRenderData);
+    void recordCommandBuffers(uint32_t currentImage, bool hmiRenderData);
     void createSemaphores();
     void createDescriptorPoolForImGui();
     void createDepthResources();
     void createColorBufferImage();
     void loadModels();
     void recreateDescriptorSets();
-
+    void createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateInfo);
     void calculateAdditionalMat();
 
 private:
@@ -128,4 +132,8 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
+
+    ffx::Context mFSRSwapChainContext{nullptr};
+    ffx::Context mFSRFrameGenContext{nullptr};
+    ffx::QueryDescSwapchainReplacementFunctionsVK mFSRReplacementFunctions;
 };

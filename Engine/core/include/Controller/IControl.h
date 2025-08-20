@@ -18,7 +18,7 @@ public:
         uint32_t height = 0;
         uint32_t mouseX = 0;
         uint32_t mouseY = 0;
-        ImDrawData* hmiRenderData = nullptr;
+        bool hmiRenderData = false;
         const UI::States* hmiStates = nullptr;
 
         void reset() {
@@ -57,8 +57,7 @@ public:
 
     virtual WindowQueueMSG processWindowQueueMSGs() = 0;
 
-private:
-    virtual void imGuiNewFrame() const = 0;
+    virtual void imGuiNewFrame(VkCommandBuffer command_buffer) = 0;
 
 protected:
     std::string_view m_appName;
