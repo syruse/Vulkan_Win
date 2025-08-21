@@ -4,7 +4,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#if defined(USE_FSR) && USE_FSR
 #include <ffx_api/vk/ffx_api_vk.hpp>
+#endif
 
 #include <array>
 
@@ -12,8 +14,6 @@
 #include "Particle.h"
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
-
-#define FSR_DISABLED 1
 
 class VulkanRenderer : public VulkanState {
 public:
@@ -132,8 +132,9 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
-
+#if defined(USE_FSR) && USE_FSR
     ffx::Context mFSRSwapChainContext{nullptr};
     ffx::Context mFSRFrameGenContext{nullptr};
     ffx::QueryDescSwapchainReplacementFunctionsVK mFSRReplacementFunctions;
+#endif
 };

@@ -143,7 +143,7 @@ void VulkanCore::selectPhysicalDevice() {
     } else if (pQueueFamilyCount) {
         --(*pQueueFamilyCount);  // reduce queue count by one since we will use one queue for main thread
     }
-
+#if defined(USE_FSR) && USE_FSR
     // look up FSR 3 required queues
     // 1. FSRPresent
     for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
@@ -231,6 +231,7 @@ void VulkanCore::selectPhysicalDevice() {
             }
         }
     }
+#endif
 }
 
 void VulkanCore::createInstance() {

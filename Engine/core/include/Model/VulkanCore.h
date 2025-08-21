@@ -11,9 +11,11 @@ class VulkanCore {
 public:
     enum Queue_family {
         GFX_QUEUE_FAMILY = 0,
+#if defined(USE_FSR) && USE_FSR
         FSR_PRESENT_QUEUE_FAMILY,
         FSR_IMAGE_ACQUIRE_QUEUE_FAMILY,
         FSR_ASYNC_COMPUTE_QUEUE_FAMILY
+#endif
     };
 
     struct Queue {
@@ -78,7 +80,10 @@ private:
     int m_gfxDevIndex = -1;
 
     std::map<Queue_family, Queue> m_queues{{GFX_QUEUE_FAMILY, {-1, 0, nullptr}},
+#if defined(USE_FSR) && USE_FSR
                                            {FSR_PRESENT_QUEUE_FAMILY, {-1, 0, nullptr}},
                                            {FSR_IMAGE_ACQUIRE_QUEUE_FAMILY, {-1, 0, nullptr}},
-                                           {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}}};
+                                           {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}},
+#endif    
+    };
 };
