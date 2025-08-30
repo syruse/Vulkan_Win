@@ -7,6 +7,7 @@
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <map>
 #include <string>
 
@@ -15,6 +16,57 @@ class PipelineCreatorTextured;
 class PipelineCreatorFootprint;
 class I3DModel {
 public:
+
+    // we have only one animation type for now (tank rolls up the trees)
+    class InteractionImpactAnimation {
+    private:
+        float elapsedTimeMs{0.0f};
+        float durationMs{1000.0f};
+        glm::mat4 modelMatrix{1.0f};
+        bool animationStarted{false};
+        bool animationFinished{false};
+        inline static glm::quat _startRotation{1.0f, 0.0f, 0.0f, 0.0f};  // (w, x, y, z)
+        inline static glm::quat _endRotation{glm::vec3{glm::radians(90.0f), 0.0f, 0.0f}};  // inited by Euler angle around X axis
+
+    public:
+        bool isAnimationStarted() const {
+            return animationStarted;
+        }
+
+        void startAnimation(float _durationMs) {
+            if (animationStarted)
+                return;
+            animationStarted = true;
+            animationFinished = false;
+            elapsedTimeMs = 0.0f;
+            durationMs = _durationMs;
+        }
+
+        void updateModelMat(float deltaTimeMs) {
+            if (!animationStarted || animationFinished)
+                return;
+            elapsedTimeMs += deltaTimeMs;
+            if (elapsedTimeMs > durationMs) {
+                elapsedTimeMs = durationMs;
+                animationFinished = true;
+            }
+            float interpolationK = elapsedTimeMs / durationMs;
+            // ease-in: interpolationK * interpolationK
+            // Hermite interpolation:
+            interpolationK = (3.0f * interpolationK * interpolationK) - (2.0f * interpolationK * interpolationK * interpolationK);
+            auto interpolatedQuat = glm::mix(_startRotation, _endRotation, interpolationK);
+            modelMatrix = glm::mat4_cast(interpolatedQuat);
+        }
+
+        bool isAnimationFinished() const {
+            return animationFinished;
+        }
+
+        const glm::mat4& getModelMat() const {
+            return modelMatrix;
+        }
+    };
+
     struct SubObject {
         std::uint32_t realMaterialId;
         std::size_t indexOffset;
@@ -48,8 +100,8 @@ public:
             return bindingDescriptions;
         }
 
-        static const std::array<VkVertexInputAttributeDescription, 7>& getAttributeDescriptions() {
-            static std::array<VkVertexInputAttributeDescription, 7> attributeDescriptions{};
+        static const std::array<VkVertexInputAttributeDescription, 11>& getAttributeDescriptions() {
+            static std::array<VkVertexInputAttributeDescription, 11> attributeDescriptions{};
 
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;
@@ -86,6 +138,26 @@ public:
             attributeDescriptions[6].format = VK_FORMAT_R32_SFLOAT;
             attributeDescriptions[6].offset = offsetof(Instance, scale);
 
+            attributeDescriptions[7].binding = 1;
+            attributeDescriptions[7].location = 7;
+            attributeDescriptions[7].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            attributeDescriptions[7].offset = offsetof(Instance, model_col0);
+            
+            attributeDescriptions[8].binding = 1;
+            attributeDescriptions[8].location = 8;
+            attributeDescriptions[8].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            attributeDescriptions[8].offset = offsetof(Instance, model_col1);
+            
+            attributeDescriptions[9].binding = 1;
+            attributeDescriptions[9].location = 9;
+            attributeDescriptions[9].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            attributeDescriptions[9].offset = offsetof(Instance, model_col2);
+            
+            attributeDescriptions[10].binding = 1;
+            attributeDescriptions[10].location = 10;
+            attributeDescriptions[10].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            attributeDescriptions[10].offset = offsetof(Instance, model_col3);
+
             return attributeDescriptions;
         }
     };
@@ -121,6 +193,10 @@ public:
                                         uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     }
     virtual void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
+    }
+
+    virtual std::vector<Instance>& instances() {
+        return m_instances;
     }
 
     virtual float radius() const final {

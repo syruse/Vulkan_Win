@@ -14,6 +14,10 @@ layout(location = 4) in vec3 inBitangent;
 // Instance attributes
 layout(location = 5) in vec3 posShift;
 layout (location = 6) in float scale;
+layout(location = 7) in vec4 model_col0;
+layout(location = 8) in vec4 model_col1;
+layout(location = 9) in vec4 model_col2;
+layout(location = 10) in vec4 model_col3;
 
 layout(location = 0) 
 out VS_OUT {
@@ -23,14 +27,17 @@ out VS_OUT {
 } vs_out;
 
 void main() {
-	vec3 pos = inPosition + posShift;
-    gl_Position = dynamicUBO.MVP * vec4(scale*(pos), 1.0f);
+	// 'dynamicUBO.model' not used, instead we have per instance animation model 'instanceModelMat'
+	// 'dynamicUBO.model' is more accurate for and used for the first instance (gl_InstanceIndex == 0)
+    mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3);
+	vec3 pos = scale*inPosition + posShift;
+    gl_Position = dynamicUBO.MVP * vec4(pos, 1.0f);
     vec3 T = vec3(0.0, 0.0, 0.0);
     vec3 B = vec3(0.0, 0.0, 0.0);
-    vec3 N = normalize(mat3(dynamicUBO.model) * inNormal);
+    vec3 N = normalize(mat3(instanceModelMat) * inNormal);
     if (inTangent.w > 0.0) {
-        T = normalize(mat3(dynamicUBO.model) * inTangent.xyz);
-        B = normalize(mat3(dynamicUBO.model) * inBitangent);
+        T = normalize(mat3(instanceModelMat) * inTangent.xyz);
+        B = normalize(mat3(instanceModelMat) * inBitangent);
     }
     vs_out.TBN = mat3(T, B, N);
     vs_out.TexCoord = inTexCoord;

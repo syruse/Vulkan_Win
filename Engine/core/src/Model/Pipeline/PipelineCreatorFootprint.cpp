@@ -11,7 +11,7 @@ void PipelineCreatorFootprint::createPipeline() {
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
 
-    std::array<VkVertexInputAttributeDescription, 2u> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 6u> attributeDescriptions{};
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -21,6 +21,26 @@ void PipelineCreatorFootprint::createPipeline() {
     attributeDescriptions[1].location = 2;
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[1].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::texCoord);
+
+    attributeDescriptions[2].binding = 1;
+    attributeDescriptions[2].location = 7;
+    attributeDescriptions[2].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[2].offset = offsetof(Instance, model_col0);
+
+    attributeDescriptions[3].binding = 1;
+    attributeDescriptions[3].location = 8;
+    attributeDescriptions[3].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(Instance, model_col1);
+
+    attributeDescriptions[4].binding = 1;
+    attributeDescriptions[4].location = 9;
+    attributeDescriptions[4].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[4].offset = offsetof(Instance, model_col2);
+
+    attributeDescriptions[5].binding = 1;
+    attributeDescriptions[5].location = 10;
+    attributeDescriptions[5].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[5].offset = offsetof(Instance, model_col3);
 
     vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
     vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();

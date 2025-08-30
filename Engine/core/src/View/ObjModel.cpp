@@ -13,13 +13,10 @@
 void ObjModel::init() {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
+    assert(!m_instances.empty());
 
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
-    // Note: we must have at least one instance to draw
-    if (m_instances.empty()) {
-        m_instances.push_back({glm::vec3(0.0f), 1.0f});
-    }
 
     m_activeInstances.reserve(m_instances.size());
     m_activeInstances.assign(m_instances.begin(), m_instances.end());

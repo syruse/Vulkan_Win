@@ -18,13 +18,10 @@ using namespace md5_animation;
 void MD5Model::init() {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
+    assert(!m_instances.empty());
 
     std::vector<VertexData> vertices{};
     std::vector<uint32_t> indices{};
-    // Note: we must have at least one instance to draw
-    if (m_instances.empty()) {
-        m_instances.push_back({glm::vec3(0.0f), 1.0f});
-    }
 
     m_activeInstances = m_instances;
     mActiveInstancesAmount = static_cast<uint32_t>(m_activeInstances.size());

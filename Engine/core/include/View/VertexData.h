@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/packing.hpp>
 #include <vector>
 
 #ifdef __CUDACC__
@@ -25,6 +26,10 @@ struct alignas(16) VertexData
 struct alignas(16) Instance {
     glm::vec3 posShift{0.0f};
     float scale{1.0f};
+    uint64_t model_col0 = glm::packHalf4x16(glm::vec4{1.0f, 0.0f, 0.0f, 0.0f});
+    uint64_t model_col1 = glm::packHalf4x16(glm::vec4{0.0f, 1.0f, 0.0f, 0.0f});
+    uint64_t model_col2 = glm::packHalf4x16(glm::vec4{0.0f, 0.0f, 1.0f, 0.0f});
+    uint64_t model_col3 = glm::packHalf4x16(glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
 };
 
 namespace md5_animation {

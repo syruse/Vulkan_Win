@@ -15,6 +15,8 @@
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
+#define TREES_COUNT 250
+
 class VulkanRenderer : public VulkanState {
 public:
     enum Pipelines {
@@ -79,6 +81,7 @@ private:
     std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
     std::array<std::unique_ptr<Particle>, 5u> m_particles;
+    std::vector<I3DModel::InteractionImpactAnimation> m_semiTransparentAnimations{TREES_COUNT};
     std::vector<std::unique_ptr<I3DModel>> m_semiTransparentModels{};
 
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_presentCompleteSem{nullptr};

@@ -37,17 +37,13 @@ void Skybox::init() {
 	assert(p_devide);
 	assert(m_pipelineCreatorTextured);
 	assert(!m_textureFileNames.empty());
+    assert(!m_instances.empty());
 
 	auto texture = m_textureFactory.createCubeTexture(m_textureFileNames);
 	if (!texture.expired()) {
 		m_realMaterialId =
             m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
 	}
-
-	// Note: we must have at least one instance to draw
-    if (m_instances.empty()) {
-        m_instances.push_back({glm::vec3(0.0f), 1.0f});
-    }
 
 	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,

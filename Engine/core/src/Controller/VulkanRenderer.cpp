@@ -122,19 +122,18 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
  
     // we create a lot of trees
     {
-        std::vector<Instance> instances{250};
-
+        std::vector<Instance> semiTransparentInstances{TREES_COUNT};
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
-        float limit = Z_FAR;
+        float limit = 0.8f * Z_FAR;
         std::uniform_real<> distrScale(0.5, 1.0);
-        int32_t gridLen = std::floor(std::sqrt(instances.size()));
+        int32_t gridLen = std::floor(std::sqrt(semiTransparentInstances.size()));
         float step = 2.0f * limit / gridLen;
         //std::uniform_real<> distr(0.0f, 0.1f * step);
         const float startX = -limit;
         const float startZ = -limit;
-        for (std::size_t i = 0u; i < instances.size(); ++i) {
-            auto& instance = instances[i];
+        for (std::size_t i = 0u; i < semiTransparentInstances.size(); ++i) {
+            auto& instance = semiTransparentInstances[i];
             //float xOffset = distr(gen);
             //float zOffset = distr(gen);
             instance.posShift.y = 0.0f;
@@ -149,12 +148,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
         m_semiTransparentModels.emplace_back(
             new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-                         nullptr, 12.0f, instances));
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
+                         12.0f, semiTransparentInstances));
         m_semiTransparentModels.emplace_back(
             new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()),
-                         nullptr, 12.0f, 0.1f, true, instances));
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
+                         12.0f, 0.1f, true, semiTransparentInstances));
     }
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
@@ -465,6 +464,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     assert(_ubo.buffersMemory.size() > currentImage);
     const float kDelay = deltaMS;
 
+    static const glm::mat4 identityMatrix = glm::mat4(1.0f);
+
     glm::vec4 velocity = mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
     glm::vec4 exhaustPipePos1 =
         mCamera.targetModelMat() *
@@ -496,7 +497,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     // Copy Model data except skybox
     for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
-        pModel->model = glm::mat4(1.0f);
+        pModel->model = identityMatrix;
         pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
@@ -504,6 +505,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = model;
     pModel->MVP = mViewProj.viewProj * pModel->model;
 
+    // rotate skybox slowly
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
     skyboxRotationDegree += 0.0001f * kDelay;
@@ -511,9 +513,38 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = rotMat;
     pModel->MVP = mViewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
+    // trees consist of 2 models: obj(static trunk) and md5(leaves/crown) with identical instances data
+    auto& treeTrunkInstances = m_semiTransparentModels[0]->instances();
+    auto& treeCrownInstances = m_semiTransparentModels[1]->instances();
+    for (size_t i = 0; i < TREES_COUNT; i++) {
+        auto& treeTrunkInstance = treeTrunkInstances[i];
+
+        if (m_semiTransparentAnimations[i].isAnimationStarted()) {
+            m_semiTransparentAnimations[i].updateModelMat(deltaMS);
+            const glm::mat4& modelMat = m_semiTransparentAnimations[i].getModelMat();
+            treeTrunkInstance.model_col0 = glm::packHalf4x16(modelMat[0]);
+            treeTrunkInstance.model_col1 = glm::packHalf4x16(modelMat[1]);
+            treeTrunkInstance.model_col2 = glm::packHalf4x16(modelMat[2]);
+            treeTrunkInstance.model_col3 = glm::packHalf4x16(modelMat[3]);
+
+            treeCrownInstances[i].model_col0 = treeTrunkInstance.model_col0;
+            treeCrownInstances[i].model_col1 = treeTrunkInstance.model_col1;
+            treeCrownInstances[i].model_col2 = treeTrunkInstance.model_col2;
+            treeCrownInstances[i].model_col3 = treeTrunkInstance.model_col3;
+            continue;
+        }
+        
+        auto tarpos = mCamera.targetPos();
+        auto dist = glm::distance(treeTrunkInstance.posShift, mCamera.targetPos());
+        auto boundingRadiuses = 0.5 * m_models[0]->radius(); //we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
+        if (boundingRadiuses >= dist) {
+            m_semiTransparentAnimations[i].startAnimation(2000.0f);  // 2 seconds
+        }
+    }
+
     for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
-        pModel->model = glm::mat4(1.0f);
+        pModel->model = m_semiTransparentAnimations[0].getModelMat();
         pModel->MVP = mViewProj.viewProj;
     }
 
@@ -569,7 +600,7 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     SwapChainCreateInfo.imageFormat = _core.getSurfaceFormat().format;
     SwapChainCreateInfo.imageColorSpace = _core.getSurfaceFormat().colorSpace;
     SwapChainCreateInfo.imageExtent = SurfaceCaps.currentExtent;
-    SwapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    SwapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     SwapChainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     SwapChainCreateInfo.imageArrayLayers = 1;
     SwapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -678,7 +709,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
     CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
-
+    
     const static VkClearValue zeroClearValues{{0.0f, 0.0f, 0.0f, 0.0f}};
 
     //---------------------------------------------------------------------------------------------//
@@ -752,6 +783,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFootprintInfo.renderArea.extent.height = _footprintBuffer.height;
     renderPassFootprintInfo.framebuffer = m_fbsFootprint[currentImage];
 
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U,
+                                    1U, VK_ACCESS_NONE, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     if (_oneOffClearingFootPrint) {
@@ -792,7 +828,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
     renderPassInfo.framebuffer = m_fbs[currentImage];
-
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
                                     VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                     VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
@@ -1053,11 +1088,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_NONE,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-
     res = vkEndCommandBuffer(_cmdBufs[currentImage]);
     CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
 }
@@ -1255,17 +1285,15 @@ bool VulkanRenderer::renderScene() {
 #endif
 
     // Note: it's just fall back sover for emergency situation
-    // since we have strict order of swap chain (FIFO model), we can handle this situation
     {
         static uint32_t last_ImageIndex = -1;
         if (last_ImageIndex == ImageIndex) {
             ImageIndex = ++ImageIndex % MAX_FRAMES_IN_FLIGHT;
-            //Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned the same ImageIndex", last_ImageIndex,
-            //                " as last one, trying to acquire next image manually !");
+            Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned the same ImageIndex", last_ImageIndex,
+                            " as last one, trying to acquire next image manually !");
         }
         last_ImageIndex = ImageIndex;
     }
-    CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
 
     VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo = {};
@@ -1953,7 +1981,7 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription depthAttachmentFootPrint = depthAttachment;
     depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;  // we accumulate trails of the vehicle
     depthAttachmentFootPrint.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     std::array<VkAttachmentDescription, 1> renderPassAttachmentsFootPrint = {depthAttachmentFootPrint};
 

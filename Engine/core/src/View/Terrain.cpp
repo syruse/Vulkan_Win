@@ -21,6 +21,7 @@ void Terrain::init() {
     assert(p_devide);
     assert(m_pipelineCreatorTextured);
     assert(!m_textureFileName1.empty() && !m_textureFileName2.empty() && !m_noiseTextureFileName.empty());
+    assert(!m_instances.empty());
 
     auto texture = m_textureFactory.create2DArrayTexture({m_noiseTextureFileName.data(), m_textureFileName1.data(), 
                                                           m_textureFileName2.data()}).lock();
@@ -67,11 +68,6 @@ void Terrain::init() {
             // repetition factor can be calculated more precisely
             vertex.tangent = glm::vec4(45.0f * (factor / texture->width) * vertex.texCoord, 0.0f, 0.0f);
         }
-    }
-
-    // Note: we must have at least one instance to draw
-    if (m_instances.empty()) {
-        m_instances.push_back({glm::vec3(0.0f), 1.0f});
     }
 
     Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, m_indices,

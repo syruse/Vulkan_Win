@@ -11,16 +11,46 @@ void PipelineCreatorShadowMap::createPipeline() {
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
 
-    VkVertexInputAttributeDescription attributeDescription{};
-    attributeDescription.binding = 0;
-    attributeDescription.location = 0;
-    attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescription.offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::pos);
+    std::array<VkVertexInputAttributeDescription, 7u> attributeDescriptions{};
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[0].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::pos);
+
+    attributeDescriptions[1].binding = 1;
+    attributeDescriptions[1].location = 5;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[1].offset = offsetof(Instance, posShift);
+
+    attributeDescriptions[2].binding = 1;
+    attributeDescriptions[2].location = 6;
+    attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[2].offset = offsetof(Instance, scale);
+
+    attributeDescriptions[3].binding = 1;
+    attributeDescriptions[3].location = 7;
+    attributeDescriptions[3].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(Instance, model_col0);
+
+    attributeDescriptions[4].binding = 1;
+    attributeDescriptions[4].location = 8;
+    attributeDescriptions[4].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[4].offset = offsetof(Instance, model_col1);
+
+    attributeDescriptions[5].binding = 1;
+    attributeDescriptions[5].location = 9;
+    attributeDescriptions[5].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[5].offset = offsetof(Instance, model_col2);
+
+    attributeDescriptions[6].binding = 1;
+    attributeDescriptions[6].location = 10;
+    attributeDescriptions[6].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[6].offset = offsetof(Instance, model_col3);
 
     vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
     vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
-    vertexInputInfo.vertexAttributeDescriptionCount = 1;
-    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     // avoiding Peter Pan effect, invisible faces generate proper shadows
     // draw both faces for plane line objects with single face

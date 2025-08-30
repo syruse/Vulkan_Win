@@ -14,6 +14,10 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
       m_pipelineCreatorFootprint(pipelineCreatorFootprint),
       m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier),
       m_instances(instances) {
+    // Note: we must have at least one instance to draw
+    if (m_instances.empty()) {
+        m_instances.push_back({glm::vec3(0.0f), 1.0f});
+    }
     assert(pipelineCreatorTextured);
     pipelineCreatorTextured->increaseUsageCounter();
     // footprint is optional
@@ -26,6 +30,7 @@ void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, f
     assert(currentImage < VulkanState::MAX_FRAMES_IN_FLIGHT);
     if (m_instances.size() <= 1u) {
         // nothing to update
+        m_activeInstances = m_instances;
         return;
     }
 
@@ -83,7 +88,7 @@ void I3DModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float
     };
 
     for (std::size_t i = indexFrom; i < indexTo; i++) {
-        Instance& instance = m_instances[i];
+        const Instance& instance = m_instances[i];
         glm::vec4 clipOrig = viewProj * glm::vec4(instance.posShift, 1.0f);
         bool isTestPassed = false;
         for (const auto& bias : biasCubeValues) {
