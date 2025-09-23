@@ -22,6 +22,14 @@ void ObjModel::init() {
     m_activeInstances.assign(m_instances.begin(), m_instances.end());
 
     load(vertices, indices);
+    // normilizing the vertices
+    for (auto& vert : vertices) {
+        vert.pos = (vert.pos / m_radius) * m_vertexMagnitudeMultiplier;
+    }
+
+    // modify our radius according to multiplier
+    m_radius = m_vertexMagnitudeMultiplier;
+
     Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
     {
@@ -121,9 +129,9 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
 
         for (std::size_t i = 0u; i < shape.mesh.indices.size(); ++i) {
             const auto& index = shape.mesh.indices[i];
-            vertex.pos = {attrib.vertices[3 * index.vertex_index + 0] * m_vertexMagnitudeMultiplier,
-                          attrib.vertices[3 * index.vertex_index + 1] * m_vertexMagnitudeMultiplier,
-                          attrib.vertices[3 * index.vertex_index + 2] * m_vertexMagnitudeMultiplier};
+            vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
+                          attrib.vertices[3 * index.vertex_index + 1],
+                          attrib.vertices[3 * index.vertex_index + 2]};
 
             vertex.texCoord = {attrib.texcoords[2 * index.texcoord_index + 0], attrib.texcoords[2 * index.texcoord_index + 1]};
 

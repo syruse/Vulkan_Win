@@ -3,7 +3,7 @@ SET NoOptimizationFlag=-O0
 :: default optimization level for better performance
 SET PerfOptimizationFlag=-O
 
-SET OptimizationFlag=%NoOptimizationFlag%
+SET OptimizationFlag=%PerfOptimizationFlag%
 
 
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/gPass.vert -o shaders/vert_gPass.spv

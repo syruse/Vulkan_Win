@@ -14,6 +14,7 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
       m_pipelineCreatorFootprint(pipelineCreatorFootprint),
       m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier),
       m_instances(instances) {
+    assert(m_vertexMagnitudeMultiplier > 0.01f);
     // Note: we must have at least one instance to draw
     if (m_instances.empty()) {
         m_instances.push_back({glm::vec3(0.0f), 1.0f});

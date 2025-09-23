@@ -27,10 +27,6 @@ void MD5Model::init() {
     mActiveInstancesAmount = static_cast<uint32_t>(m_activeInstances.size());
 
     if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
-        {
-            auto& bounds = m_MD5Model.animations[0].frameBounds[0];
-            m_radius = m_vertexMagnitudeMultiplier * glm::distance(bounds.min, bounds.max);
-        }
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
@@ -846,6 +842,7 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
 
                 //*** find each vertex's position using the joints and weights ***//
                 glm::vec3 rotatedPoint = glm::vec3{0.0f, 0.0f, 0.0f};
+                float radius{0.0f};
                 for (int i = 0; i < subset.vertices.size(); ++i) {
                     MD5Vertex& tempVert = subset.vertices[i];
                     auto& gpuVertex = subset.gpuVertices[tempVert.gpuVertexIndex];
@@ -872,6 +869,11 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
                         // rotated around the joints position). Finally we multiply the answer with the weights bias, or how much
                         // control the weight has over the final vertices position. All weight's bias effecting a single vertex's
                         // position must add up to 1.
+                    }
+
+                    radius = glm::length(gpuVertex.pos);
+                    if (m_radius < radius) {
+                        m_radius = radius;
                     }
 
                     gpuVertex.pos *= m_vertexMagnitudeMultiplier;
@@ -947,10 +949,18 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
     /// packing subsets verts & indices into general containers
     std::size_t commonVertsAmount = 0u;
     std::size_t commonIndicesAmount = 0u;
-    for (const auto& subset : m_MD5Model.subsets) {
+    for (auto& subset : m_MD5Model.subsets) {
         commonVertsAmount += subset.gpuVertices.size();
         commonIndicesAmount += subset.indices.size();
+
+        // normilize the vertices
+        for (auto& gpuVert : subset.gpuVertices) {
+            gpuVert.pos = gpuVert.pos / m_radius;
+        }
     }
+
+    // modify our radius according to multiplier
+    m_radius = m_vertexMagnitudeMultiplier;
 
     vertices.resize(commonVertsAmount);
     indices.resize(commonIndicesAmount);

@@ -109,7 +109,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 10.0f));
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 75.0f));
 
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
@@ -147,13 +147,13 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         }
 
         m_semiTransparentModels.emplace_back(
-            new ObjModel(*this, *mTextureFactory, "tree.obj"sv,
+            new ObjModel(*this, *mTextureFactory, "highpoly_tree_trunk.obj"sv,
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
-                         12.0f, semiTransparentInstances));
+                         60.0f, semiTransparentInstances));
         m_semiTransparentModels.emplace_back(
-            new MD5Model("tree.md5mesh"sv, "tree_idle.md5anim"sv, *this, *mTextureFactory,
+            new MD5Model("tree_leaves.md5mesh"sv, "tree_leaves_idle.md5anim"sv, *this, *mTextureFactory,
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
-                         12.0f, 0.1f, true, semiTransparentInstances));
+                         10.0f, 0.1f, true, semiTransparentInstances));
     }
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
@@ -536,7 +536,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         
         auto tarpos = mCamera.targetPos();
         auto dist = glm::distance(treeTrunkInstance.posShift, mCamera.targetPos());
-        auto boundingRadiuses = 0.5 * m_models[0]->radius(); //we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
+        auto boundingRadiuses = 0.5f * m_models[0]->radius(); //we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
         if (boundingRadiuses >= dist) {
             m_semiTransparentAnimations[i].startAnimation(2000.0f);  // 2 seconds
         }
