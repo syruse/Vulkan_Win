@@ -11,7 +11,9 @@
 #include <vulkan/vulkan_win32.h>
 #endif
 
+#if defined(USE_CUDA) && USE_CUDA
 #include "MD5CudaAnimation.cuh"
+#endif
 
 using namespace md5_animation;
 
@@ -395,6 +397,7 @@ bool MD5Model::loadMD5Anim() {
 
 void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
                                     float z_far) {
+#if defined(USE_CUDA) && USE_CUDA
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
         mWaitCudaSignalValue = currentImage;
@@ -418,6 +421,9 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
     } else {
         Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
     }
+#else
+    Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU shouldn't be called since CUDA is disabled");
+#endif
 }
 
 void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,

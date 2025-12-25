@@ -41,8 +41,9 @@ the developing is ongoing currently, it supports such features as
 <p><b>HOWTO BUILD:</b>
 </br>
 You have to fetch DirectXTK12 lib as git submodule before building
+optionally you can install NVIDIA CUDA Toolkit to run animations on cuda module
 </br>
-git submodule init && cd build
+git submodule init && mkdir build && cd build
 </br>
 for WIN platform
 </br>

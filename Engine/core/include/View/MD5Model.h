@@ -5,7 +5,9 @@
 // due to synchronization with CUDA to get the new amount of instances, it is not efficient at least for small amount of instances
 #define SORT_INSTANCES_ON_CUDA 0
 
+#if defined(USE_CUDA) && USE_CUDA
 class MD5CudaAnimation;
+#endif
 
 class MD5Model : public I3DModel {
 public:
@@ -71,8 +73,14 @@ private:
     // base intermediate animation as interpolation between neighbor frames animations
     // we keep it in memory to avoid allocations for each frame update
     std::vector<md5_animation::Joint> mInterpolatedSkeleton;
+
     // CUDA animation
+#if defined(USE_CUDA) && USE_CUDA
     MD5CudaAnimation* mCudaAnimator{nullptr};
+#else
+    void* mCudaAnimator{nullptr};
+#endif
+
     VkSemaphore mVkCudaSyncObject{nullptr};  // for synchronization with CUDA
     bool mIsCudaCalculationRequested{false};
     mutable uint64_t mWaitCudaSignalValue{1};  // wait for CUDA signal value
