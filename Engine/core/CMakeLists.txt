@@ -21,18 +21,33 @@ if(UNIX AND NOT APPLE)
     find_package(SDL2 REQUIRED)
 endif()
 
+#-----------------------------BulletPhysics-------------------------------
+#Force Bullet to build as static libraries
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+set(BULLET2_BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+#Disable unnecessary Bullet extras to speed up build
+set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_BULLET2_DEMOS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
+#Disable the deprecation warning for old CMake versions
+set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/../BulletPhysics ${CMAKE_BINARY_DIR}/BulletPhysics/build)
+#turn it back on for your own code
+set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
+set(BULLET_PHYSICS_HEADER "${CMAKE_SOURCE_DIR}/../BulletPhysics/src")
+
 if(WIN32)
     add_subdirectory(${CMAKE_SOURCE_DIR}/../DirectXTK12 ${CMAKE_BINARY_DIR}/DirectXTK12/build)
     set(CMAKE_CXX_COMPILER "msvc")
     link_directories($ENV{VULKAN_SDK}/lib)
 	if(USE_CUDA)
-		find_package(CUDA 8.0)
-		if(NOT CUDA_FOUND)
+	    find_package(CUDAToolkit 8.0 QUIET)
+		if(NOT CUDAToolkit_FOUND)
             message(STATUS "CUDA not found")
 			set(USE_CUDA OFF)
         else()
+		    message(STATUS "CUDA found: ${CUDAToolkit_VERSION}")
 		    enable_language("CUDA")
-		    find_package(CUDAToolkit)
 	        set(CMAKE_CUDA_STANDARD 17)
 			set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 			file(GLOB_RECURSE cuda_include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
@@ -77,7 +92,7 @@ endif()
 
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
 target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=${USE_FSR})
-target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER})
+target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER})
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
    message("${CMAKE_CXX_FLAGS_RELEASE}")
@@ -114,7 +129,13 @@ else(WIN32)
 		target_compile_definitions(${APP_NAME} PRIVATE USE_CUDA=1)
 	endif()
 endif()
-target_link_libraries(${APP_NAME} imgui)
+
+target_link_libraries(${APP_NAME} 
+    imgui
+    BulletDynamics 
+    BulletCollision 
+    LinearMath
+)
 
 install(TARGETS ${APP_NAME} DESTINATION ${CMAKE_BINARY_DIR}/Bin)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_BINARY_DIR}/Bin/)

@@ -1,3 +1,6 @@
 [submodule "Engine/DirectXTK12"]
 	path = Engine/DirectXTK12
 	url = git@github.com:microsoft/DirectXTK12.git
+[submodule "Engine/BulletPhysics"]
+	path = Engine/BulletPhysics
+	url = https://github.com/bulletphysics/bullet3.git

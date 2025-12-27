@@ -35,6 +35,8 @@
 #include <ffx_api/ffx_upscale.hpp>
 #endif
 
+#include <btBulletDynamicsCommon.h>
+
 static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
@@ -173,6 +175,49 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
+
+    // example c++ bullet physics collision of two cubes
+    // 1. Initialize Bullet
+    btDefaultCollisionConfiguration* config = new btDefaultCollisionConfiguration();
+    btCollisionDispatcher* dispatcher = new btCollisionDispatcher(config);
+    btBroadphaseInterface* broadphase = new btDbvtBroadphase();
+    btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver();
+    btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, config);
+    dynamicsWorld->setGravity(btVector3(0, -9.81, 0));
+
+    // 2. Create Collision Shape (Shared by both cubes if same size)
+    // Bullet uses half-extents (size 1.0 means width 2.0)
+    btCollisionShape* boxShape = new btBoxShape(btVector3(1, 1, 1));
+
+    // 3. Create Ground Cube (Static: mass = 0)
+    btTransform groundTransform;
+    groundTransform.setIdentity();
+    groundTransform.setOrigin(btVector3(0, -1, 0));  // Positioned at y = -1
+    btDefaultMotionState* groundMotionState = new btDefaultMotionState(groundTransform);
+    btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0, groundMotionState, boxShape, btVector3(0, 0, 0));
+    btRigidBody* groundBody = new btRigidBody(groundRBInfo);
+    dynamicsWorld->addRigidBody(groundBody);
+
+    // 4. Create Falling Cube (Dynamic: mass > 0)
+    btScalar mass = 1.0f;
+    btVector3 localInertia(0, 0, 0);
+    boxShape->calculateLocalInertia(mass, localInertia);
+
+    btTransform startTransform;
+    startTransform.setIdentity();
+    startTransform.setOrigin(btVector3(0, 10, 0));  // Start 10 units high
+    btDefaultMotionState* fallMotionState = new btDefaultMotionState(startTransform);
+    btRigidBody::btRigidBodyConstructionInfo fallRBInfo(mass, fallMotionState, boxShape, localInertia);
+    btRigidBody* fallBody = new btRigidBody(fallRBInfo);
+    dynamicsWorld->addRigidBody(fallBody);
+
+    //// 5. Run Simulation
+    //for (int i = 0; i < 150; i++) {
+    //    dynamicsWorld->stepSimulation(1.f / 60.f, 10);
+    //    btTransform trans;
+    //    fallBody->getMotionState()->getWorldTransform(trans);
+    //    std::cout << "Cube Height: " << trans.getOrigin().getY() << std::endl;
+    //}
 }
 
 VulkanRenderer::~VulkanRenderer() {

@@ -211,10 +211,11 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
     }
 
     // Find the GPU which is selected by Vulkan
+    int currentComputeMode;
     while (current_device < device_count) {
         cudaGetDeviceProperties(&deviceProp, current_device);
-
-        if ((deviceProp.computeMode != cudaComputeModeProhibited)) {
+        cudaDeviceGetAttribute(&currentComputeMode, cudaDevAttrComputeMode, current_device);
+        if (currentComputeMode != cudaComputeModeProhibited) {
             // Compare the cuda device UUID with vulkan UUID
             int ret = memcmp((void*)&deviceProp.uuid, vkDeviceUUID, UUID_SIZE);
             if (ret == 0) {
