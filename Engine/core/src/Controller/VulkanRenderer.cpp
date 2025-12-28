@@ -176,8 +176,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
 
-    // example c++ bullet physics collision of two cubes
-    // 1. Initialize Bullet
+    // Initialize Bullet
     btDefaultCollisionConfiguration* config = new btDefaultCollisionConfiguration();
     btCollisionDispatcher* dispatcher = new btCollisionDispatcher(config);
     btBroadphaseInterface* broadphase = new btDbvtBroadphase();
@@ -185,31 +184,58 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, config);
     dynamicsWorld->setGravity(btVector3(0, -9.81, 0));
 
-    // 2. Create Collision Shape (Shared by both cubes if same size)
-    // Bullet uses half-extents (size 1.0 means width 2.0)
-    btCollisionShape* boxShape = new btBoxShape(btVector3(1, 1, 1));
+    // Creation of static infinite plane at Y = 0.
+    {
+        // Normal vector of the plane (0, 1, 0) and Distance from origin (0)
+        btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0, 1, 0), 0);
+        // For static objects, we can skip the MotionState and use a mass of 0.
+        // The local inertia for a static plane is always (0, 0, 0).
+        btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0,                  // Mass
+                                                              nullptr,            // MotionState (optional for static objects)
+                                                              groundShape,        // Collision Shape
+                                                              btVector3(0, 0, 0)  // Local Inertia
+        );
+        btRigidBody* groundBody = new btRigidBody(groundRBInfo);
+        dynamicsWorld->addRigidBody(groundBody);
+    }
 
-    // 3. Create Ground Cube (Static: mass = 0)
-    btTransform groundTransform;
-    groundTransform.setIdentity();
-    groundTransform.setOrigin(btVector3(0, -1, 0));  // Positioned at y = -1
-    btDefaultMotionState* groundMotionState = new btDefaultMotionState(groundTransform);
-    btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0, groundMotionState, boxShape, btVector3(0, 0, 0));
-    btRigidBody* groundBody = new btRigidBody(groundRBInfo);
-    dynamicsWorld->addRigidBody(groundBody);
+    // Panzer (main vechicle)
+    {
+        btCollisionShape* boxShape = new btBoxShape(btVector3(1, 1, 1));
+        // Create the body with mass (dynamic)
+        btScalar mass = 100.0f;
+        btVector3 localInertia(0, 0, 0);
+        boxShape->calculateLocalInertia(mass, localInertia);
+        btTransform startTransform;
+        startTransform.setIdentity();
+        startTransform.setOrigin(btVector3(0, 0, 0));  // TODO
 
-    // 4. Create Falling Cube (Dynamic: mass > 0)
-    btScalar mass = 1.0f;
-    btVector3 localInertia(0, 0, 0);
-    boxShape->calculateLocalInertia(mass, localInertia);
+        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+        btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, boxShape, localInertia);
+        btRigidBody* movingBox = new btRigidBody(rbInfo);
+        // Set the velocity (x=0, y=0, z=5.0)
+        // This will make the box slide or fly along the Z axis at 5 units/sec
+        movingBox->setLinearVelocity(btVector3(0, 0, 5.0f));
+        // Prevents the box from rotating/tumbling
+        movingBox->setAngularFactor(btVector3(0, 0, 0));
+        dynamicsWorld->addRigidBody(movingBox);
+    }
 
-    btTransform startTransform;
-    startTransform.setIdentity();
-    startTransform.setOrigin(btVector3(0, 10, 0));  // Start 10 units high
-    btDefaultMotionState* fallMotionState = new btDefaultMotionState(startTransform);
-    btRigidBody::btRigidBodyConstructionInfo fallRBInfo(mass, fallMotionState, boxShape, localInertia);
-    btRigidBody* fallBody = new btRigidBody(fallRBInfo);
-    dynamicsWorld->addRigidBody(fallBody);
+    // Tree
+    {
+        btCollisionShape* boxShape = new btBoxShape(btVector3(1, 60 / 2.0f, 1)); // Bullet uses half-extents (size 60 / 2.0f means width 60)
+        btScalar mass = 1.0f;
+        btVector3 localInertia(0, 0, 0);
+        boxShape->calculateLocalInertia(mass, localInertia);
+
+        btTransform startTransform;
+        startTransform.setIdentity();
+        startTransform.setOrigin(btVector3(0, 0, 0)); // TODO
+        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+        btRigidBody::btRigidBodyConstructionInfo treeRBInfo(mass, motionState, boxShape, localInertia);
+        btRigidBody* treeBody = new btRigidBody(treeRBInfo);
+        dynamicsWorld->addRigidBody(treeBody);
+    }
 
     //// 5. Run Simulation
     //for (int i = 0; i < 150; i++) {
