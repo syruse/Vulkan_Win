@@ -16,8 +16,8 @@ void PipelineCreatorQuad::createPipeline() {
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthWriteEnable = VK_FALSE;
 
+    auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
     if (m_blend != BLEND::NONE) {
-        auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
         VkPipelineColorBlendAttachmentState blendAttachState = {};
         blendAttachState.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -37,9 +37,10 @@ void PipelineCreatorQuad::createPipeline() {
             blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
         }
 
-        blendInfo.attachmentCount = 1;
         blendInfo.pAttachments = &blendAttachState;
     }
+
+    blendInfo.attachmentCount = m_isGPassNeeded ? 3 : 1;
 
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;  // as a simple set with two triangles for quad drawing
@@ -62,27 +63,45 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
     // CREATE INPUT ATTACHMENT
 
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
-    colourInputLayoutBinding.binding = 0;
-    colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colourInputLayoutBinding.descriptorCount = 1;
     colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+    VkDescriptorSetLayoutBinding gPassInputLayoutBinding = colourInputLayoutBinding;
+    gPassInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+
     // Array of input attachment bindings
     auto inputBindingsSize = getInputBindingsAmount();
-    std::vector<VkDescriptorSetLayoutBinding> inputBindings(inputBindingsSize, colourInputLayoutBinding);
-    for (size_t i = 0u; i < inputBindings.size(); ++i) {
-        inputBindings[i].binding = i;
-    }
+    std::vector<VkDescriptorSetLayoutBinding> inputBindings;
+    inputBindings.reserve(inputBindingsSize);
 
     if (m_isGPassNeeded) {
+        inputBindings.push_back(gPassInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
+        inputBindings.push_back(gPassInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
+        inputBindings.push_back(gPassInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
+    } else {
+        inputBindings.push_back(colourInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
+    }
+    if (m_isDepthNeeded) {
+        inputBindings.push_back(colourInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
+    }
+    if (m_isGPassNeeded) {
+        inputBindings.push_back(colourInputLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
         // UboViewProjection Binding Info
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
-        uboLayoutBinding.binding = inputBindings.size() - 1u;
+        uboLayoutBinding.binding = inputBindings.size();
         uboLayoutBinding.descriptorCount = 1;
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboLayoutBinding.pImmutableSamplers = nullptr;
         uboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        inputBindings.back() = uboLayoutBinding;
+        inputBindings.push_back(uboLayoutBinding);
+        inputBindings.back().binding = inputBindings.size() - 1u;
     }
 
     // Create a descriptor set layout for input attachments
@@ -109,12 +128,12 @@ void PipelineCreatorQuad::createDescriptorPool() {
 
     // Color Attachment Pool Size
     VkDescriptorPoolSize colorInputPoolSize = {};
-    colorInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    colorInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
@@ -229,7 +248,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.dstSet = m_descriptorSets[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
-            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
             setWrites.push_back(colorWrite);
@@ -247,7 +266,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentDescriptor;
 
@@ -265,7 +284,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthShadowAttachmentDescriptor;
 

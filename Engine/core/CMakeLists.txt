@@ -93,6 +93,8 @@ endif()
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
 target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=${USE_FSR})
 target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER})
+#enable debug mode for Vulkan by setting VK_DEBUG_ENABLED
+#target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
    message("${CMAKE_CXX_FLAGS_RELEASE}")

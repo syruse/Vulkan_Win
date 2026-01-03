@@ -153,7 +153,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     // Depth attachment
     VkDescriptorSetLayoutBinding depthInputLayoutBinding{};
     depthInputLayoutBinding.binding = 1;
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputLayoutBinding.descriptorCount = 1;
     depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -180,7 +180,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     // View Space Position attachment
     VkDescriptorSetLayoutBinding viewSpacePosLayoutBinding{};
     viewSpacePosLayoutBinding.binding = 5;
-    viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     viewSpacePosLayoutBinding.descriptorCount = 1;
     viewSpacePosLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -212,14 +212,14 @@ void PipelineCreatorSSAO::createDescriptorPool() {
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
-    VkDescriptorPoolSize depthInputPoolSize = uboPoolSize;
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    VkDescriptorPoolSize depthInputPoolSize = texturePoolSize;
 
-    VkDescriptorPoolSize gNormalInputPoolSize = depthInputPoolSize;
+    VkDescriptorPoolSize gNormalInputPoolSize = texturePoolSize;
+    gNormalInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 
     VkDescriptorPoolSize uboKernelPoolSize = uboPoolSize;
 
-    VkDescriptorPoolSize viewSpacePosInputPoolSize = depthInputPoolSize;
+    VkDescriptorPoolSize viewSpacePosInputPoolSize = texturePoolSize;
 
     std::array<VkDescriptorPoolSize, 6u> poolSize{uboPoolSize, texturePoolSize, gNormalInputPoolSize, depthInputPoolSize,
                                                   uboKernelPoolSize, viewSpacePosInputPoolSize};
@@ -289,7 +289,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         depthWrite.dstSet = m_descriptorSets[i];
         depthWrite.dstBinding = 1;
         depthWrite.dstArrayElement = 0;
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthWrite.descriptorCount = 1;
         depthWrite.pImageInfo = &depthAttachmentInfo;
 
@@ -350,7 +350,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         viewSpacePosWrite.dstSet = m_descriptorSets[i];
         viewSpacePosWrite.dstBinding = 5;
         viewSpacePosWrite.dstArrayElement = 0;
-        viewSpacePosWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        viewSpacePosWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         viewSpacePosWrite.descriptorCount = 1;
         viewSpacePosWrite.pImageInfo = &viewSpacePosInfo;
 

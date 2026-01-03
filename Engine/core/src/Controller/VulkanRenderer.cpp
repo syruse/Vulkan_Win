@@ -80,7 +80,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 2u, m_pushConstantRange));
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
-                                                                &this->_colorBuffer, false, false, m_pushConstantRange));
+                                                                &this->_colorBuffer, PipelineCreatorQuad::BLEND::NONE, true,
+                                                                m_pushConstantRange));
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
                                                                    "frag_particle.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[SEMI_TRANSPARENT].reset(new PipelineCreatorSemiTransparent(
@@ -2443,14 +2444,14 @@ void VulkanRenderer::createDepthResources() {
 
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _shadowMapBuffer.width, _shadowMapBuffer.height,
                              _shadowMapBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _depthBuffer.width, _depthBuffer.height,
                              _depthBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthBuffer.depthImage, _depthBuffer.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
                                  _depthBuffer.depthImageView);

@@ -14,6 +14,9 @@ void PipelineCreatorTextured::createPipeline() {
         auto& tessInfo = Pipeliner::getInstance().getTessInfo();
         tessInfo.patchControlPoints = 3;
 
+        auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
+        blendInfo.attachmentCount = 3;
+
         m_pipeline = Pipeliner::getInstance().createPipeLine(
             m_vertShader, m_fragShader, m_tessCtrlShader, m_tessEvalShader, m_vkState._width, m_vkState._height,
             *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(), m_subpassAmount, m_pushConstantRange);
@@ -58,7 +61,7 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
         // Depth attachment with trails
         VkDescriptorSetLayoutBinding depthFootPrintInputLayoutBinding{};
         depthFootPrintInputLayoutBinding.binding = 3;
-        depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthFootPrintInputLayoutBinding.descriptorCount = 1;
         depthFootPrintInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 
@@ -98,7 +101,7 @@ void PipelineCreatorTextured::createDescriptorPool() {
     std::vector<VkDescriptorPoolSize> descriptorPoolSizes{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
     if (m_isTessellated) {
         VkDescriptorPoolSize depthFootPrintInputPoolSize = uboPoolSize;
-        depthFootPrintInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthFootPrintInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorPoolSizes.push_back(depthFootPrintInputPoolSize);
     }
 
@@ -204,7 +207,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
             depthWrite.dstSet = material.descriptorSets[i];
             depthWrite.dstBinding = 3;
             depthWrite.dstArrayElement = 0;
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentInfo;
 
