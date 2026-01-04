@@ -1898,16 +1898,25 @@ void VulkanRenderer::createRenderPass() {
 
     //-------------------------------------------------------//
     // Create info for Render Pass FXAA
+    VkAttachmentDescription swapchainAttachmentFXAA = {};
+    swapchainAttachmentFXAA.format = _core.getSurfaceFormat().format;
+    swapchainAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;
+    swapchainAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    swapchainAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    swapchainAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    swapchainAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    swapchainAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    swapchainAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
     VkAttachmentDescription colorAttachmentFXAA = {};
     colorAttachmentFXAA.format = _core.getSurfaceFormat().format;
     colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
     colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
     VkAttachmentReference swapchainColorAttachmentReferenceFXAA = {};
@@ -1926,17 +1935,17 @@ void VulkanRenderer::createRenderPass() {
     subpassFXAA.inputAttachmentCount = 1;
     subpassFXAA.pInputAttachments = &inputReferenceFXAA;
 
-    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {colorAttachmentFXAA, colorAttachmentFXAA};
+    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {swapchainAttachmentFXAA, colorAttachmentFXAA};
 
     // Subpass dependencies for layout transitions
     VkSubpassDependency dependencyFXAA;
 
     dependencyFXAA.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFXAA.dstSubpass = 0;
-    dependencyFXAA.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyFXAA.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyFXAA.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;  // FXAA reads in fragment shader
+    dependencyFXAA.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyFXAA.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
     dependencyFXAA.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};

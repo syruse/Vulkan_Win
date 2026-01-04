@@ -26,6 +26,12 @@ public:
 
     virtual ~PipelineCreatorBase() {
         destroyDescriptorPool();
+        // setLayout must be deleted before destroying the samplers since they are integrated
+        m_descriptorSetLayout.reset();
+        if (m_samplerDepthCompare)
+            vkDestroySampler(m_vkState._core.getDevice(), m_samplerDepthCompare, nullptr);
+        if (m_samplerCommonPostEffect)
+            vkDestroySampler(m_vkState._core.getDevice(), m_samplerCommonPostEffect, nullptr);
     };
 
     virtual void recreate() final;
@@ -42,6 +48,10 @@ public:
         return m_pushConstantRange.size != 0u;
     }
 
+    const VkSampler* getOrCreateDepthSampler();
+
+    const VkSampler* getOrCreateCommonSampler();
+
 private:
     virtual void createDescriptorSetLayout() = 0;
     virtual void createPipeline() = 0;
@@ -56,4 +66,8 @@ protected:
     uint32_t m_subpassAmount{0u};
     VkPushConstantRange m_pushConstantRange{0u, 0u, 0u};
     Pipeliner::pipeline_ptr m_pipeline{nullptr};
+
+private:
+    VkSampler m_samplerDepthCompare{nullptr}; // use getOrCreateDepthSampler() to get and init (on demand)
+    VkSampler m_samplerCommonPostEffect{nullptr}; // blur ...
 };

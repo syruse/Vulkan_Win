@@ -64,6 +64,7 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
         depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthFootPrintInputLayoutBinding.descriptorCount = 1;
         depthFootPrintInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+        depthFootPrintInputLayoutBinding.pImmutableSamplers = getOrCreateDepthSampler();
 
         layoutBindings.push_back(depthFootPrintInputLayoutBinding);
     }
@@ -200,7 +201,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
             VkDescriptorImageInfo depthAttachmentInfo{};
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentInfo.imageView = m_vkState._footprintBuffer.depthImageView;
-            depthAttachmentInfo.sampler = VK_NULL_HANDLE;
+            //depthAttachmentInfo.sampler = mSamplerFootPrint; // we set it at the time of VkDescriptorSetLayout for performence
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

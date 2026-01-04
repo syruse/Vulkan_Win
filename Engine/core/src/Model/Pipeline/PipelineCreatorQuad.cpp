@@ -61,7 +61,6 @@ uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
 
 void PipelineCreatorQuad::createDescriptorSetLayout() {
     // CREATE INPUT ATTACHMENT
-
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
     colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colourInputLayoutBinding.descriptorCount = 1;
@@ -80,19 +79,25 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
         inputBindings.back().binding = inputBindings.size() - 1u;
         inputBindings.push_back(gPassInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
+        // SSAO attachment for bluring
         inputBindings.push_back(gPassInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
     } else {
+        // regular color attachment
         inputBindings.push_back(colourInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
+        inputBindings.back().pImmutableSamplers = getOrCreateCommonSampler();
     }
     if (m_isDepthNeeded) {
         inputBindings.push_back(colourInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
+        inputBindings.back().pImmutableSamplers = getOrCreateDepthSampler();
     }
     if (m_isGPassNeeded) {
+        // shadow map
         inputBindings.push_back(colourInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
+        inputBindings.back().pImmutableSamplers = getOrCreateDepthSampler();
         // UboViewProjection Binding Info
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
         uboLayoutBinding.binding = inputBindings.size();
@@ -240,7 +245,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Color Attachment Descriptor
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             colorAttachmentDescriptor.imageView = m_colorBuffer->colorBufferImageView[i];
-            colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             // Color Attachment Descriptor Write
             VkWriteDescriptorSet colorWrite = {};
@@ -258,7 +262,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Depth Attachment Descriptor
             depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._depthBuffer.depthImageView;
-            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             // Depth Attachment Descriptor Write
             VkWriteDescriptorSet depthWrite{};
@@ -277,7 +280,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Shadow Map
             depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthShadowAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
-            depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

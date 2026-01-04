@@ -30,6 +30,7 @@ private:
 private:
     UBOSemiSpheraKernel m_ubo;
     TextureFactory::Texture m_noiseTexture;
-    VkSampler mSampler{nullptr};
+    VkSampler mSamplerNoise{nullptr};
+    VkSampler mSamplerViewSpace{nullptr};
     bool mIsPoolRecreated{false};
 };

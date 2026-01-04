@@ -16,7 +16,11 @@ PipelineCreatorSSAO::~PipelineCreatorSSAO() {
     vkDestroyImageView(m_vkState._core.getDevice(), m_noiseTexture.m_textureImageView, nullptr);
     vkDestroyImage(m_vkState._core.getDevice(), m_noiseTexture.m_textureImage, nullptr);
     vkFreeMemory(m_vkState._core.getDevice(), m_noiseTexture.m_textureImageMemory, nullptr);
-    vkDestroySampler(m_vkState._core.getDevice(), mSampler, nullptr);
+
+    // setLayout must be deleted before destroying the samplers since they are integrated
+    m_descriptorSetLayout.reset();
+    vkDestroySampler(m_vkState._core.getDevice(), mSamplerNoise, nullptr);
+    vkDestroySampler(m_vkState._core.getDevice(), mSamplerViewSpace, nullptr);
 }
 
 void PipelineCreatorSSAO::createPipeline() {
@@ -117,32 +121,43 @@ void PipelineCreatorSSAO::createPipeline() {
 
         vkDestroyBuffer(m_vkState._core.getDevice(), stagingBuffer, nullptr);
         vkFreeMemory(m_vkState._core.getDevice(), stagingBufferMemory, nullptr);
-
-        VkSamplerCreateInfo samplerInfo{};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_NEAREST;
-        samplerInfo.minFilter = VK_FILTER_NEAREST;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 4;
-        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;  /// -> [0: 1]
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-        samplerInfo.mipLodBias = 0.0f;
-
-        if (vkCreateSampler(m_vkState._core.getDevice(), &samplerInfo, nullptr, &mSampler) != VK_SUCCESS) {
-            Utils::printLog(ERROR_PARAM, "failed to create texture sampler for SSAO!");
-        }
     }
 }
 
 void PipelineCreatorSSAO::createDescriptorSetLayout() {
+    // Note when we call createDescriptorSetLayout the samplers are not created yet
+    // create Samplers first
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;  /// -> [0: 1]
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+    samplerInfo.mipLodBias = 0.0f;
+
+    if (vkCreateSampler(m_vkState._core.getDevice(), &samplerInfo, nullptr, &mSamplerNoise) != VK_SUCCESS) {
+        Utils::printLog(ERROR_PARAM, "failed to create texture sampler for SSAO!");
+    }
+
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    if (vkCreateSampler(m_vkState._core.getDevice(), &samplerInfo, nullptr, &mSamplerViewSpace) != VK_SUCCESS) {
+        Utils::printLog(ERROR_PARAM, "failed to create texture sampler for SSAO!");
+    }
+
+    // Set Layouts
+
     // G Normal attachment
     VkDescriptorSetLayoutBinding normalInputLayoutBinding{};
     normalInputLayoutBinding.binding = 0;
@@ -156,6 +171,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputLayoutBinding.descriptorCount = 1;
     depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    depthInputLayoutBinding.pImmutableSamplers = getOrCreateDepthSampler(); 
 
     // Texture
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -164,6 +180,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = &mSamplerNoise;
 
     // UBO Binding Info
     VkDescriptorSetLayoutBinding UBOLayoutBinding = {};
@@ -183,6 +200,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     viewSpacePosLayoutBinding.descriptorCount = 1;
     viewSpacePosLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    viewSpacePosLayoutBinding.pImmutableSamplers = &mSamplerViewSpace;
 
     std::array<VkDescriptorSetLayoutBinding, 6u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, normalInputLayoutBinding,
                                                                depthInputLayoutBinding, UBOKernelLayoutBinding, viewSpacePosLayoutBinding};
@@ -243,7 +261,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
     }
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
-    assert(m_noiseTexture.m_textureImageView && mSampler);
+    assert(m_noiseTexture.m_textureImageView);
 
     std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
     // Input Attachment Descriptor Set Allocation Info
@@ -282,7 +300,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         VkDescriptorImageInfo depthAttachmentInfo{};
         depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         depthAttachmentInfo.imageView = m_vkState._depthBuffer.depthImageView;
-        depthAttachmentInfo.sampler = VK_NULL_HANDLE;
+        //depthAttachmentInfo.sampler = mSamplerDepthCompare; // we set it at the time of VkDescriptorSetLayout for performence
 
         VkWriteDescriptorSet depthWrite{};
         depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -297,7 +315,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = m_noiseTexture.m_textureImageView;
-        imageInfo.sampler = mSampler;
+        //imageInfo.sampler = mSamplerNoise; // we set it at the time of VkDescriptorSetLayout for performence
 
         VkWriteDescriptorSet textureSetWrite = {};
         textureSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -342,7 +360,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         VkDescriptorImageInfo viewSpacePosInfo{};
         viewSpacePosInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         viewSpacePosInfo.imageView = m_vkState._viewSpaceBuffer.colorBufferImageView[i];
-        viewSpacePosInfo.sampler = VK_NULL_HANDLE;
+        //viewSpacePosInfo.sampler = mSamplerViewSpace; // we set it at the time of VkDescriptorSetLayout for performence
 
         // View Space Position Attachment Descriptor Write
         VkWriteDescriptorSet viewSpacePosWrite = {};
