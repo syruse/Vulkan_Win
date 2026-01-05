@@ -50,7 +50,7 @@ for WIN platform
 </br>
 and ensure that VULKAN_SDK variable is set
 </br>
-<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 17 2022"</i></b>
+<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 18 2026"</i></b>
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
 </br>

@@ -28,6 +28,9 @@ void PipelineCreatorSkyBox::createPipeline() {
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
+    auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
+    blendInfo.attachmentCount = 3;
+
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
                                                          0u, m_pushConstantRange);
