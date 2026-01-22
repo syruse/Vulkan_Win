@@ -891,7 +891,8 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
     glm::vec4 clipOrig = viewProj * glm::vec4(instance.posShift, 1.0f);
     cuda_instances_flags[globalThreadIndx] = 0;
     for (const auto& bias : biasCubeValues) {
-        glm::vec4 clip = clipOrig + instance.scale * bias;
+        // Note: explicitly force using FMA for glm::vec4 clip = clipOrig + instance.scale * bias;
+        glm::vec4 clip = glm::fma(glm::vec4(instance.scale), glm::vec4(bias), clipOrig);
         glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
         // z is in range [0, 1] for NDC, so we can check it against 0.0f and maxLimitVal
         if (glm::abs(ndc.x) <= maxLimitVal && glm::abs(ndc.y) <= maxLimitVal && ndc.z <= maxLimitVal &&

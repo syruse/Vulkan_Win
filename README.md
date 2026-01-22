@@ -50,7 +50,8 @@ for WIN platform
 </br>
 and ensure that VULKAN_SDK variable is set
 </br>
-<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 18 2026"</i></b>
+<b><i>Note: new VS studio 18 is not compatible with CUDA, please download VS 17: https://aka.ms/vs/17/release/vs_community.exe </i></b>
+<b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 17 2022" or ("Visual Studio 18 2026")</i></b>
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
 </br>
