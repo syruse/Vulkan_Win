@@ -1,7 +1,6 @@
 #pragma once
 
 // you can activate debug mode by defining VK_DEBUG_ENABLED in CMAKELIST
-// #define VK_DEBUG_ENABLED
 
 #include <map>
 #include <memory>

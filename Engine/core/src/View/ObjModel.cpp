@@ -47,12 +47,19 @@ void ObjModel::init() {
             vkUnmapMemory(p_device, m_instancesBufferMemory[i]);
         }
     }
+
+    if (m_lowPolyMesh) {
+        m_lowPolyMesh->init();
+    }
 }
 
 void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,
-                      float z_far) {
-    sortInstances(currentImage, viewProj, z_far);
+                      float z_far, const glm::vec3& camPos) {
+    sortInstances(currentImage, viewProj, camPos, z_far);
+    updateBuffers(currentImage);
+}
 
+void ObjModel::updateBuffers(uint32_t currentImage) {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
     const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
@@ -62,6 +69,10 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
     vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
     memcpy((char*)data + m_instancesBufferOffset, m_activeInstances.data(), instancesSize);
     vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
+
+    if (m_lowPolyMesh) {
+        static_cast<ObjModel*>(m_lowPolyMesh.get())->updateBuffers(currentImage);
+    }
 }
 
 void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
@@ -251,6 +262,10 @@ void ObjModel::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_
             }
         }
     }
+
+    if (m_lowPolyMesh) {
+        m_lowPolyMesh->draw(cmdBuf, descriptorSetIndex, dynamicOffset);
+    }
 }
 
 void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
@@ -282,6 +297,10 @@ void ObjModel::drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCo
             }
         }
     }
+
+    if (m_lowPolyMesh) {
+        m_lowPolyMesh->drawWithCustomPipeline(pipelineCreator, cmdBuf, descriptorSetIndex, dynamicOffset);
+    }
 }
 
 void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {
@@ -311,5 +330,9 @@ void ObjModel::drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetInde
     for (const auto& subObject : m_Tracks) {
         vkCmdDrawIndexed(cmdBuf, static_cast<uint32_t>(subObject.indexAmount), m_activeInstances.size(),
                          static_cast<uint32_t>(subObject.indexOffset), 0, 0);
+    }
+
+    if (m_lowPolyMesh) {
+        m_lowPolyMesh->drawFootprints(cmdBuf, descriptorSetIndex, dynamicOffset);
     }
 }

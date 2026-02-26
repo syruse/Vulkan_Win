@@ -396,7 +396,7 @@ bool MD5Model::loadMD5Anim() {
 }
 
 void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
-                                    float z_far) {
+                                    float z_far, const glm::vec3& camPos) {
 #if defined(USE_CUDA) && USE_CUDA
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
     if (mCudaAnimator) {
@@ -407,7 +407,7 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
         if (SORT_INSTANCES_ON_CUDA == 0) {
             auto p_device = m_vkState._core.getDevice();
             assert(p_device);
-            sortInstances(currentImage, viewProj, z_far);
+            sortInstances(currentImage, viewProj,  camPos, z_far);
 
             const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
 
@@ -427,7 +427,7 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
 }
 
 void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
-                                    float z_far) {
+                                    float z_far, const glm::vec3& camPos) {
     assert(m_MD5Model.animations.size() > animationID && m_MD5Model.animations[animationID].numFrames > 1);
 
     // Update the subsets vertex buffer in worker_threads
@@ -526,7 +526,7 @@ void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, 
 
     // Update the instances buffer
     {
-        sortInstances(currentImage, viewProj, z_far);
+        sortInstances(currentImage, viewProj, camPos, z_far);
 
         const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
 
@@ -540,7 +540,7 @@ void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, 
 }
 
 void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,
-                      float z_far) {
+                      float z_far, const glm::vec3& camPos) {
     if (m_MD5Model.animations.size() <= animationID) {
         Utils::printLog(ERROR_PARAM, "wrong animationID: ", animationID);
         return;
@@ -552,11 +552,11 @@ void MD5Model::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
     if (mCudaAnimator && onGPU) {
         m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CUDA];
         m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
-        updateAnimationOnGPU(deltaTimeMS, animationID, currentImage, viewProj, z_far);
+        updateAnimationOnGPU(deltaTimeMS, animationID, currentImage, viewProj, z_far, camPos);
     } else {
         m_generalBufferMemory = m_CUDAandCPUaccessibleMems[AnimationType::ANIMATION_TYPE_CPU];
         m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CPU];
-        updateAnimationOnCPU(deltaTimeMS, animationID, currentImage, viewProj, z_far);
+        updateAnimationOnCPU(deltaTimeMS, animationID, currentImage, viewProj, z_far, camPos);
     }
 }
 

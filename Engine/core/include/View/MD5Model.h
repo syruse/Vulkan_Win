@@ -48,7 +48,8 @@ public:
                                 uint32_t dynamicOffset) const override;
     void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const override;
     void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true, uint32_t currentImage = 0u,
-                const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f) override;
+                const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f,
+                const glm::vec3& camPos = glm::vec3(0.0f)) override;
 
 private:
     bool loadMD5Anim();
@@ -58,9 +59,9 @@ private:
     void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
                                        std::size_t indexFrom, std::size_t indexTo);
     inline void updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
-                                     float z_far);
+                                     float z_far, const glm::vec3& camPos);
     inline void updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, uint32_t currentImage, const glm::mat4& viewProj,
-                                     float z_far);
+                                     float z_far, const glm::vec3& camPos);
     inline void waitForCudaSignal(uint32_t descriptorSetIndex) const;
 
 private:

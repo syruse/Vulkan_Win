@@ -19,12 +19,6 @@
 #include <limits>
 #include <random>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE  /// coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 
@@ -149,10 +143,15 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
             instance.posShift.z = startZ + col * step;
         }
 
+        auto lowPolyTrink = std::make_unique<ObjModel>(
+            *this, *mTextureFactory, "lowpoly_tree_trunk.obj"sv,
+                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 60.0f,
+                     semiTransparentInstances);
+
         m_semiTransparentModels.emplace_back(
             new ObjModel(*this, *mTextureFactory, "highpoly_tree_trunk.obj"sv,
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
-                         60.0f, semiTransparentInstances));
+                         60.0f, semiTransparentInstances , std::move(lowPolyTrink)));
         m_semiTransparentModels.emplace_back(
             new MD5Model("tree_leaves.md5mesh"sv, "tree_leaves_idle.md5anim"sv, *this, *mTextureFactory,
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
@@ -1379,17 +1378,17 @@ bool VulkanRenderer::renderScene() {
     submitInfo.signalSemaphoreCount = 1;
 
     updateUniformBuffer(ImageIndex, deltaTime);
-    static bool isGPUCalculationFavorable = false;
+    static bool isGPUCalculationFavorable = true;
     if (windowQueueMSG.hmiStates) {
         isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
     }
 
     for (auto& model : m_models) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR);
+        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR, mCamera.cameraPosition());
     }
 
     for (auto& model : m_semiTransparentModels) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR);
+        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR, mCamera.cameraPosition());
     }
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);

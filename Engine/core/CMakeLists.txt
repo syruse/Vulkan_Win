@@ -7,7 +7,7 @@ option(USE_CUDA "Use CUDA" ON)
 option(USE_CUDA_DEBUG "Use debugging CUDA" ON)
 option(USE_FSR "Use FSR" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG")
 set(CMAKE_SUPPRESS_REGENERATION true)
@@ -132,7 +132,21 @@ else(WIN32)
 		target_link_libraries(${APP_NAME} md5_anim_cuda)
 		target_compile_definitions(${APP_NAME} PRIVATE USE_CUDA=1)
 	endif()
+	
+	#disable strict C++ conformance checking
+	#GLM templates conflict with the new template parsing rules in MSVC
+	target_compile_options(${APP_NAME} PRIVATE /permissive)
+	target_compile_definitions(${APP_NAME} PRIVATE 
+        NOMINMAX 
+    )
 endif()
+
+#GLM CONFIG FOR MAIN MODULE
+target_compile_definitions(${APP_NAME} PRIVATE 
+    GLM_ENABLE_EXPERIMENTAL
+	GLM_FORCE_RADIANS
+	GLM_FORCE_DEPTH_ZERO_TO_ONE  # coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
+)
 
 target_link_libraries(${APP_NAME} 
     imgui

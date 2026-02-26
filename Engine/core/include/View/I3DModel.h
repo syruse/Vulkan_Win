@@ -17,6 +17,11 @@ class PipelineCreatorFootprint;
 class I3DModel {
 public:
 
+    // IF MODEL HAS INSTANCES > 1, THEN LOD SWITCHING WILL BE APPLIED EVEN IF LOW-POLY MODEL IS NOT SPECIFIED
+    static constexpr float LOD_TRESHOLD = 0.5f;  // distance in percentage to switch to low-poly model
+
+    static constexpr uint32_t ACTIVE_POOL_THREADS = 4u;  // number of threads for active instances sorting
+
     // we have only one animation type for now (tank rolls up the trees)
     class InteractionImpactAnimation {
     private:
@@ -164,11 +169,13 @@ public:
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
-             const std::vector<Instance>& instances = {}) noexcept(true);
+             const std::vector<Instance>& instances = {}, std::unique_ptr<I3DModel> lowPolyMesh = nullptr) noexcept(true);
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
-             float vertexMagnitudeMultiplier = 1.0f, const std::vector<Instance>& instances = {}) noexcept(true)
-        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier, instances) {
+             float vertexMagnitudeMultiplier = 1.0f, const std::vector<Instance>& instances = {},
+             std::unique_ptr<I3DModel> lowPolyMesh = nullptr) noexcept(true)
+        : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier, instances,
+                   std::move(lowPolyMesh)) {
     }
 
     virtual ~I3DModel() {
@@ -204,25 +211,29 @@ public:
     }
 
     /** Note: 
-    *   - param 'viewProj'
-    *   actual for models with many instances
+    *   - param 'viewProj', 'camPos' and 'z_far'
+    *   are actual for models with many instances
     *   sorting and discarding instances (which are outside the frustum)
     */
     virtual void update(float deltaTimeMS, int animationID = 0u, bool onGPU = true,
-                        uint32_t currentImage = 0u, const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f) {
+                        uint32_t currentImage = 0u, const glm::mat4& viewProj = glm::mat4(1.0f), 
+                        float z_far = 1.0f,
+                        const glm::vec3& camPos = glm::vec3(0.0f)) {
         // actual for animated models
     }
 
 protected:
-    void sortInstances(uint32_t currentImage, const glm::mat4& viewProj, float z_far, uint32_t activePoolThreads = 4u);
+    void sortInstances(uint32_t currentImage, const glm::mat4& viewProj, const glm::vec3& camPos, float z_far);
 
 private:
     void filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
-                         std::vector<Instance>& activeInstances);
+                         float z_far, const glm::vec3& camPos, std::vector<Instance>& activeInstances, 
+                         std::vector<Instance>& activeInstancesLowPoly);
 
 protected:
     const VulkanState& m_vkState;
     TextureFactory& m_textureFactory;
+    std::unique_ptr<I3DModel> m_lowPolyMesh{};
     float m_radius{0.0f};
     float m_vertexMagnitudeMultiplier{1.0f};
     PipelineCreatorTextured* m_pipelineCreatorTextured{nullptr};
@@ -236,6 +247,10 @@ protected:
     std::vector<Instance> m_activeInstances{};
     std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBuffer{};
     std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBufferMemory{};
+
+private:
+    std::vector<std::vector<Instance>> m_activeInstancesTemp{ACTIVE_POOL_THREADS};
+    std::vector<std::vector<Instance>> m_activeInstancesLowPolyTemp{}; // optional
 };
 
 namespace std {

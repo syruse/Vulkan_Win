@@ -3,13 +3,16 @@
 #include "PipelineCreatorTextured.h"
 
 #include <cassert>
+#include <ranges>
 #include <future>
 
 I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory,
                    PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint,
-                   float vertexMagnitudeMultiplier, const std::vector<Instance>& instances) noexcept(true)
+                   float vertexMagnitudeMultiplier, const std::vector<Instance>& instances,
+                   std::unique_ptr<I3DModel> lowPolyMesh) noexcept(true)
     : m_vkState(vulkanState),
       m_textureFactory(textureFactory),
+      m_lowPolyMesh(std::move(lowPolyMesh)),
       m_pipelineCreatorTextured(pipelineCreatorTextured),
       m_pipelineCreatorFootprint(pipelineCreatorFootprint),
       m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier),
@@ -25,9 +28,29 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
     if (m_pipelineCreatorFootprint) {
         m_pipelineCreatorFootprint->increaseUsageCounter();
     }
+
+    assert(!m_lowPolyMesh ||
+           (m_lowPolyMesh && !m_lowPolyMesh->m_lowPolyMesh) &&
+        "LOD error: lowPolyMesh cannot have its own nested lowPolyMesh!");
+
+    m_activeInstancesTemp.resize(ACTIVE_POOL_THREADS);
+    if (m_lowPolyMesh) {
+        m_activeInstancesLowPolyTemp.resize(ACTIVE_POOL_THREADS);
+    } else {
+        m_activeInstancesLowPolyTemp.clear();
+    }
+    // reserve memory
+    {
+        /// IN c++23 std::views::concat(activeInstances, activeInstancesLowPoly);
+        std::array views = {std::views::all(m_activeInstancesTemp), std::views::all(m_activeInstancesLowPolyTemp)};
+        auto size = m_instances.size();
+        for (auto&& inner : views | std::views::join) {
+            inner.reserve(size);
+        }
+    }
 }
 
-void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, float z_far, uint32_t activePoolThreads) {
+void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, const glm::vec3& camPos, float z_far) {
     assert(currentImage < VulkanState::MAX_FRAMES_IN_FLIGHT);
     if (m_instances.size() <= 1u) {
         // nothing to update
@@ -35,15 +58,10 @@ void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, f
         return;
     }
 
-    m_activeInstances.clear();
-
     const float biasValue = m_radius + 0.15f * z_far;  // plus shift to avoid choppy clipping of the model edges nearby the camera
 
-    static constexpr float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
-    static constexpr std::size_t minActivePoolThreads = 4u;
+    std::vector<std::future<void>> workerThreads{ACTIVE_POOL_THREADS};
 
-    std::vector<std::future<void>> workerThreads(max(activePoolThreads, minActivePoolThreads));
-    std::vector<std::vector<Instance>> activeInstances(max(activePoolThreads, minActivePoolThreads));
     std::size_t chunkOffset{0u};
     std::size_t indexFrom{0u};
     std::size_t indexTo{0u};
@@ -55,8 +73,11 @@ void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, f
         indexFrom = workerThreadIndex * chunkOffset;
         indexTo = workerThreadIndexPlusOne >= workerThreads.size() ? m_instances.size() : workerThreadIndexPlusOne * chunkOffset;
         workerThreads[workerThreadIndex] =
-            std::async(std::launch::async, &I3DModel::filterInstances, this, indexFrom, indexTo, biasValue, std::cref(viewProj),
-                       std::ref(activeInstances[workerThreadIndex]));
+            std::async(std::launch::async, &I3DModel::filterInstances, this, indexFrom, indexTo, biasValue, 
+                std::cref(viewProj), z_far,  std::cref(camPos), 
+                std::ref(m_activeInstancesTemp[workerThreadIndex]),
+                       m_lowPolyMesh ? std::ref(m_activeInstancesLowPolyTemp[workerThreadIndex])
+                                     : std::ref(m_activeInstancesTemp[workerThreadIndex]));
     }
 
     for (auto& thread : workerThreads) {
@@ -64,17 +85,25 @@ void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, f
     }
 
     m_activeInstances.clear();
-    for (const auto& instances : activeInstances) {
+    for (const auto& instances : m_activeInstancesTemp) {
         m_activeInstances.insert(m_activeInstances.end(), instances.begin(), instances.end());
+    }
+
+    if (m_lowPolyMesh) {
+        m_lowPolyMesh->m_activeInstances.clear();
+        for (const auto& instances : m_activeInstancesLowPolyTemp) {
+            m_lowPolyMesh->m_activeInstances.insert(m_lowPolyMesh->m_activeInstances.end(), instances.begin(), instances.end());
+        }
     }
 }
 
 void I3DModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
-                               std::vector<Instance>& activeInstances) {
+                               float z_far, const glm::vec3& camPos, std::vector<Instance>& activeInstances,
+                               std::vector<Instance>& activeInstancesLowPoly) {
     assert(indexFrom < m_instances.size() && indexTo <= m_instances.size());
-    static const float maxLimitVal = 1.0f + std::numeric_limits<float>::epsilon();
 
     activeInstances.clear();
+    activeInstancesLowPoly.clear();
 
     // extract frustum planes from View-Projection (Gribb-Hartmann algorithm)
     glm::vec4 planes[6];
@@ -93,6 +122,9 @@ void I3DModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float
         planes[i] /= glm::length(glm::vec3(planes[i]));  // for normalizing w is not needed
     }
 
+    const float lodThreshold = LOD_TRESHOLD * z_far;
+    const float lodThresholdSq = lodThreshold *lodThreshold; 
+
     // check whether sphere (instance) is inside the frustum
     for (std::size_t i = indexFrom; i < indexTo; i++) {
         const Instance& instance = m_instances[i];
@@ -110,7 +142,14 @@ void I3DModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float
         }
 
         if (isInsideFrustum) {
-            activeInstances.push_back(instance);
+            glm::vec3 diff = instance.posShift - camPos;
+            float distSq = glm::dot(diff, diff);
+            // instead of sqrt we can compare squared distances since sqrt is heavy operation
+            if (distSq < lodThresholdSq) {
+                activeInstances.push_back(instance);
+            } else if (m_lowPolyMesh) {
+                activeInstancesLowPoly.push_back(instance);
+            }
         }
     }
 }

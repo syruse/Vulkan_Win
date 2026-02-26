@@ -1,8 +1,8 @@
 #pragma once
 
-#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
 
 #if defined(USE_FSR) && USE_FSR
 #include <ffx_api/vk/ffx_api_vk.hpp>
