@@ -4,7 +4,7 @@
 
 <h1>The game engine powered by Vulkan</h1>
 </br> <b>Platforms:</b> Windows/Unix
-</br> <b>Technologies:</b> C++ 17, Vulkan Api, DirectXTK12/SDL2(user input), CMake, WinApi, XCB, stb_image, tinyobjloader
+</br> <b>Technologies:</b> C++ 20, Vulkan Api, DirectXTK12/SDL2(user input), CMake, WinApi, XCB, stb_image, tinyobjloader
 <p> see my demo: <a href="https://www.youtube.com/watch?v=r8qfUPUFoeg">My Engine Demo</a> </p>
 <p><img src="demo.png" width="60%" height="60%"></p>
 <p>This is simple game engine based on own engine run by Vulkan API, DirectXTK12/SDL2 (user input)
@@ -50,7 +50,7 @@ for WIN platform
 </br>
 and ensure that VULKAN_SDK variable is set
 </br>
-<b><i>Note: new VS studio 18 is not compatible with CUDA, please download VS 17: https://aka.ms/vs/17/release/vs_community.exe </i></b>
+<b><i>Note: new VS studio 18 is not compatible with CUDA nsight tools, please download VS 17: https://aka.ms/vs/17/release/vs_community.exe </i></b>
 <b><i>cmake.exe ..\Engine\core\ -G "Visual Studio 17 2022" or ("Visual Studio 18 2026")</i></b>
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
