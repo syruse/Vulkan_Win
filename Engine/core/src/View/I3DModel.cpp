@@ -43,8 +43,10 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
     {
         /// IN c++23 std::views::concat(activeInstances, activeInstancesLowPoly);
         std::array views = {std::views::all(m_activeInstancesTemp), std::views::all(m_activeInstancesLowPolyTemp)};
+        // views -> std::array<std::ranges::ref_view<std::vector<std::vector<Instance>>>, 2>
         auto size = m_instances.size();
         for (auto&& inner : views | std::views::join) {
+            // join -> merge container in one whole (inner -> std::vector<Instance>&)
             inner.reserve(size);
         }
     }
