@@ -709,10 +709,10 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
 #if defined(USE_FSR) && USE_FSR
-    if (mFSRSwapChainContext) {
+        if (mFSRSwapChainContext) {
         res = mFSRReplacementFunctions.pOutGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages,
-                                                                 &(_swapChain.images[0]));
-    } else {
+                                                                     &(_swapChain.images[0]));
+        } else {
         res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
     }
 #else
@@ -762,7 +762,7 @@ void VulkanRenderer::createCommandBuffer() {
     cmdBufAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdBufAllocInfo.commandPool = _cmdBufPool;
     cmdBufAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdBufAllocInfo.commandBufferCount = _swapChain.images.size();
+    cmdBufAllocInfo.commandBufferCount = static_cast<uint32_t>(_swapChain.images.size());
 
     VkResult res = vkAllocateCommandBuffers(_core.getDevice(), &cmdBufAllocInfo, &_cmdBufs[0]);
     CHECK_VULKAN_ERROR("vkAllocateCommandBuffers error %d\n", res);
@@ -864,7 +864,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     if (_oneOffClearingFootPrint) {
         VkClearValue footPrintClearValues{};
         footPrintClearValues.depthStencil.depth = 1.0f;
-        VkClearAttachment clearAttachment;
+        VkClearAttachment clearAttachment{};
         clearAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         clearAttachment.clearValue = footPrintClearValues;
         clearAttachment.colorAttachment = 0u;
@@ -883,7 +883,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     //---------------------------------------------------------------------------------------------//
     /// G pass
-    VkClearValue clearValue;
+    VkClearValue clearValue{};
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
     std::vector<VkClearValue> clearValues(10, clearValue);
     clearValues[7] = VkClearValue{};
@@ -899,10 +899,17 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
     renderPassInfo.framebuffer = m_fbs[currentImage];
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+
+    /** Note:
+    * We remove the manual barrier here, since RenderPass will automatically make the transition
+    * from UNDEFINED (initialLayout) to COLOR_ATTACHMENT_OPTIMAL.
+    * If the barrier is needed, the initialLayout in RenderPass must be
+    * VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
+    * Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+    *                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    *                             VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+    *                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+    */
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1354,6 +1361,11 @@ bool VulkanRenderer::renderScene() {
     res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
                                 VK_NULL_HANDLE, &ImageIndex);
 #endif
+    //FOR DEBUG
+    //Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned", res, " ImageIndex=", ImageIndex,
+    //                " m_currentFrame=", m_currentFrame);
+#if defined(USE_FSR) && USE_FSR
+#endif
 
     // Note: it's just fall back sover for emergency situation
     {
@@ -1470,19 +1482,21 @@ void VulkanRenderer::createRenderPass() {
         VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // for more efficiency and since it will not be used after drawing has finished
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
-    VkAttachmentDescription depthSSAOReadyAttachment =
-        depthAttachment;  // already initialized depth texture from early renderPass
+    VkAttachmentDescription depthSSAOReadyAttachment = depthAttachment;  // already initialized depth texture from early renderPass
     depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // Avoid using DEPTH_READ_ONLY layout unless separateDepthStencilLayouts feature is enabled on the device.
+    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription shadowMapLoadAttachment = depthSSAOReadyAttachment;
 
+    // Footprint uses a different depth format (_footprintBuffer.depthFormat)
     VkAttachmentDescription footPrintLoadAttachment = depthSSAOReadyAttachment;
+    footPrintLoadAttachment.format = _footprintBuffer.depthFormat;
 
     VkAttachmentDescription viewSpacePosAttachment = colorAttachment;
     viewSpacePosAttachment.format = _viewSpaceBuffer.colorFormat;
@@ -1501,7 +1515,7 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 7;  // temporary depth buffer needed only for correct geometry output in g-pass
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference footPrintAttachmentRef{};
     footPrintAttachmentRef.attachment = 8;  // depthbuf with trails
@@ -1527,7 +1541,7 @@ void VulkanRenderer::createRenderPass() {
     inputSSAOReferences[2].attachment = 10;
     inputSSAOReferences[2].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkAttachmentReference colorAttachmentSSAOReference = {};
+    VkAttachmentReference colorAttachmentSSAOReference{};
     colorAttachmentSSAOReference.attachment = 3;
     colorAttachmentSSAOReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -1574,13 +1588,14 @@ void VulkanRenderer::createRenderPass() {
     // SUBPASS DEPENDENCIES
 
     // Need to determine when layout transitions occur using subpass dependencies
-    std::array<VkSubpassDependency, 5> subpassDependencies;
+    std::array<VkSubpassDependency, 5> subpassDependencies{};
 
     // for color buffer from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     subpassDependencies[0].dstSubpass = 0;
-    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;  // for external depth buffer using
-    subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    // for external depth buffer using
+    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
@@ -1589,10 +1604,8 @@ void VulkanRenderer::createRenderPass() {
 
     // Subpass 1 layout (color/depth) to Subpass 2 layout (shader read)
     subpassDependencies[1].srcSubpass = 0;
-    subpassDependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    subpassDependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subpassDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[1].dstSubpass = 1;
     subpassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -1601,19 +1614,15 @@ void VulkanRenderer::createRenderPass() {
     // Subpass 2 layout (color/depth) to Subpass 3 layout (shader read)
     subpassDependencies[2].srcSubpass = 1;
     subpassDependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    subpassDependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[2].dstSubpass = 2;
     subpassDependencies[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     subpassDependencies[3].srcSubpass = 0;
-    subpassDependencies[3].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[3].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    subpassDependencies[3].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subpassDependencies[3].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[3].dstSubpass = 2;
     subpassDependencies[3].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     subpassDependencies[3].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -1664,14 +1673,14 @@ void VulkanRenderer::createRenderPass() {
     depthAttachmentSemiTrans.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     depthAttachmentSemiTrans.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachmentSemiTrans.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorAttachmentSemiTransReference = {};
+    VkAttachmentReference colorAttachmentSemiTransReference{};
     colorAttachmentSemiTransReference.attachment = 0;
     colorAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference depthAttachmentSemiTransReference;
+    VkAttachmentReference depthAttachmentSemiTransReference{};
     depthAttachmentSemiTransReference.attachment = 1;
     depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
@@ -1684,7 +1693,7 @@ void VulkanRenderer::createRenderPass() {
 
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsSemiTrans = {colorAttachmentSemiTrans, depthAttachmentSemiTrans};
 
-    std::array<VkSubpassDependency, 2u> dependencySemiTrans;
+    std::array<VkSubpassDependency, 2u> dependencySemiTrans{};
     // color dependancy
     dependencySemiTrans[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySemiTrans[0].dstSubpass = 0;
@@ -1733,12 +1742,12 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment2BlurX.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment2BlurX.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkAttachmentReference bloomHdrAttachmentReferenceBlurX = {};
+    VkAttachmentReference bloomHdrAttachmentReferenceBlurX{};
     bloomHdrAttachmentReferenceBlurX.attachment = 0;
     bloomHdrAttachmentReferenceBlurX.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // References to attachments that subpass will take input from
-    VkAttachmentReference inputBloomHdrReferenceBlurX;
+    VkAttachmentReference inputBloomHdrReferenceBlurX{};
     inputBloomHdrReferenceBlurX.attachment = 1;
     inputBloomHdrReferenceBlurX.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1752,7 +1761,7 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurX = {colorAttachment1BlurX, colorAttachment2BlurX};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBlurX;
+    std::array<VkSubpassDependency, 1u> dependencyBlurX{};
 
     dependencyBlurX[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBlurX[0].dstSubpass = 0;
@@ -1793,12 +1802,12 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment2BlurY.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment2BlurY.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkAttachmentReference bloomHdrAttachmentReferenceBlurY = {};
+    VkAttachmentReference bloomHdrAttachmentReferenceBlurY{};
     bloomHdrAttachmentReferenceBlurY.attachment = 0;
     bloomHdrAttachmentReferenceBlurY.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // References to attachments that subpass will take input from
-    VkAttachmentReference inputBloomHdrReferenceBlurY;
+    VkAttachmentReference inputBloomHdrReferenceBlurY{};
     inputBloomHdrReferenceBlurY.attachment = 1;
     inputBloomHdrReferenceBlurY.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1812,7 +1821,7 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurY = {colorAttachment1BlurY, colorAttachment2BlurY};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBlurY;
+    std::array<VkSubpassDependency, 1u> dependencyBlurY{};
 
     dependencyBlurY[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBlurY[0].dstSubpass = 0;
@@ -1853,12 +1862,12 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment2Bloom.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment2Bloom.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkAttachmentReference bloomHdrAttachmentReferenceBloom = {};
+    VkAttachmentReference bloomHdrAttachmentReferenceBloom{};
     bloomHdrAttachmentReferenceBloom.attachment = 0;
     bloomHdrAttachmentReferenceBloom.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // References to attachments that subpass will take input from
-    VkAttachmentReference inputBloomHdrReferenceBloom;
+    VkAttachmentReference inputBloomHdrReferenceBloom{};
     inputBloomHdrReferenceBloom.attachment = 1;
     inputBloomHdrReferenceBloom.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1872,7 +1881,7 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBloom = {colorAttachment1Bloom, colorAttachment2Bloom};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBloom;
+    std::array<VkSubpassDependency, 1u> dependencyBloom{};
 
     dependencyBloom[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBloom[0].dstSubpass = 0;
@@ -1918,12 +1927,12 @@ void VulkanRenderer::createRenderPass() {
     colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
-    VkAttachmentReference swapchainColorAttachmentReferenceFXAA = {};
+    VkAttachmentReference swapchainColorAttachmentReferenceFXAA{};
     swapchainColorAttachmentReferenceFXAA.attachment = 0;
     swapchainColorAttachmentReferenceFXAA.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // References to attachments that subpass will take input from
-    VkAttachmentReference inputReferenceFXAA;
+    VkAttachmentReference inputReferenceFXAA{};
     inputReferenceFXAA.attachment = 1;
     inputReferenceFXAA.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1937,7 +1946,7 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {swapchainAttachmentFXAA, colorAttachmentFXAA};
 
     // Subpass dependencies for layout transitions
-    VkSubpassDependency dependencyFXAA;
+    VkSubpassDependency dependencyFXAA{};
 
     dependencyFXAA.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFXAA.dstSubpass = 0;
@@ -1974,7 +1983,7 @@ void VulkanRenderer::createRenderPass() {
     subpassesShadowMap.pDepthStencilAttachment = &depthAttachmentShadowMapRef;
 
     // Subpass dependencies for layout transitions
-    VkSubpassDependency dependency;
+    VkSubpassDependency dependency{};
 
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
@@ -2017,7 +2026,7 @@ void VulkanRenderer::createRenderPass() {
     subpassesDepthSSAO.pDepthStencilAttachment = &depthAttachmentForSSAORef;
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 2u> dependencyDepthAndViewSpacePosForSSAO;
+    std::array<VkSubpassDependency, 2u> dependencyDepthAndViewSpacePosForSSAO{};
 
     // depth
     dependencyDepthAndViewSpacePosForSSAO[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -2077,7 +2086,7 @@ void VulkanRenderer::createRenderPass() {
     subpassFootPrint.inputAttachmentCount = 0u;
 
     // Subpass dependencies for layout transitions
-    VkSubpassDependency dependencyFootPrint;
+    VkSubpassDependency dependencyFootPrint{};
 
     dependencyFootPrint.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFootPrint.dstSubpass = 0;
@@ -2118,11 +2127,11 @@ void VulkanRenderer::createRenderPass() {
     colorAttachmentSSAOblurInput.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachmentSSAOblurInput.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkAttachmentReference attachmentReferenceSSAOblurOutput = {};
+    VkAttachmentReference attachmentReferenceSSAOblurOutput{};
     attachmentReferenceSSAOblurOutput.attachment = 0;
     attachmentReferenceSSAOblurOutput.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference attachmentReferenceSSAOblurInput;
+    VkAttachmentReference attachmentReferenceSSAOblurInput{};
     attachmentReferenceSSAOblurInput.attachment = 1;
     attachmentReferenceSSAOblurInput.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -2137,7 +2146,7 @@ void VulkanRenderer::createRenderPass() {
                                                                             colorAttachmentSSAOblurInput};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencySSAOblur;
+    std::array<VkSubpassDependency, 1u> dependencySSAOblur{};
 
     dependencySSAOblur[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySSAOblur[0].dstSubpass = 0;

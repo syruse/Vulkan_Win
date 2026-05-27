@@ -11,7 +11,11 @@ void PipelineCreatorFootprint::createPipeline() {
     auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
     auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
 
-    std::array<VkVertexInputAttributeDescription, 6u> attributeDescriptions{};
+    // it is passed to vertexInputInfo and
+    // it needs to remain valid for the lifetime of the pipeline
+    static std::array<VkVertexInputAttributeDescription, 6u> attributeDescriptions{};
+    attributeDescriptions.fill({});
+
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;

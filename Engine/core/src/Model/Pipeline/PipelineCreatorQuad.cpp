@@ -18,7 +18,9 @@ void PipelineCreatorQuad::createPipeline() {
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
     if (m_blend != BLEND::NONE) {
-        VkPipelineColorBlendAttachmentState blendAttachState = {};
+        // We use static because Pipeliner stores a pointer to this structure.
+        static VkPipelineColorBlendAttachmentState blendAttachState{};
+        blendAttachState = {}; // Сброс полей перед заполнением
         blendAttachState.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         blendAttachState.blendEnable = VK_TRUE;

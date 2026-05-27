@@ -87,6 +87,17 @@ bool Pipeliner::createCache() {
 }
 
 Pipeliner::Pipeliner() {
+    // explicitly set all pipeline create info structs to default values to avoid uninitialized memory usage
+    memset(m_shaderStageCreateInfo, 0, sizeof(m_shaderStageCreateInfo));
+    _vertexInputInfo = {};
+    _pipelineIACreateInfo = {};
+    m_vpCreateInfo = {};
+    _rastCreateInfo = {};
+    _pipelineMSCreateInfo = {};
+    _blendCreateInfo = {};
+    _depthStencil = {};
+    _tessInfo = {};
+
     m_shaderStageCreateInfo[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     m_shaderStageCreateInfo[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
     m_shaderStageCreateInfo[0].module = nullptr;

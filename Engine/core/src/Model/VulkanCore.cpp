@@ -275,13 +275,11 @@ void VulkanCore::createInstance() {
         reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));
 
     // Register the debug callback
-    VkDebugReportCallbackCreateInfoEXT callbackCreateInfo;
+    VkDebugReportCallbackCreateInfoEXT callbackCreateInfo{};
     callbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
-    callbackCreateInfo.pNext = nullptr;
     callbackCreateInfo.flags =
         VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
     callbackCreateInfo.pfnCallback = &MyDebugReportCallback;
-    callbackCreateInfo.pUserData = nullptr;
 
     VkDebugReportCallbackEXT callback;
     res = my_vkCreateDebugReportCallbackEXT(m_inst, &callbackCreateInfo, nullptr, &callback);
@@ -317,10 +315,10 @@ void VulkanCore::createLogicalDevice() {
     const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
                              VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME};
 
-    VkPhysicalDeviceVulkan12Features deviceFeatures12;
+    VkPhysicalDeviceVulkan12Features deviceFeatures12{};
     deviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    deviceFeatures12.pNext = nullptr;
-    deviceFeatures12.timelineSemaphore = true;
+    deviceFeatures12.timelineSemaphore = VK_TRUE;
+    deviceFeatures12.separateDepthStencilLayouts = VK_TRUE; // for DEPTH_ATTACHMENT_OPTIMAL
 
     devInfo.pNext = &deviceFeatures12;
 #else
@@ -330,6 +328,8 @@ void VulkanCore::createLogicalDevice() {
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
     deviceFeatures.tessellationShader = VK_TRUE;
+    deviceFeatures.depthClamp = VK_TRUE;      // for pRasterizationState->depthClampEnable
+    deviceFeatures.dualSrcBlend = VK_TRUE;    // for VK_BLEND_FACTOR_SRC1_ALPHA
 
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     devInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pDevExt);
