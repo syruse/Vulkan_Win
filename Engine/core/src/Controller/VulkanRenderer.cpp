@@ -854,10 +854,14 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFootprintInfo.renderArea.extent.height = _footprintBuffer.height;
     renderPassFootprintInfo.framebuffer = m_fbsFootprint[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U,
-                                    1U, VK_ACCESS_NONE, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+    // If this is the first frame, you need to make transition from UNDEFINED.
+    // In subsequent frames, footprints are stored in DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
+    if (_oneOffClearingFootPrint) {
+        Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
+                                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U,
+                                        1U, VK_ACCESS_NONE, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+    }
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -971,9 +975,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassSSAOblurInfo.pClearValues = ssaoBlurClearValues.data();
     renderPassSSAOblurInfo.framebuffer = m_fbsSSAOblur[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+    // SSAO Blur: make the transition from COLOR_ATTACHMENT (after G-pass) to SHADER_READ
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _shadingBuffer.colorBufferImage[currentImage], _shadingBuffer.colorFormat,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSSAOblurInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -1063,11 +1068,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassBloomInfo.pClearValues = bloomClearValues.data();
     renderPassBloomInfo.framebuffer = m_fbsBloom[currentImage];
 
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassBloomInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[BLOOM];
@@ -1141,9 +1141,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
     renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
 
+    // FXAA Barrier: Putting the Final Color in a Shader-Readable State
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_NONE,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                                     VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
@@ -1222,7 +1223,6 @@ void VulkanRenderer::createColorBufferImage() {
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _gPassBuffer.normal.colorBufferImage[i],
             _gPassBuffer.normal.colorBufferImageMemory[i]);
-
         Utils::VulkanCreateImageView(_core.getDevice(), _gPassBuffer.normal.colorBufferImage[i], _gPassBuffer.normal.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _gPassBuffer.normal.colorBufferImageView[i]);
 
@@ -1231,7 +1231,6 @@ void VulkanRenderer::createColorBufferImage() {
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _gPassBuffer.color.colorBufferImage[i],
             _gPassBuffer.color.colorBufferImageMemory[i]);
-
         Utils::VulkanCreateImageView(_core.getDevice(), _gPassBuffer.color.colorBufferImage[i], _gPassBuffer.color.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _gPassBuffer.color.colorBufferImageView[i]);
 
@@ -1593,14 +1592,12 @@ void VulkanRenderer::createRenderPass() {
     // for color buffer from VK_IMAGE_LAYOUT_UNDEFINED to VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     subpassDependencies[0].dstSubpass = 0;
-    // for external depth buffer using
-    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                          VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    subpassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     // Subpass 1 layout (color/depth) to Subpass 2 layout (shader read)
     subpassDependencies[1].srcSubpass = 0;
@@ -1698,8 +1695,8 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySemiTrans[0].dstSubpass = 0;
     dependencySemiTrans[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencySemiTrans[0].srcAccessMask = 0;
-    dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencySemiTrans[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencySemiTrans[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     // depth dependency (depth attachment cannot be used before previous renderpasses have finished using it)
@@ -1917,7 +1914,7 @@ void VulkanRenderer::createRenderPass() {
     swapchainAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentDescription colorAttachmentFXAA = {};
-    colorAttachmentFXAA.format = _core.getSurfaceFormat().format;
+    colorAttachmentFXAA.format = _colorBuffer.colorFormat;
     colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1951,9 +1948,9 @@ void VulkanRenderer::createRenderPass() {
     dependencyFXAA.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFXAA.dstSubpass = 0;
     dependencyFXAA.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;  // FXAA reads in fragment shader
+    dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyFXAA.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencyFXAA.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+    dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyFXAA.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};
@@ -2031,7 +2028,7 @@ void VulkanRenderer::createRenderPass() {
     // depth
     dependencyDepthAndViewSpacePosForSSAO[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyDepthAndViewSpacePosForSSAO[0].dstSubpass = 0;
-    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // store previous 'clear' operation
+    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT; // previous 'clear' operation
     // layout transition happens here from depth 'clear'
     dependencyDepthAndViewSpacePosForSSAO[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
     dependencyDepthAndViewSpacePosForSSAO[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
@@ -2069,6 +2066,7 @@ void VulkanRenderer::createRenderPass() {
     // Create info for Render Pass: FootPrint effect
     VkAttachmentDescription depthAttachmentFootPrint = depthAttachment;
     depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;  // we accumulate trails of the vehicle
+    depthAttachmentFootPrint.format = _footprintBuffer.depthFormat;
     depthAttachmentFootPrint.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
@@ -2124,7 +2122,7 @@ void VulkanRenderer::createRenderPass() {
     colorAttachmentSSAOblurOutput.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     VkAttachmentDescription colorAttachmentSSAOblurInput = colorAttachmentSSAOblurOutput;  // SSAO input for blurring
     colorAttachmentSSAOblurInput.format = _shadingBuffer.colorFormat;
-    colorAttachmentSSAOblurInput.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentSSAOblurInput.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachmentSSAOblurInput.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference attachmentReferenceSSAOblurOutput{};
@@ -2425,8 +2423,8 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     init_info.Device = _core.getDevice();
     init_info.Queue = _queue;
     init_info.DescriptorPool = mImguiPool;
-    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
-    init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.MinImageCount = static_cast<uint32_t>(_swapChain.images.size());
+    init_info.ImageCount = static_cast<uint32_t>(_swapChain.images.size());
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.RenderPass = m_renderPassFXAA;
 
