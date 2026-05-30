@@ -22,8 +22,9 @@ namespace md5_cuda_animation {
 };
 
 namespace cuda {
-    // returns -1 if no CUDA device is available
-	int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE);
+    constexpr int INVALID_CUDA_DEVICE_INDEX = -1;
+    // returns INVALID_CUDA_DEVICE_INDEX if no CUDA device is available
+	int getCudaDeviceIndx(uint8_t* vkDeviceUUID, size_t UUID_SIZE);
 };
 
 class MD5CudaAnimation {

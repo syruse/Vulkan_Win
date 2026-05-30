@@ -93,8 +93,8 @@ void MD5Model::init() {
             memcpy(vk_deviceUUID, vulkan11Properties.deviceUUID, VK_UUID_SIZE);
         }
 
-        int cudaDevice = cuda::getCudaDevice(vk_deviceUUID, VK_UUID_SIZE);
-        if (cudaDevice > -1) {
+        int cudaDeviceIndx = cuda::getCudaDeviceIndx(vk_deviceUUID, VK_UUID_SIZE);
+        if (cudaDeviceIndx != cuda::INVALID_CUDA_DEVICE_INDEX) {
             Utils::VulkanCreateExternalBuffer(p_device, m_vkState._core.getPhysDevice(), m_bufferSize,
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA],
@@ -163,7 +163,7 @@ void MD5Model::init() {
                 }
             }
 
-            mCudaAnimator = new MD5CudaAnimation(cudaDevice, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
+            mCudaAnimator = new MD5CudaAnimation(cudaDeviceIndx, (void*)win32VkBufMemoryHandle, m_bufferSize, (void*)win32VkSemaphoreHandle,
                                                  m_MD5Model, m_instancesBufferOffset, m_instances, m_radius, m_isSwapYZNeeded, 
                                                  m_animationSpeedMultiplier, m_vertexMagnitudeMultiplier);
 

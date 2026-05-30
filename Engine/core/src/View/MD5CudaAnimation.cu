@@ -196,18 +196,17 @@ inline void gpuKernelAssert(const char* file, int line, bool abort = true) {
 
 namespace cuda {
 // Find the GPU which is selected by Vulkan and supports CUDA
-int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
-    constexpr int INVALID_CUDA_DEVICE = -1;
+int getCudaDeviceIndx(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
     int current_device = 0;
     int device_count = 0;
     int devices_prohibited = 0;
 
     cudaDeviceProp deviceProp;
-    cudaCheckError(cudaGetDeviceCount(&device_count));
+    cudaError_t err = cudaGetDeviceCount(&device_count);
 
-    if (device_count == 0) {
+    if (device_count == 0 || err != cudaSuccess) {
         fprintf(stderr, "CUDA error: no devices supporting CUDA.\n");
-        return INVALID_CUDA_DEVICE;
+        return INVALID_CUDA_DEVICE_INDEX;
     }
 
     // Find the GPU which is selected by Vulkan
@@ -237,10 +236,10 @@ int getCudaDevice(uint8_t* vkDeviceUUID, size_t UUID_SIZE) {
         fprintf(stderr,
                 "CUDA error:"
                 " No Vulkan-CUDA Interop capable GPU found.\n");
-        return INVALID_CUDA_DEVICE;
+        return INVALID_CUDA_DEVICE_INDEX;
     }
 
-    return INVALID_CUDA_DEVICE;
+    return INVALID_CUDA_DEVICE_INDEX;
 }
 }  // namespace cuda
 
