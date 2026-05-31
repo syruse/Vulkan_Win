@@ -36,7 +36,7 @@ static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
 
 // light source position offset from the camera
-const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, -Z_FAR);
+const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.9f * Z_FAR, -Z_FAR);
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
@@ -619,13 +619,25 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->MVP = mViewProj.viewProj;
     }
 
-    if (glm::distance(_pushConstant.lightPos, glm::vec3(_pushConstant.lightPos.x, _pushConstant.lightPos.y, mCamera.targetPos().z)) >
-        0.5f * Z_FAR) {
-        _pushConstant.lightPos = glm::vec3(_pushConstant.lightPos.x, _pushConstant.lightPos.y, mCamera.targetPos().z);
+
+    // smoothly move the light source towards the desired position along Z axis, 
+    // but only if it's significantly different from the current position.
+    glm::vec3 desiredLightPos = mCamera.targetPos() + _lightPos;
+    if (glm::distance(_pushConstant.lightPos, desiredLightPos) > 0.15f * Z_FAR) {
+        _pushConstant.lightPos = desiredLightPos;
     }
+
+    // We keep a constant direction vector: from -1000 to +1000 in Z (length 2500).
+    // This ensures that the angle of shadow falling does not change when the light source is moved.
+    glm::vec3 lightDir = glm::vec3(0.0f, -_lightPos.y, -_lightPos.z * 2.5f);
+    glm::vec3 target = _pushConstant.lightPos + lightDir;
+
     m_lightViewProj =
-        glm::ortho(-Z_FAR, Z_FAR, -Z_FAR, Z_FAR, -Z_FAR, Z_FAR) *
-        glm::lookAt(_pushConstant.lightPos, glm::vec3(-_lightPos.x, 0.0f, -_lightPos.z), glm::vec3(0.0f, 1.0f, 0.0f));
+        // Now Near=0 is safe, since the tank is at a distance of ~1000 from the "eye" of the light
+        // from light source to center(sqrt{900^2 + 1000^2} = ~1345+) 
+        // Far=3000 is sufficient, to get beyound the center
+        glm::ortho(-Z_FAR, Z_FAR, -Z_FAR, Z_FAR, 0.0f, Z_FAR * 3.0f) *
+        glm::lookAt(_pushConstant.lightPos, target, glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
 
     // Map the list of model data
