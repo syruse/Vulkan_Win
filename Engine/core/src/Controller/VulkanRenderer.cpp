@@ -1164,13 +1164,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
     renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
 
-    // FXAA Barrier: Putting the Final Color in a Shader-Readable State
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
+    // FXAA render pass begins with the color buffer already in SHADER_READ_ONLY_OPTIMAL after semi-transparent pass.
+    // The render pass begin will handle the layout transition if necessary.
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
@@ -1523,7 +1518,7 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription viewSpacePosAttachment = colorAttachment;
     viewSpacePosAttachment.format = _viewSpaceBuffer.colorFormat;
     viewSpacePosAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    viewSpacePosAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    viewSpacePosAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
@@ -1726,10 +1721,9 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[1].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySemiTrans[1].dstSubpass = 0;
     dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencySemiTrans[1].srcAccessMask = 0;
-    dependencySemiTrans[1].dstStageMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencySemiTrans[1].dstAccessMask =
-        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencySemiTrans[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoSemiTrans = {};
     renderPassCreateInfoSemiTrans.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1759,7 +1753,7 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment1BlurX.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     VkAttachmentDescription colorAttachment2BlurX = colorAttachment1BlurX;
     colorAttachment2BlurX.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment2BlurX.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2BlurX.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachment2BlurX.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference bloomHdrAttachmentReferenceBlurX{};
@@ -1819,7 +1813,7 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment1BlurY.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     VkAttachmentDescription colorAttachment2BlurY = colorAttachment1BlurY;
     colorAttachment2BlurY.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment2BlurY.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2BlurY.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachment2BlurY.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference bloomHdrAttachmentReferenceBlurY{};
@@ -1879,7 +1873,7 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment1Bloom.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     VkAttachmentDescription colorAttachment2Bloom = colorAttachment1Bloom;
     colorAttachment2Bloom.format = _bloomBuffer[0].colorFormat;
-    colorAttachment2Bloom.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment2Bloom.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachment2Bloom.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference bloomHdrAttachmentReferenceBloom{};
@@ -2051,7 +2045,7 @@ void VulkanRenderer::createRenderPass() {
     // depth
     dependencyDepthAndViewSpacePosForSSAO[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyDepthAndViewSpacePosForSSAO[0].dstSubpass = 0;
-    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT; // previous 'clear' operation
+    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // previous 'clear' operation
     // layout transition happens here from depth 'clear'
     dependencyDepthAndViewSpacePosForSSAO[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
     dependencyDepthAndViewSpacePosForSSAO[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
@@ -2065,7 +2059,7 @@ void VulkanRenderer::createRenderPass() {
     dependencyDepthAndViewSpacePosForSSAO[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // store previous 'clear' operation
     dependencyDepthAndViewSpacePosForSSAO[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyDepthAndViewSpacePosForSSAO[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;  // 'clear' writes to color buffer
-    dependencyDepthAndViewSpacePosForSSAO[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    dependencyDepthAndViewSpacePosForSSAO[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyDepthAndViewSpacePosForSSAO[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkAttachmentDescription colorAttachmentViewSpacePos = colorAttachment;

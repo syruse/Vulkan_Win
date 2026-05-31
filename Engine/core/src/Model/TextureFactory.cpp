@@ -86,9 +86,10 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
                        m_vkState._cmdBufPool, is_miplevelsEnabling, is_flippingVertically) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
+        VkImageViewType viewType = (filePaths.size() > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
                                          VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, texture->mipLevels,
-                                         VK_IMAGE_VIEW_TYPE_2D_ARRAY, filePaths.size()) != VK_SUCCESS) {
+                                         viewType, filePaths.size()) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create 2DArray texture imageView ");
         }
 

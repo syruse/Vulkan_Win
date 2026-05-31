@@ -13,7 +13,7 @@ void PipelineCreatorFootprint::createPipeline() {
 
     // it is passed to vertexInputInfo and
     // it needs to remain valid for the lifetime of the pipeline
-    static std::array<VkVertexInputAttributeDescription, 6u> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 8u> attributeDescriptions{};
     attributeDescriptions.fill({});
 
     attributeDescriptions[0].binding = 0;
@@ -27,24 +27,34 @@ void PipelineCreatorFootprint::createPipeline() {
     attributeDescriptions[1].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::texCoord);
 
     attributeDescriptions[2].binding = 1;
-    attributeDescriptions[2].location = 7;
-    attributeDescriptions[2].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attributeDescriptions[2].offset = offsetof(Instance, model_col0);
+    attributeDescriptions[2].location = 5;
+    attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[2].offset = offsetof(Instance, posShift);
 
     attributeDescriptions[3].binding = 1;
-    attributeDescriptions[3].location = 8;
-    attributeDescriptions[3].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attributeDescriptions[3].offset = offsetof(Instance, model_col1);
+    attributeDescriptions[3].location = 6;
+    attributeDescriptions[3].format = VK_FORMAT_R32_SFLOAT;
+    attributeDescriptions[3].offset = offsetof(Instance, scale);
 
     attributeDescriptions[4].binding = 1;
-    attributeDescriptions[4].location = 9;
+    attributeDescriptions[4].location = 7;
     attributeDescriptions[4].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attributeDescriptions[4].offset = offsetof(Instance, model_col2);
+    attributeDescriptions[4].offset = offsetof(Instance, model_col0);
 
     attributeDescriptions[5].binding = 1;
-    attributeDescriptions[5].location = 10;
+    attributeDescriptions[5].location = 8;
     attributeDescriptions[5].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attributeDescriptions[5].offset = offsetof(Instance, model_col3);
+    attributeDescriptions[5].offset = offsetof(Instance, model_col1);
+
+    attributeDescriptions[6].binding = 1;
+    attributeDescriptions[6].location = 9;
+    attributeDescriptions[6].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[6].offset = offsetof(Instance, model_col2);
+
+    attributeDescriptions[7].binding = 1;
+    attributeDescriptions[7].location = 10;
+    attributeDescriptions[7].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[7].offset = offsetof(Instance, model_col3);
 
     vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
     vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
