@@ -998,12 +998,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassSSAOblurInfo.pClearValues = ssaoBlurClearValues.data();
     renderPassSSAOblurInfo.framebuffer = m_fbsSSAOblur[currentImage];
 
-    // SSAO Blur: make the transition from COLOR_ATTACHMENT (after G-pass) to SHADER_READ
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _shadingBuffer.colorBufferImage[currentImage], _shadingBuffer.colorFormat,
-                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
+    // SSAO Blur: shading buffer already ends the main render pass in SHADER_READ_ONLY_OPTIMAL (after G-pass),
+    // so no explicit layout transition is needed here.
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSSAOblurInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO_BLUR];
@@ -1253,7 +1249,8 @@ void VulkanRenderer::createColorBufferImage() {
                                      VK_IMAGE_ASPECT_COLOR_BIT, _gPassBuffer.color.colorBufferImageView[i]);
 
         // HDR render targets for Bloom effect
-        for (auto& buf : _bloomBuffer) {
+        for (size_t bufIndex = 0u; bufIndex < _bloomBuffer.size(); ++bufIndex) {
+            auto& buf = _bloomBuffer[bufIndex];
             buf.colorFormat = HDRFormat;
             Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, buf.colorFormat,
                                      VK_IMAGE_TILING_OPTIMAL,
@@ -1262,6 +1259,12 @@ void VulkanRenderer::createColorBufferImage() {
 
             Utils::VulkanCreateImageView(_core.getDevice(), buf.colorBufferImage[i], buf.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT,
                                          buf.colorBufferImageView[i]);
+
+            if (bufIndex == 1u) {
+                Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, buf.colorBufferImage[i], buf.colorFormat,
+                                                   VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                   VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
+            }
         }
 
         // SSAO render target
@@ -1479,9 +1482,11 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentDescription colorAttachmentShading = colorAttachment;
     colorAttachmentShading.format = _shadingBuffer.colorFormat;
+    colorAttachmentShading.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription hdrBloomAttachment = colorAttachment;
     hdrBloomAttachment.format = _bloomBuffer[0].colorFormat;
+    hdrBloomAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription gPassNormalAttachment = colorAttachment;
     gPassNormalAttachment.format = _gPassBuffer.normal.colorFormat;
@@ -1750,7 +1755,7 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment1BlurX.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment1BlurX.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment1BlurX.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment1BlurX.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment1BlurX.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkAttachmentDescription colorAttachment2BlurX = colorAttachment1BlurX;
     colorAttachment2BlurX.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment2BlurX.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1809,8 +1814,8 @@ void VulkanRenderer::createRenderPass() {
     colorAttachment1BlurY.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment1BlurY.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment1BlurY.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment1BlurY.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment1BlurY.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment1BlurY.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment1BlurY.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkAttachmentDescription colorAttachment2BlurY = colorAttachment1BlurY;
     colorAttachment2BlurY.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment2BlurY.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -2063,6 +2068,7 @@ void VulkanRenderer::createRenderPass() {
     dependencyDepthAndViewSpacePosForSSAO[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkAttachmentDescription colorAttachmentViewSpacePos = colorAttachment;
+    colorAttachmentViewSpacePos.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsSSAO = {depthAttachment, colorAttachmentViewSpacePos};
 
     VkRenderPassCreateInfo renderPassCreateInfoDepthForSSAO = {};
