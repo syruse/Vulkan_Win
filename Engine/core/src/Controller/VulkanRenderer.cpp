@@ -36,7 +36,7 @@ static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
 
 // light source position offset from the camera
-const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.9f * Z_FAR, -Z_FAR);
+const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, -Z_FAR);
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
@@ -619,24 +619,35 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->MVP = mViewProj.viewProj;
     }
 
-
-    // smoothly move the light source towards the desired position along Z axis, 
+    // smoothly move the light source towards the desired position along Z axis,
     // but only if it's significantly different from the current position.
-    glm::vec3 desiredLightPos = mCamera.targetPos() + _lightPos;
-    if (glm::distance(_pushConstant.lightPos, desiredLightPos) > 0.15f * Z_FAR) {
-        _pushConstant.lightPos = desiredLightPos;
+
+    // Stable light positioning (Texel Snapping)
+    glm::vec3 tankPos = mCamera.targetPos();
+    glm::vec3 desiredLightPos = tankPos + _lightPos;
+
+    // We "jump" the light source only when the tank moves significantly (10% of Z_FAR).
+    // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
+    if (glm::distance(_pushConstant.lightPos, desiredLightPos) > 0.1f * Z_FAR) {
+        // Shadow map resolution is _shadowMapWidthAndHeight (8000x8000).
+        // Texel snapping aligns the light frustum to the shadow map grid to prevent sub-texel flickering.
+        // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
+        float texelSize = (Z_FAR * 2.2f) / _shadowMapWidthAndHeight;
+        _pushConstant.lightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
     }
 
-    // We keep a constant direction vector: from -1000 to +1000 in Z (length 2500).
-    // This ensures that the angle of shadow falling does not change when the light source is moved.
-    glm::vec3 lightDir = glm::vec3(0.0f, -_lightPos.y, -_lightPos.z * 2.5f);
+    // We keep a constant direction vector: from -1000 to +1000 in Z (length 3500).
+    // Normalizing the direction ensures that shadow angles remain perfectly static when the light moves.
+    glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f, -_lightPos.y, -_lightPos.z)) * (Z_FAR * 3.5f);
     glm::vec3 target = _pushConstant.lightPos + lightDir;
 
+    // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
+    const float shadowSide = Z_FAR * 1.1f;
     m_lightViewProj =
-        // Now Near=0 is safe, since the tank is at a distance of ~1000 from the "eye" of the light
-        // from light source to center(sqrt{900^2 + 1000^2} = ~1345+) 
-        // Far=3000 is sufficient, to get beyound the center
-        glm::ortho(-Z_FAR, Z_FAR, -Z_FAR, Z_FAR, 0.0f, Z_FAR * 3.0f) *
+        // from light source to center(sqrt{900^2 + 1000^2} = ~1345+)
+        // Far=4000 is sufficient, to cover the distance to the tank and the terrain beyond it.
+        // Near plane at -500.0f captures high objects (like tall trees) that might be "behind" the light source.
+        glm::ortho(-shadowSide, shadowSide, -shadowSide, shadowSide, -500.0f, Z_FAR * 4.0f) *
         glm::lookAt(_pushConstant.lightPos, target, glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
 
