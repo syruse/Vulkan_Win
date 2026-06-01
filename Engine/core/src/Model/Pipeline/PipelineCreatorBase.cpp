@@ -86,9 +86,3 @@ const VkSampler* PipelineCreatorBase::getOrCreateCommonSampler() {
 
     return &m_samplerCommonPostEffect;
 }
-
-uint32_t PipelineCreatorBase::getPhysicalDeviceVendorId() const {
-    VkPhysicalDeviceProperties props{};
-    vkGetPhysicalDeviceProperties(m_vkState._core.getPhysDevice(), &props);
-    return props.vendorID;
-}

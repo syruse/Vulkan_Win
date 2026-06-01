@@ -62,11 +62,17 @@ uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
 }
 
 void PipelineCreatorQuad::createDescriptorSetLayout() {
-    // CREATE INPUT ATTACHMENT / combined sampler depending on GPU vendor
-    const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
+    /** Note:
+    * NVIDIA → input attachments, AMD → combined samplers
+    * NVIDIA forgives mistakes when working with VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 
+    * it forgives using sampler2D instead of subpassInput for FXAA shaders and others, 
+    * AMD is sensitive to misusage of INPUT_ATTACHMENT(let's use COMBINED_IMAGE_SAMPLER, that's correct)
+    * but looks like NVIDIA detects some issues when using the COMBINED_IMAGE_SAMPLER"
+    */
+    const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
 
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
-    colourInputLayoutBinding.descriptorType = (isNvidia || m_isGPassNeeded)
+    colourInputLayoutBinding.descriptorType = (isNonAmdVendor || m_isGPassNeeded)
                                                 ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
                                                 : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colourInputLayoutBinding.descriptorCount = 1;
@@ -76,7 +82,7 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
     gPassInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 
     VkDescriptorSetLayoutBinding depthInputLayoutBinding = colourInputLayoutBinding;
-    depthInputLayoutBinding.descriptorType = isNvidia ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+    depthInputLayoutBinding.descriptorType = isNonAmdVendor ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
                                                       : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     // Array of input attachment bindings
@@ -144,14 +150,15 @@ void PipelineCreatorQuad::createDescriptorPool() {
     // Color Attachment Pool Size
     VkDescriptorPoolSize colorInputPoolSize = {};
     // color attachments: input attachment for GPass, single-color post effects depend on GPU vendor
-    const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
-    colorInputPoolSize.type = (isNvidia || m_isGPassNeeded) ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+    const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
+    colorInputPoolSize.type =
+        (isNonAmdVendor || m_isGPassNeeded) ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
                                                               : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
-    depthInputPoolSize.type = isNvidia ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+    depthInputPoolSize.type = isNonAmdVendor ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
                                        : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
@@ -216,7 +223,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, ssaoAttachmentDescriptor,
             depthAttachmentDescriptor, depthShadowAttachmentDescriptor;
-        const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
+        const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
 
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
@@ -271,7 +278,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
 
-            if (isNvidia) {
+            if (isNonAmdVendor) {
                 colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
                 colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             } else {
@@ -294,7 +301,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
 
-            if (isNvidia) {
+            if (isNonAmdVendor) {
                 depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
                 depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             } else {
@@ -319,7 +326,7 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
 
-            if (isNvidia) {
+            if (isNonAmdVendor) {
                 depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
                 depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             } else {

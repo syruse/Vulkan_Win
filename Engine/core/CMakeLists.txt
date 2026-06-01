@@ -4,7 +4,6 @@ project(${APP_NAME} VERSION 1.0 LANGUAGES CXX)
 
 option(USE_PROFILING "compiled for profiling" ON)
 option(USE_CUDA "Use CUDA" ON)
-option(USE_CUDA_DEBUG "Use debugging CUDA" ON)
 option(USE_FSR "Use FSR" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -95,7 +94,7 @@ endif()
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
 target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=${USE_FSR})
 target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER})
-#enable debug mode for Vulkan by setting VK_DEBUG_ENABLED
+#enable debug mode for Vulkan by setting VK_DEBUG_ENABLED(deprecated)
 #target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
@@ -104,7 +103,7 @@ else()
    message("${CMAKE_CXX_FLAGS_DEBUG}")
    if(WIN32 AND USE_PROFILING)
 	  SET_TARGET_PROPERTIES(${APP_NAME} PROPERTIES LINK_FLAGS "/PROFILE")
-	  if(USE_CUDA AND USE_CUDA_DEBUG)
+	  if(USE_CUDA)
 		SET_TARGET_PROPERTIES(md5_anim_cuda PROPERTIES LINK_FLAGS "/PROFILE")
 		target_compile_options(md5_anim_cuda PRIVATE "-G") # Enable debug information
 	  endif()

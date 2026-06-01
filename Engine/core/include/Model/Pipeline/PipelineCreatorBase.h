@@ -52,9 +52,6 @@ public:
 
     const VkSampler* getOrCreateCommonSampler();
 
-    // Returns Vulkan physical device vendor ID (e.g. 0x10DE for NVIDIA, 0x1002 for AMD)
-    uint32_t getPhysicalDeviceVendorId() const;
-
 private:
     virtual void createDescriptorSetLayout() = 0;
     virtual void createPipeline() = 0;

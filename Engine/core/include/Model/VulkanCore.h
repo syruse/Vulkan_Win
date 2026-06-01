@@ -1,7 +1,5 @@
 #pragma once
 
-// you can activate debug mode by defining VK_DEBUG_ENABLED in CMAKELIST
-
 #include <map>
 #include <memory>
 #include "IControl.h"
@@ -11,6 +9,13 @@ class IControl;
 
 class VulkanCore {
 public:
+    enum VendorId : uint32_t { 
+        NVIDIA = 0x10DE, 
+        AMD = 0x1002, 
+        INTEL = 0x8086, 
+        UNKNOWN = 0xFFFF 
+    };
+
     enum Queue_family {
         GFX_QUEUE_FAMILY = 0,
 #if defined(USE_FSR) && USE_FSR
@@ -31,6 +36,8 @@ public:
     ~VulkanCore();
 
     void init();
+
+    VendorId getVendorId() const;
 
     VkPhysicalDevice getPhysDevice() const;
 

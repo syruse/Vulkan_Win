@@ -20,7 +20,7 @@ VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController) : m_winControl
 }
 
 VulkanCore::~VulkanCore() {
-#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
+#if defined(_DEBUG)
     // Get the address to the vkCreateDebugReportCallbackEXT function
     auto func =
         reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_inst, "vkDestroyDebugUtilsMessengerEXT"));
@@ -59,6 +59,21 @@ void VulkanCore::init() {
 VkSurfaceKHR VulkanCore::createSurface(VkInstance& inst) {
     assert(m_winController);
     return m_winController->createSurface(inst);
+}
+
+VulkanCore::VendorId VulkanCore::getVendorId() const {
+    assert(m_gfxDevIndex >= 0);
+    uint32_t vendorId = m_physDevices.m_devProps[m_gfxDevIndex].vendorID;
+    switch (vendorId) {
+        case NVIDIA:
+            return VendorId::NVIDIA;
+        case AMD:
+            return VendorId::AMD;
+        case INTEL:
+            return VendorId::INTEL;
+        default:
+            return VendorId::UNKNOWN;
+    }
 }
 
 VkPhysicalDevice VulkanCore::getPhysDevice() const {
@@ -242,7 +257,7 @@ void VulkanCore::createInstance() {
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
     const char* pInstExt[] = {
-#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
+#if defined(_DEBUG)
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif
         VK_KHR_SURFACE_EXTENSION_NAME, 
@@ -252,14 +267,14 @@ void VulkanCore::createInstance() {
 #endif
         m_winController->getVulkanWindowSurfaceExtension().data()};
 
-#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
+#if defined(_DEBUG)
     const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
 #endif
 
     VkInstanceCreateInfo instInfo = {};
     instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instInfo.pApplicationInfo = &appInfo;
-#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
+#if defined(_DEBUG)
     instInfo.enabledLayerCount = ARRAY_SIZE_IN_ELEMENTS(pInstLayers);
     instInfo.ppEnabledLayerNames = pInstLayers;
 #endif
@@ -269,7 +284,7 @@ void VulkanCore::createInstance() {
     VkResult res = vkCreateInstance(&instInfo, nullptr, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
 
-#if defined(_DEBUG) && defined(VK_DEBUG_ENABLED)
+#if defined(_DEBUG)
     // Get the address to the vkCreateDebugReportCallbackEXT function
     PFN_vkCreateDebugReportCallbackEXT my_vkCreateDebugReportCallbackEXT =
         reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_inst, "vkCreateDebugReportCallbackEXT"));
