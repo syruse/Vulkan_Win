@@ -20,7 +20,7 @@ void PipelineCreatorQuad::createPipeline() {
     if (m_blend != BLEND::NONE) {
         // We use static because Pipeliner stores a pointer to this structure.
         static VkPipelineColorBlendAttachmentState blendAttachState{};
-        blendAttachState = {}; // Сброс полей перед заполнением
+        blendAttachState = {};
         blendAttachState.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         blendAttachState.blendEnable = VK_TRUE;
@@ -62,15 +62,22 @@ uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
 }
 
 void PipelineCreatorQuad::createDescriptorSetLayout() {
-    // CREATE INPUT ATTACHMENT
+    // CREATE INPUT ATTACHMENT / combined sampler depending on GPU vendor
+    const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
+
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
-    // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-    colourInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    colourInputLayoutBinding.descriptorType = (isNvidia || m_isGPassNeeded)
+                                                ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+                                                : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colourInputLayoutBinding.descriptorCount = 1;
     colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutBinding gPassInputLayoutBinding = colourInputLayoutBinding;
     gPassInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+
+    VkDescriptorSetLayoutBinding depthInputLayoutBinding = colourInputLayoutBinding;
+    depthInputLayoutBinding.descriptorType = isNvidia ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+                                                      : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     // Array of input attachment bindings
     auto inputBindingsSize = getInputBindingsAmount();
@@ -92,13 +99,13 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
         //inputBindings.back().pImmutableSamplers = getOrCreateCommonSampler();
     }
     if (m_isDepthNeeded) {
-        inputBindings.push_back(colourInputLayoutBinding);
+        inputBindings.push_back(depthInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
         //inputBindings.back().pImmutableSamplers = getOrCreateDepthSampler();
     }
     if (m_isGPassNeeded) {
         // shadow map
-        inputBindings.push_back(colourInputLayoutBinding);
+        inputBindings.push_back(depthInputLayoutBinding);
         inputBindings.back().binding = inputBindings.size() - 1u;
         //inputBindings.back().pImmutableSamplers = getOrCreateDepthSampler();
         // UboViewProjection Binding Info
@@ -136,14 +143,16 @@ void PipelineCreatorQuad::createDescriptorPool() {
 
     // Color Attachment Pool Size
     VkDescriptorPoolSize colorInputPoolSize = {};
-    // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-    colorInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    // color attachments: input attachment for GPass, single-color post effects depend on GPU vendor
+    const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
+    colorInputPoolSize.type = (isNvidia || m_isGPassNeeded) ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+                                                              : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
-    // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputPoolSize.type = isNvidia ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+                                       : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
@@ -207,6 +216,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, ssaoAttachmentDescriptor,
             depthAttachmentDescriptor, depthShadowAttachmentDescriptor;
+        const bool isNvidia = (getPhysicalDeviceVendorId() == 0x10DE);
+
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
             normalAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -250,19 +261,24 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Color Attachment Descriptor
             colorAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             colorAttachmentDescriptor.imageView = m_colorBuffer->colorBufferImageView[i];
-            // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
-            colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
-            // Color Attachment Descriptor Write
+            // Single-color post effect: vendor-specific attachment type
             VkWriteDescriptorSet colorWrite = {};
             colorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             colorWrite.dstSet = m_descriptorSets[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
-            // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
             colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
+
+            if (isNvidia) {
+                colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+                colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            } else {
+                colorAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+                colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            }
+
             setWrites.push_back(colorWrite);
         }
 
@@ -270,8 +286,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Depth Attachment Descriptor
             depthAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentDescriptor.imageView = m_vkState._depthBuffer.depthImageView;
-            // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
-            depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             // Depth Attachment Descriptor Write
             VkWriteDescriptorSet depthWrite{};
@@ -279,8 +293,15 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+
+            if (isNvidia) {
+                depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            } else {
+                depthAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            }
+
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentDescriptor;
 
@@ -291,16 +312,21 @@ void PipelineCreatorQuad::recreateDescriptors() {
             // Shadow Map
             depthShadowAttachmentDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthShadowAttachmentDescriptor.imageView = m_vkState._shadowMapBuffer.depthImageView;
-            // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
-            depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             depthWrite.dstSet = m_descriptorSets[i];
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
-            // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+
+            if (isNvidia) {
+                depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
+                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            } else {
+                depthShadowAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            }
+
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthShadowAttachmentDescriptor;
 

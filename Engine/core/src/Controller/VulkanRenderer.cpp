@@ -23,10 +23,10 @@
 #include <imgui/imgui.h>
 
 #if defined(USE_FSR) && USE_FSR
-#include <ffx_api/vk/ffx_api_vk.hpp>
 #include <FidelityFX/host/backends/vk/ffx_vk.h>
 #include <ffx_api/ffx_framegeneration.hpp>
 #include <ffx_api/ffx_upscale.hpp>
+#include <ffx_api/vk/ffx_api_vk.hpp>
 #endif
 
 #include <btBulletDynamicsCommon.h>
@@ -69,8 +69,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     m_pipelineCreators[GPASS].reset(new PipelineCreatorTextured(*this, m_renderPass, "vert_gPass.spv", "frag_gPass.spv"));
     m_pipelineCreators[SKYBOX].reset(
         new PipelineCreatorSkyBox(*this, m_renderPass, "vert_skybox.spv", "frag_skybox.spv", 0u, m_pushConstantRange));
-    m_pipelineCreators[SHADOWMAP].reset(
-        new PipelineCreatorShadowMap(this->_shadowMapBuffer, *this, m_renderPassShadowMap, "vert_shadowMap.spv", "frag_shadowMap.spv"));
+    m_pipelineCreators[SHADOWMAP].reset(new PipelineCreatorShadowMap(this->_shadowMapBuffer, *this, m_renderPassShadowMap,
+                                                                     "vert_shadowMap.spv", "frag_shadowMap.spv"));
     m_pipelineCreators[POST_LIGHTING].reset(new PipelineCreatorQuad(
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 2u, m_pushConstantRange));
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
@@ -91,8 +91,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
                                                                  "vert_depthWriter.spv", "frag_depthWriter.spv"));
     m_pipelineCreators[SSAO].reset(
         new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u, m_pushConstantRange));
-    m_pipelineCreators[FOOTPRINT].reset(
-        new PipelineCreatorFootprint(this->_footprintBuffer, *this, m_renderPassFootprint, "vert_footPrint.spv", "frag_footPrint.spv"));
+    m_pipelineCreators[FOOTPRINT].reset(new PipelineCreatorFootprint(this->_footprintBuffer, *this, m_renderPassFootprint,
+                                                                     "vert_footPrint.spv", "frag_footPrint.spv"));
     m_pipelineCreators[SSAO_BLUR].reset(new PipelineCreatorQuad(*this, m_renderPassSSAOblur, "vert_ssaoBlur.spv",
                                                                 "frag_ssaoBlur.spv", &this->_shadingBuffer,
                                                                 PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA));
@@ -116,7 +116,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
- 
+
     // we create a lot of trees
     {
         std::vector<Instance> semiTransparentInstances{TREES_COUNT};
@@ -126,13 +126,13 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         std::uniform_real<> distrScale(0.5, 1.0);
         int32_t gridLen = std::floor(std::sqrt(semiTransparentInstances.size()));
         float step = 2.0f * limit / gridLen;
-        //std::uniform_real<> distr(0.0f, 0.1f * step);
+        // std::uniform_real<> distr(0.0f, 0.1f * step);
         const float startX = -limit;
         const float startZ = -limit;
         for (std::size_t i = 0u; i < semiTransparentInstances.size(); ++i) {
             auto& instance = semiTransparentInstances[i];
-            //float xOffset = distr(gen);
-            //float zOffset = distr(gen);
+            // float xOffset = distr(gen);
+            // float zOffset = distr(gen);
             instance.posShift.y = 0.0f;
 
             instance.scale = distrScale(gen);
@@ -143,19 +143,19 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
             instance.posShift.z = startZ + col * step;
         }
 
-        auto lowPolyTrink = std::make_unique<ObjModel>(
-            *this, *mTextureFactory, "lowpoly_tree_trunk.obj"sv,
-                     static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 60.0f,
-                     semiTransparentInstances);
+        auto lowPolyTrink =
+            std::make_unique<ObjModel>(*this, *mTextureFactory, "lowpoly_tree_trunk.obj"sv,
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr,
+                                       60.0f, semiTransparentInstances);
 
         m_semiTransparentModels.emplace_back(
             new ObjModel(*this, *mTextureFactory, "highpoly_tree_trunk.obj"sv,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
-                         60.0f, semiTransparentInstances , std::move(lowPolyTrink)));
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 60.0f,
+                         semiTransparentInstances, std::move(lowPolyTrink)));
         m_semiTransparentModels.emplace_back(
             new MD5Model("tree_leaves.md5mesh"sv, "tree_leaves_idle.md5anim"sv, *this, *mTextureFactory,
-                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 
-                         10.0f, 0.1f, true, semiTransparentInstances));
+                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 10.0f, 0.1f,
+                         true, semiTransparentInstances));
     }
 
     m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
@@ -223,14 +223,15 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
 
     // Tree
     {
-        btCollisionShape* boxShape = new btBoxShape(btVector3(1, 60 / 2.0f, 1)); // Bullet uses half-extents (size 60 / 2.0f means width 60)
+        btCollisionShape* boxShape =
+            new btBoxShape(btVector3(1, 60 / 2.0f, 1));  // Bullet uses half-extents (size 60 / 2.0f means width 60)
         btScalar mass = 1.0f;
         btVector3 localInertia(0, 0, 0);
         boxShape->calculateLocalInertia(mass, localInertia);
 
         btTransform startTransform;
         startTransform.setIdentity();
-        startTransform.setOrigin(btVector3(0, 0, 0)); // TODO
+        startTransform.setOrigin(btVector3(0, 0, 0));  // TODO
         btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
         btRigidBody::btRigidBodyConstructionInfo treeRBInfo(mass, motionState, boxShape, localInertia);
         btRigidBody* treeBody = new btRigidBody(treeRBInfo);
@@ -238,12 +239,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
     }
 
     //// 5. Run Simulation
-    //for (int i = 0; i < 150; i++) {
-    //    dynamicsWorld->stepSimulation(1.f / 60.f, 10);
-    //    btTransform trans;
-    //    fallBody->getMotionState()->getWorldTransform(trans);
-    //    std::cout << "Cube Height: " << trans.getOrigin().getY() << std::endl;
-    //}
+    // for (int i = 0; i < 150; i++) {
+    //     dynamicsWorld->stepSimulation(1.f / 60.f, 10);
+    //     btTransform trans;
+    //     fallBody->getMotionState()->getWorldTransform(trans);
+    //     std::cout << "Cube Height: " << trans.getOrigin().getY() << std::endl;
+    // }
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -370,7 +371,7 @@ void VulkanRenderer::cleanupSwapChain() {
     if (mFSRSwapChainContext) {
         mFSRReplacementFunctions.pOutDestroySwapchainFFXAPI(_core.getDevice(), _swapChain.handle, nullptr, mFSRSwapChainContext);
     } else {
-        vkDestroySwapchainKHR(_core.getDevice(), _swapChain.handle, nullptr); 
+        vkDestroySwapchainKHR(_core.getDevice(), _swapChain.handle, nullptr);
     }
 #else
     vkDestroySwapchainKHR(_core.getDevice(), _swapChain.handle, nullptr);
@@ -510,7 +511,7 @@ void VulkanRenderer::createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateIn
 
     createFg.backBufferFormat = ffxApiGetSurfaceFormatVK(_core.getSurfaceFormat().format);
 
-    //retCode = ffx::CreateContext(mFSRFrameGenContext, nullptr, createFg, backendDesc);
+    // retCode = ffx::CreateContext(mFSRFrameGenContext, nullptr, createFg, backendDesc);
     if (retCode != ffx::ReturnCode::Ok) {
         Utils::printLog(ERROR_PARAM, "Failed to create FSR FG context: ", static_cast<uint32_t>(retCode));
     }
@@ -607,7 +608,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
         auto tarpos = mCamera.targetPos();
         auto dist = glm::distance(treeTrunkInstance.posShift, mCamera.targetPos());
-        auto boundingRadiuses = 0.5f * m_models[0]->radius(); //we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
+        auto boundingRadiuses =
+            0.5f * m_models[0]->radius();  // we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
         if (boundingRadiuses >= dist) {
             m_semiTransparentAnimations[i].startAnimation(2000.0f);  // 2 seconds
         }
@@ -655,8 +657,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0,
                 _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()), 0, &data);
     memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()));
-        vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
-    }
+    vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
+}
 
 void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     size_t minUniformBufferOffset = static_cast<size_t>(mDeviceProperties.limits.minUniformBufferOffsetAlignment);
@@ -732,10 +734,10 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
 #if defined(USE_FSR) && USE_FSR
-        if (mFSRSwapChainContext) {
+    if (mFSRSwapChainContext) {
         res = mFSRReplacementFunctions.pOutGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages,
-                                                                     &(_swapChain.images[0]));
-        } else {
+                                                                 &(_swapChain.images[0]));
+    } else {
         res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
     }
 #else
@@ -758,10 +760,12 @@ void VulkanRenderer::createUniformBuffers() {
      * we don't want to update the buffer in preparation of the next frame while a previous one is still reading from it!
      */
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), bufferSize,
+                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, _ubo.buffers[i],
                                   _ubo.buffersMemory[i]);
-        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), modelBufferSize,
+                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                   _dynamicUbo.buffers[i], _dynamicUbo.buffersMemory[i]);
     }
@@ -794,16 +798,12 @@ void VulkanRenderer::createCommandBuffer() {
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderData) {
-    static VkCommandBufferBeginInfo beginInfo {
-        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        nullptr,
-        VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
-        nullptr
-    };
+    static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
+                                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
 
     VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
     CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
-    
+
     const static VkClearValue zeroClearValues{{0.0f, 0.0f, 0.0f, 0.0f}};
 
     //---------------------------------------------------------------------------------------------//
@@ -860,8 +860,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
-        m_semiTransparentModels[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
-                                                            dynamicOffset);
+        m_semiTransparentModels[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage],
+                                                                   currentImage, dynamicOffset);
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -919,15 +919,14 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassInfo.framebuffer = m_fbs[currentImage];
 
     /** Note:
-    * We remove the manual barrier here, since RenderPass will automatically make the transition
-    * from UNDEFINED (initialLayout) to COLOR_ATTACHMENT_OPTIMAL.
-    * If the barrier is needed, the initialLayout in RenderPass must be
-    * VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
-    * Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
-    *                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    *                             VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-    *                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-    */
+     * We remove the manual barrier here, since RenderPass will automatically make the transition
+     * from UNDEFINED (initialLayout) to COLOR_ATTACHMENT_OPTIMAL.
+     * If the barrier is needed, the initialLayout in RenderPass must be
+     * VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.
+     * Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
+     * _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+     * 1U, 1U, 0, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+     */
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -944,8 +943,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     /// quad subpass
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS,
-                           0, sizeof(PushConstant), &_pushConstant);
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -973,7 +972,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-    
+
     //---------------------------------------------------------------------------------------------//
     // SSAO BLUR
     static std::array<VkClearValue, 2> ssaoBlurClearValues{zeroClearValues, zeroClearValues};
@@ -1093,7 +1092,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
-    
+
     static std::array<VkClearValue, 2> semiTransClearValues{zeroClearValues, zeroClearValues};
 
     VkRenderPassBeginInfo renderPassSemiTransInfo = {};
@@ -1110,8 +1109,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                     VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_NONE, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSemiTransInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
@@ -1132,7 +1130,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         m_semiTransparentModels[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
-    
+
     //---------------------------------------------------------------------------------------------//
     /// FXAA render pass
 
@@ -1252,9 +1250,9 @@ void VulkanRenderer::createColorBufferImage() {
                                          buf.colorBufferImageView[i]);
 
             if (bufIndex == 1u) {
-                Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, buf.colorBufferImage[i], buf.colorFormat,
-                                                   VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                                   VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
+                Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, buf.colorBufferImage[i],
+                                                   buf.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED,
+                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
             }
         }
 
@@ -1271,8 +1269,7 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::VulkanCreateImage(
             _core.getDevice(), _core.getPhysDevice(), _width, _height, _viewSpaceBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            _viewSpaceBuffer.colorBufferImage[i],
-            _viewSpaceBuffer.colorBufferImageMemory[i]);
+            _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorBufferImageMemory[i]);
 
         Utils::VulkanCreateImageView(_core.getDevice(), _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _viewSpaceBuffer.colorBufferImageView[i]);
@@ -1483,7 +1480,8 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
-    VkAttachmentDescription depthSSAOReadyAttachment = depthAttachment;  // already initialized depth texture from early renderPass
+    VkAttachmentDescription depthSSAOReadyAttachment =
+        depthAttachment;  // already initialized depth texture from early renderPass
     depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     // Avoid using DEPTH_READ_ONLY layout unless separateDepthStencilLayouts feature is enabled on the device.
@@ -1592,14 +1590,17 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[0].dstSubpass = 0;
     subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     subpassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    subpassDependencies[0].dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     // Subpass 1 layout (color/depth) to Subpass 2 layout (shader read)
     subpassDependencies[1].srcSubpass = 0;
-    subpassDependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subpassDependencies[1].srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     subpassDependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[1].dstSubpass = 1;
     subpassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -1616,7 +1617,8 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     subpassDependencies[3].srcSubpass = 0;
-    subpassDependencies[3].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subpassDependencies[3].srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     subpassDependencies[3].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[3].dstSubpass = 2;
     subpassDependencies[3].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -1638,8 +1640,8 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
 
     std::array<VkAttachmentDescription, 11> renderPassAttachments = {
-        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment, colorAttachmentSSAO,
-        depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,   depthTemporaryAttachment,
+        colorAttachment,          gPassNormalAttachment,   gPassColorAttachment,  colorAttachmentSSAO,
+        depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,    depthTemporaryAttachment,
         footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment};
 
     // Create info for Render Pass
@@ -1703,7 +1705,8 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencySemiTrans[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencySemiTrans[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencySemiTrans[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans[1].dstAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoSemiTrans = {};
     renderPassCreateInfoSemiTrans.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -2025,20 +2028,25 @@ void VulkanRenderer::createRenderPass() {
     // depth
     dependencyDepthAndViewSpacePosForSSAO[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyDepthAndViewSpacePosForSSAO[0].dstSubpass = 0;
-    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; // previous 'clear' operation
+    dependencyDepthAndViewSpacePosForSSAO[0].srcStageMask =
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;  // previous 'clear' operation
     // layout transition happens here from depth 'clear'
-    dependencyDepthAndViewSpacePosForSSAO[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; 
-    dependencyDepthAndViewSpacePosForSSAO[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
-    dependencyDepthAndViewSpacePosForSSAO[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // also we read 'cleared' depth buffer
+    dependencyDepthAndViewSpacePosForSSAO[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencyDepthAndViewSpacePosForSSAO[0].srcAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;  // 'clear' writes to depth buffer
+    dependencyDepthAndViewSpacePosForSSAO[0].dstAccessMask =
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;  // also we read 'cleared' depth buffer
     dependencyDepthAndViewSpacePosForSSAO[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     // viewspace pos color
     dependencyDepthAndViewSpacePosForSSAO[1].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyDepthAndViewSpacePosForSSAO[1].dstSubpass = 0;
-    dependencyDepthAndViewSpacePosForSSAO[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // store previous 'clear' operation
+    dependencyDepthAndViewSpacePosForSSAO[1].srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // store previous 'clear' operation
     dependencyDepthAndViewSpacePosForSSAO[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyDepthAndViewSpacePosForSSAO[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;  // 'clear' writes to color buffer
+    dependencyDepthAndViewSpacePosForSSAO[1].srcAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;  // 'clear' writes to color buffer
     dependencyDepthAndViewSpacePosForSSAO[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyDepthAndViewSpacePosForSSAO[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
@@ -2455,17 +2463,19 @@ void VulkanRenderer::createDepthResources() {
         return;
     }
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _shadowMapBuffer.width, _shadowMapBuffer.height,
-                             _shadowMapBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
+    Utils::VulkanCreateImage(
+        _core.getDevice(), _core.getPhysDevice(), _shadowMapBuffer.width, _shadowMapBuffer.height, _shadowMapBuffer.depthFormat,
+        VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _shadowMapBuffer.depthImage, _shadowMapBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _shadowMapBuffer.depthImage, _shadowMapBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _shadowMapBuffer.depthImageView);
 
-    Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _depthBuffer.width, _depthBuffer.height,
-                             _depthBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
+    Utils::VulkanCreateImage(
+        _core.getDevice(), _core.getPhysDevice(), _depthBuffer.width, _depthBuffer.height, _depthBuffer.depthFormat,
+        VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _depthBuffer.depthImage, _depthBuffer.depthImageMemory);
     Utils::VulkanCreateImageView(_core.getDevice(), _depthBuffer.depthImage, _depthBuffer.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
                                  _depthBuffer.depthImageView);
 
@@ -2480,10 +2490,10 @@ void VulkanRenderer::createDepthResources() {
                              _footprintBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);
-    
+
     // Transition footprint buffer to its primary state immediately after creation
-    Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _footprintBuffer.depthImage, 
-                                       _footprintBuffer.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, 
+    Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _footprintBuffer.depthImage,
+                                       _footprintBuffer.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U);
 
     Utils::VulkanCreateImageView(_core.getDevice(), _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
