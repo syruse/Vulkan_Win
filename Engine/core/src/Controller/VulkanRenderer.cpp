@@ -604,7 +604,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
             treeCrownInstances[i].model_col3 = treeTrunkInstance.model_col3;
             continue;
         }
-        
+
         auto tarpos = mCamera.targetPos();
         auto dist = glm::distance(treeTrunkInstance.posShift, mCamera.targetPos());
         auto boundingRadiuses = 0.5f * m_models[0]->radius(); //we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
@@ -655,8 +655,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0,
                 _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()), 0, &data);
     memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()));
-    vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
-}
+        vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
+    }
 
 void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     size_t minUniformBufferOffset = static_cast<size_t>(mDeviceProperties.limits.minUniformBufferOffsetAlignment);
@@ -758,10 +758,10 @@ void VulkanRenderer::createUniformBuffers() {
      * we don't want to update the buffer in preparation of the next frame while a previous one is still reading from it!
      */
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, _ubo.buffers[i],
                                   _ubo.buffersMemory[i]);
-        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                   _dynamicUbo.buffers[i], _dynamicUbo.buffersMemory[i]);
     }
@@ -876,15 +876,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFootprintInfo.renderArea.extent.width = _footprintBuffer.width;
     renderPassFootprintInfo.renderArea.extent.height = _footprintBuffer.height;
     renderPassFootprintInfo.framebuffer = m_fbsFootprint[currentImage];
-
-    // If this is the first frame, you need to make transition from UNDEFINED.
-    // In subsequent frames, footprints are stored in DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
-    if (_oneOffClearingFootPrint) {
-        Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
-                                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U,
-                                        1U, VK_ACCESS_NONE, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
-    }
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFootprintInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1381,22 +1372,6 @@ bool VulkanRenderer::renderScene() {
     res = vkAcquireNextImageKHR(_core.getDevice(), _swapChain.handle, UINT64_MAX, m_presentCompleteSem[m_currentFrame],
                                 VK_NULL_HANDLE, &ImageIndex);
 #endif
-    //FOR DEBUG
-    //Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned", res, " ImageIndex=", ImageIndex,
-    //                " m_currentFrame=", m_currentFrame);
-#if defined(USE_FSR) && USE_FSR
-#endif
-
-    // Note: it's just fall back sover for emergency situation
-    {
-        static uint32_t last_ImageIndex = -1;
-        if (last_ImageIndex == ImageIndex) {
-            ImageIndex = ++ImageIndex % MAX_FRAMES_IN_FLIGHT;
-            Utils::printLog(INFO_PARAM, "vkAcquireNextImageKHR returned the same ImageIndex", last_ImageIndex,
-                            " as last one, trying to acquire next image manually !");
-        }
-        last_ImageIndex = ImageIndex;
-    }
 
     VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo = {};
@@ -1504,15 +1479,15 @@ void VulkanRenderer::createRenderPass() {
         VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // for more efficiency and since it will not be used after drawing has finished
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription shadowMapAttachment = depthAttachment;
 
     VkAttachmentDescription depthSSAOReadyAttachment = depthAttachment;  // already initialized depth texture from early renderPass
     depthSSAOReadyAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthSSAOReadyAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     // Avoid using DEPTH_READ_ONLY layout unless separateDepthStencilLayouts feature is enabled on the device.
-    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthSSAOReadyAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription shadowMapLoadAttachment = depthSSAOReadyAttachment;
 
@@ -2193,7 +2168,7 @@ void VulkanRenderer::createRenderPass() {
 
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 11> attachments = {_colorBuffer.colorBufferImageView[i],
                                                    _gPassBuffer.normal.colorBufferImageView[i],
                                                    _gPassBuffer.color.colorBufferImageView[i],
@@ -2225,7 +2200,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss x blurring for bloom effect
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[1].colorBufferImageView[i],
                                                   _bloomBuffer[0].colorBufferImageView[i]};
 
@@ -2244,7 +2219,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss y blurring for bloom effect
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[0].colorBufferImageView[i],
                                                   _bloomBuffer[1].colorBufferImageView[i]};
 
@@ -2263,7 +2238,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO for bloom effect
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _bloomBuffer[0].colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2281,7 +2256,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO FXAA
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         if (Utils::VulkanCreateImageView(_core.getDevice(), _swapChain.images[i], _core.getSurfaceFormat().format,
                                          VK_IMAGE_ASPECT_COLOR_BIT, _swapChain.views[i]) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
@@ -2304,7 +2279,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2322,7 +2297,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SHADOW MAP
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         VkImageView attachment = _shadowMapBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2340,7 +2315,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO DEPTH PASS AND VIEW SPACE POS (for SSAO)
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_depthBuffer.depthImageView, _viewSpaceBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2358,7 +2333,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FOOTPRINT PASS (for tire tracks)
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         VkImageView attachment = _footprintBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2376,7 +2351,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO for SSAO blurring and applying
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _shadingBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2405,7 +2380,7 @@ void VulkanRenderer::createSemaphores() {
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
         if (vkCreateSemaphore(_core.getDevice(), &semaphoreCreateInfo, nullptr, &m_presentCompleteSem[i]) != VK_SUCCESS ||
             vkCreateSemaphore(_core.getDevice(), &semaphoreCreateInfo, nullptr, &m_renderCompleteSem[i]) != VK_SUCCESS ||
             vkCreateFence(_core.getDevice(), &fenceCreateInfo, nullptr, &m_drawFences[i]) != VK_SUCCESS) {
@@ -2505,6 +2480,12 @@ void VulkanRenderer::createDepthResources() {
                              _footprintBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);
+    
+    // Transition footprint buffer to its primary state immediately after creation
+    Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _footprintBuffer.depthImage, 
+                                       _footprintBuffer.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, 
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U);
+
     Utils::VulkanCreateImageView(_core.getDevice(), _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _footprintBuffer.depthImageView);
 }
