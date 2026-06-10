@@ -8,6 +8,8 @@ int main(int argc, char** argv) {
     int16_t width = WINDOW_WIDTH;
     int16_t height = WINDOW_HEIGHT;
 #ifdef _WIN32
+    SetProcessDPIAware();  // take dpi into account for window size
+    
     MONITORINFO monitorInfo;
     monitorInfo.cbSize = sizeof(monitorInfo);
     GetMonitorInfo(MonitorFromWindow(nullptr, MONITOR_DEFAULTTOPRIMARY), &monitorInfo);

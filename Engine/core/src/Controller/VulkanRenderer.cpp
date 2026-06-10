@@ -256,11 +256,14 @@ VulkanRenderer::~VulkanRenderer() {
         ffxDestroyContext(&mFSRSwapChainContext, nullptr);
 #endif
 
+    // Explicitly release resources before the core device/instance cleanup.
+    for (auto& particle : m_particles) particle.reset();
+    m_models.clear();
+    m_semiTransparentModels.clear();
+
     mTextureFactory.reset(nullptr);
 
     _aligned_free(mp_modelTransferSpace);
-
-    m_semiTransparentModels.clear();
 
     for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroyBuffer(_core.getDevice(), _ubo.buffers[i], nullptr);
@@ -1385,6 +1388,10 @@ bool VulkanRenderer::renderScene() {
     static bool isGPUCalculationFavorable = true;
     if (windowQueueMSG.hmiStates) {
         isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
+
+        // TODO Check for resolution change from the UI states
+        //if (windowQueueMSG.hmiStates->resolutionChanged) {
+        //}
     }
 
     for (auto& model : m_models) {

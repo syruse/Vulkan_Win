@@ -17,7 +17,10 @@ static constexpr const char* WIN_CLASS_NAME = "Win32Control";
 static IControl::WindowQueueMSG _windowQueueMsg{};
 
 Win32Control::~Win32Control() {
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
     DestroyWindow(m_hwnd);
+    UnregisterClass(WIN_CLASS_NAME, m_hinstance);
 }
 
 std::string_view Win32Control::getVulkanWindowSurfaceExtension() const {
@@ -53,8 +56,6 @@ void Win32Control::init() {
     /// because real produced rect will be a little less due to invisible borders
     /// let's adjust the rect
     AdjustWindowRectEx(&rect, style, 0, 0);
-
-    SetProcessDPIAware();  // take dpi into account for window size
 
     m_hwnd = CreateWindowEx(0,
                             WIN_CLASS_NAME,  // class name
@@ -121,9 +122,11 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     */
     if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         /* handle or dispatch messages */
+        // WM_QUIT belongs to the thread unlike other ones thus it doesn't have msg.hwnd to be passed to DispatchMessage->>WindowProc
         if (msg.message == WM_QUIT) {
             _windowQueueMsg.isQuited = true;
         } else {
+            // invoke WindowProc
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -163,7 +166,8 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
 
     return windowQueueMsg;
 }
-
+// it's called once by WINDOWS directly when size and style are set at the beginning
+// and then it's called by DispatchMessage
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_CREATE:
@@ -175,7 +179,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         }
         case WM_CLOSE:
-            PostQuitMessage(0);
+            PostQuitMessage(0); // ask WINDOWS to put WM_QUIT in the queue
             break;
         case WM_ACTIVATEAPP: {
             DirectX::Keyboard::ProcessMessage(uMsg, wParam, lParam);

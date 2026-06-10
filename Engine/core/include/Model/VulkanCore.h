@@ -84,7 +84,9 @@ private:
     VkSurfaceKHR m_surface = nullptr;
     Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
-
+#if defined(_DEBUG)
+    VkDebugReportCallbackEXT m_callback = nullptr;
+#endif
     // gpu adapter index
     int m_gfxDevIndex = -1;
 

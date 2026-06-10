@@ -21,11 +21,12 @@ VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController) : m_winControl
 
 VulkanCore::~VulkanCore() {
 #if defined(_DEBUG)
-    // Get the address to the vkCreateDebugReportCallbackEXT function
-    auto func =
-        reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_inst, "vkDestroyDebugUtilsMessengerEXT"));
-    if (func != nullptr) {
-        func(m_inst, nullptr, nullptr);
+    if (m_callback != VK_NULL_HANDLE) {
+        auto func = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(
+            vkGetInstanceProcAddr(m_inst, "vkDestroyDebugReportCallbackEXT"));
+        if (func != nullptr) {
+            func(m_inst, m_callback, nullptr);
+        }
     }
 #endif
 
@@ -296,8 +297,7 @@ void VulkanCore::createInstance() {
         VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
     callbackCreateInfo.pfnCallback = &MyDebugReportCallback;
 
-    VkDebugReportCallbackEXT callback;
-    res = my_vkCreateDebugReportCallbackEXT(m_inst, &callbackCreateInfo, nullptr, &callback);
+    res = my_vkCreateDebugReportCallbackEXT(m_inst, &callbackCreateInfo, nullptr, &m_callback);
     CHECK_VULKAN_ERROR("my_vkCreateDebugReportCallbackEXT error %d\n", res);
 #endif
 }

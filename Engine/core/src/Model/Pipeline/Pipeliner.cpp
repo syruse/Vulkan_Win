@@ -47,6 +47,7 @@ bool Pipeliner::saveCache() {
     }
 
     vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
+    m_pipeline_cache = nullptr;
 
     return result == VK_SUCCESS ? true : false;
 }
