@@ -45,14 +45,14 @@ static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
 float _footPrintRedrawingK = 0.7f;
 
-VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t height)
-    : VulkanState(appName, width, height),
-      mTextureFactory(new TextureFactory(*this)),  /// this is not used imedially it's safe
-      mCamera({FOV, static_cast<float>(width) / height, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
+VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
+    : VulkanState(appName, windowWidth, windowHeight, 1980, 1024),  // TODO
+      mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
+      mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
-    _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
+    _pushConstant.windowSize = glm::vec4(_windowWidth, _windowHeight, Z_FAR, Z_NEAR);
     _pushConstant.lightPos = _lightPos;
 
     calculateAdditionalMat();
@@ -75,7 +75,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, size_t width, size_t he
         *this, m_renderPass, "vert_gLigtingSubpass.spv", "frag_gLigtingSubpass.spv", true, true, 2u, m_pushConstantRange));
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
                                                                 &this->_colorBuffer, PipelineCreatorQuad::BLEND::NONE, true,
-                                                                m_pushConstantRange));
+                                                                m_pushConstantRange, true));
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
                                                                    "frag_particle.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[SEMI_TRANSPARENT].reset(new PipelineCreatorSemiTransparent(
@@ -400,16 +400,16 @@ void VulkanRenderer::cleanupSwapChain() {
 
 void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
     INFO_FORMAT(" new width=%d; new height=%d", width, height);
-    if (_width != width || _height != height) {
+    if (_windowWidth != width || _windowHeight != height) {
         cleanupSwapChain();
 
-        _width = width;
-        _height = height;
+        _windowWidth = width;
+        _windowHeight = height;
         m_currentFrame = 0u;
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
-        _pushConstant.windowSize = glm::vec4(_width, _height, Z_FAR, Z_NEAR);
+        _pushConstant.windowSize = glm::vec4(_windowWidth, _windowHeight, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
 
         auto swapchainCreateInfo = createSwapChain();
@@ -913,10 +913,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_renderPass;
-    renderPassInfo.renderArea.offset.x = 0;
-    renderPassInfo.renderArea.offset.y = 0;
-    renderPassInfo.renderArea.extent.width = _width;
-    renderPassInfo.renderArea.extent.height = _height;
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent.width = _offscreenWidth;
+    renderPassInfo.renderArea.extent.height = _offscreenHeight;
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
     renderPassInfo.framebuffer = m_fbs[currentImage];
@@ -983,10 +982,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkRenderPassBeginInfo renderPassSSAOblurInfo = {};
     renderPassSSAOblurInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassSSAOblurInfo.renderPass = m_renderPassSSAOblur;
-    renderPassSSAOblurInfo.renderArea.offset.x = 0;
-    renderPassSSAOblurInfo.renderArea.offset.y = 0;
-    renderPassSSAOblurInfo.renderArea.extent.width = _width;
-    renderPassSSAOblurInfo.renderArea.extent.height = _height;
+    renderPassSSAOblurInfo.renderArea.offset = {0, 0};
+    renderPassSSAOblurInfo.renderArea.extent.width = _offscreenWidth;
+    renderPassSSAOblurInfo.renderArea.extent.height = _offscreenHeight;
     renderPassSSAOblurInfo.clearValueCount = ssaoBlurClearValues.size();
     renderPassSSAOblurInfo.pClearValues = ssaoBlurClearValues.data();
     renderPassSSAOblurInfo.framebuffer = m_fbsSSAOblur[currentImage];
@@ -1015,10 +1013,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VkRenderPassBeginInfo renderPassGaussXBloomInfo = {};
         renderPassGaussXBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassGaussXBloomInfo.renderPass = m_renderPassXBlur;
-        renderPassGaussXBloomInfo.renderArea.offset.x = 0;
-        renderPassGaussXBloomInfo.renderArea.offset.y = 0;
-        renderPassGaussXBloomInfo.renderArea.extent.width = _width;
-        renderPassGaussXBloomInfo.renderArea.extent.height = _height;
+        renderPassGaussXBloomInfo.renderArea.offset = {0, 0};
+        renderPassGaussXBloomInfo.renderArea.extent.width = _offscreenWidth;
+        renderPassGaussXBloomInfo.renderArea.extent.height = _offscreenHeight;
         renderPassGaussXBloomInfo.clearValueCount = gaussXBloomClearValues.size();
         renderPassGaussXBloomInfo.pClearValues = gaussXBloomClearValues.data();
         renderPassGaussXBloomInfo.framebuffer = m_fbsXBlur[currentImage];
@@ -1042,10 +1039,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VkRenderPassBeginInfo renderPassGaussYBloomInfo = {};
         renderPassGaussYBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassGaussYBloomInfo.renderPass = m_renderPassYBlur;
-        renderPassGaussYBloomInfo.renderArea.offset.x = 0;
-        renderPassGaussYBloomInfo.renderArea.offset.y = 0;
-        renderPassGaussYBloomInfo.renderArea.extent.width = _width;
-        renderPassGaussYBloomInfo.renderArea.extent.height = _height;
+        renderPassGaussYBloomInfo.renderArea.offset = {0, 0};
+        renderPassGaussYBloomInfo.renderArea.extent.width = _offscreenWidth;
+        renderPassGaussYBloomInfo.renderArea.extent.height = _offscreenHeight;
         renderPassGaussYBloomInfo.clearValueCount = gaussYBloomClearValues.size();
         renderPassGaussYBloomInfo.pClearValues = gaussYBloomClearValues.data();
         renderPassGaussYBloomInfo.framebuffer = m_fbsYBlur[currentImage];
@@ -1072,10 +1068,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkRenderPassBeginInfo renderPassBloomInfo = {};
     renderPassBloomInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassBloomInfo.renderPass = m_renderPassBloom;
-    renderPassBloomInfo.renderArea.offset.x = 0;
-    renderPassBloomInfo.renderArea.offset.y = 0;
-    renderPassBloomInfo.renderArea.extent.width = _width;
-    renderPassBloomInfo.renderArea.extent.height = _height;
+    renderPassBloomInfo.renderArea.offset = {0, 0};
+    renderPassBloomInfo.renderArea.extent.width = _offscreenWidth;
+    renderPassBloomInfo.renderArea.extent.height = _offscreenHeight;
     renderPassBloomInfo.clearValueCount = bloomClearValues.size();
     renderPassBloomInfo.pClearValues = bloomClearValues.data();
     renderPassBloomInfo.framebuffer = m_fbsBloom[currentImage];
@@ -1101,10 +1096,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkRenderPassBeginInfo renderPassSemiTransInfo = {};
     renderPassSemiTransInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassSemiTransInfo.renderPass = m_renderPassSemiTrans;
-    renderPassSemiTransInfo.renderArea.offset.x = 0;
-    renderPassSemiTransInfo.renderArea.offset.y = 0;
-    renderPassSemiTransInfo.renderArea.extent.width = _width;
-    renderPassSemiTransInfo.renderArea.extent.height = _height;
+    renderPassSemiTransInfo.renderArea.offset = {0, 0};
+    renderPassSemiTransInfo.renderArea.extent.width = _offscreenWidth;
+    renderPassSemiTransInfo.renderArea.extent.height = _offscreenHeight;
     renderPassSemiTransInfo.clearValueCount = semiTransClearValues.size();
     renderPassSemiTransInfo.pClearValues = semiTransClearValues.data();
     renderPassSemiTransInfo.framebuffer = m_fbsSemiTrans[currentImage];
@@ -1135,7 +1129,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     //---------------------------------------------------------------------------------------------//
-    /// FXAA render pass
+    /// FXAA render pass (FINAL PASS) render with native resolution!
 
     static std::array<VkClearValue, 2> fxaaClearValues;
     fxaaClearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -1146,8 +1140,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassFXAAInfo.renderPass = m_renderPassFXAA;
     renderPassFXAAInfo.renderArea.offset.x = 0;
     renderPassFXAAInfo.renderArea.offset.y = 0;
-    renderPassFXAAInfo.renderArea.extent.width = _width;
-    renderPassFXAAInfo.renderArea.extent.height = _height;
+    renderPassFXAAInfo.renderArea.extent.width = _windowWidth;
+    renderPassFXAAInfo.renderArea.extent.height = _windowHeight;
     renderPassFXAAInfo.clearValueCount = fxaaClearValues.size();
     renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
     renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
@@ -1214,7 +1208,8 @@ void VulkanRenderer::createColorBufferImage() {
 
         // Create Color Buffer Image
         Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _colorBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+            _core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+                                 _colorBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             _colorBuffer.colorBufferImage[i], _colorBuffer.colorBufferImageMemory[i]);
 
@@ -1225,16 +1220,20 @@ void VulkanRenderer::createColorBufferImage() {
         // the same applied to G pass buffer
 
         Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _gPassBuffer.normal.colorFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+            _core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+            _gPassBuffer.normal.colorFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                           VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                                                           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _gPassBuffer.normal.colorBufferImage[i],
             _gPassBuffer.normal.colorBufferImageMemory[i]);
         Utils::VulkanCreateImageView(_core.getDevice(), _gPassBuffer.normal.colorBufferImage[i], _gPassBuffer.normal.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _gPassBuffer.normal.colorBufferImageView[i]);
 
         Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _gPassBuffer.color.colorFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+            _core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+            _gPassBuffer.color.colorFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                          VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                                                          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _gPassBuffer.color.colorBufferImage[i],
             _gPassBuffer.color.colorBufferImageMemory[i]);
         Utils::VulkanCreateImageView(_core.getDevice(), _gPassBuffer.color.colorBufferImage[i], _gPassBuffer.color.colorFormat,
@@ -1244,7 +1243,7 @@ void VulkanRenderer::createColorBufferImage() {
         for (size_t bufIndex = 0u; bufIndex < _bloomBuffer.size(); ++bufIndex) {
             auto& buf = _bloomBuffer[bufIndex];
             buf.colorFormat = HDRFormat;
-            Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _width, _height, buf.colorFormat,
+            Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight, buf.colorFormat,
                                      VK_IMAGE_TILING_OPTIMAL,
                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buf.colorBufferImage[i], buf.colorBufferImageMemory[i]);
@@ -1260,8 +1259,8 @@ void VulkanRenderer::createColorBufferImage() {
         }
 
         // SSAO render target
-        Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _ssaoBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+                                 _ssaoBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _ssaoBuffer.colorBufferImage[i], _ssaoBuffer.colorBufferImageMemory[i]);
 
@@ -1269,8 +1268,8 @@ void VulkanRenderer::createColorBufferImage() {
                                      VK_IMAGE_ASPECT_COLOR_BIT, _ssaoBuffer.colorBufferImageView[i]);
 
         // view space position render target
-        Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _viewSpaceBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+                                 _viewSpaceBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorBufferImageMemory[i]);
 
@@ -1278,8 +1277,8 @@ void VulkanRenderer::createColorBufferImage() {
                                      VK_IMAGE_ASPECT_COLOR_BIT, _viewSpaceBuffer.colorBufferImageView[i]);
 
         // SHADING render target
-        Utils::VulkanCreateImage(
-            _core.getDevice(), _core.getPhysDevice(), _width, _height, _shadingBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+                                 _shadingBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             _shadingBuffer.colorBufferImage[i], _shadingBuffer.colorBufferImageMemory[i]);
 
@@ -1425,7 +1424,7 @@ bool VulkanRenderer::renderScene() {
 #endif
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-        recreateSwapChain(_width, _height);
+        recreateSwapChain(_windowWidth, _windowHeight);
     } else {
         CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
     }
@@ -2205,8 +2204,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPass;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbs[i]);
@@ -2224,8 +2223,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassXBlur;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsXBlur[i]);
@@ -2243,8 +2242,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassYBlur;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsYBlur[i]);
@@ -2261,8 +2260,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassBloom;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsBloom[i]);
@@ -2284,8 +2283,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassFXAA;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _windowWidth;
+        fbCreateInfo.height = _windowHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsFXAA[i]);
@@ -2302,8 +2301,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassSemiTrans;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsSemiTrans[i]);
@@ -2374,8 +2373,8 @@ void VulkanRenderer::createFramebuffer() {
         fbCreateInfo.renderPass = m_renderPassSSAOblur;
         fbCreateInfo.attachmentCount = attachments.size();
         fbCreateInfo.pAttachments = attachments.data();
-        fbCreateInfo.width = _width;
-        fbCreateInfo.height = _height;
+        fbCreateInfo.width = _offscreenWidth;
+        fbCreateInfo.height = _offscreenHeight;
         fbCreateInfo.layers = 1;
 
         res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsSSAOblur[i]);

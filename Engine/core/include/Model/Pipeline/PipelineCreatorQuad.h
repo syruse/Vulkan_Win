@@ -9,22 +9,25 @@ public:
 
     PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                         std::string_view fragShader, bool isDepthNeeded = false, bool isGPassNeeded = false,
-                        uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                        uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u}, bool isWindowSizeTarget = false)
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
           m_blend(BLEND::NONE),
           m_isDepthNeeded(isDepthNeeded),
           m_isGPassNeeded(isGPassNeeded),
+          m_isWindowSizeTarget(isWindowSizeTarget),
           m_colorBuffer(&vkState._colorBuffer) {
         assert(m_colorBuffer);
     }
 
     PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                         std::string_view fragShader, VulkanState::ColorBuffer* colorBuffer, BLEND blend = BLEND::NONE,
-                        bool isDepthNeeded = false, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                        bool isDepthNeeded = false, VkPushConstantRange pushConstantRange = {0u, 0u, 0u},
+                        bool isWindowSizeTarget = false)
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, 0u, pushConstantRange),
           m_blend(blend),
           m_isDepthNeeded(isDepthNeeded),
           m_isGPassNeeded(false),
+          m_isWindowSizeTarget(isWindowSizeTarget),
           m_colorBuffer(colorBuffer) {
         assert(m_colorBuffer);
     }
@@ -48,6 +51,7 @@ private:
     BLEND m_blend{BLEND::NONE};
     bool m_isDepthNeeded{false};
     bool m_isGPassNeeded{false};
+    bool m_isWindowSizeTarget{false};
 
 protected:
     descriptorSets m_descriptorSets{};

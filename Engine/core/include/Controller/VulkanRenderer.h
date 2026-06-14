@@ -38,8 +38,7 @@ public:
         MAX
     };
 
-    VulkanRenderer(std::string_view appName, size_t width, size_t height);
-
+    VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight);
     ~VulkanRenderer();
 
     void init();
@@ -57,7 +56,6 @@ private:
     void createCommandBuffer();
     void updateUniformBuffer(uint32_t currentImage, float deltaMS);
     void createRenderPass();
-    void createPushConstantRange();
     void allocateDynamicBufferTransferSpace();
     void createDescriptorPool();
     void createFramebuffer();

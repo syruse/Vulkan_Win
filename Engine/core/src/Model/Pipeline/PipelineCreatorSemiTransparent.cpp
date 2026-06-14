@@ -16,8 +16,8 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;
     depthStencil.depthWriteEnable = VK_TRUE;
-
-    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
+    
+    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._offscreenWidth, m_vkState._offscreenHeight,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
                                                          m_subpassAmount, m_pushConstantRange);
     assert(m_pipeline);

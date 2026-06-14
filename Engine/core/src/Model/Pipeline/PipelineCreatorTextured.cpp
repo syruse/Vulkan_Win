@@ -17,12 +17,12 @@ void PipelineCreatorTextured::createPipeline() {
         auto& tessInfo = Pipeliner::getInstance().getTessInfo();
         tessInfo.patchControlPoints = 3;
 
-        m_pipeline = Pipeliner::getInstance().createPipeLine(
-            m_vertShader, m_fragShader, m_tessCtrlShader, m_tessEvalShader, m_vkState._width, m_vkState._height,
+        m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_tessCtrlShader, m_tessEvalShader,
+                                                             m_vkState._offscreenWidth, m_vkState._offscreenHeight,
             *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(), m_subpassAmount, m_pushConstantRange);
 
     } else {
-        m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
+        m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._offscreenWidth, m_vkState._offscreenHeight,
                                                              *m_descriptorSetLayout.get(), m_renderPass,
                                                              m_vkState._core.getDevice(), m_subpassAmount, m_pushConstantRange);
     }

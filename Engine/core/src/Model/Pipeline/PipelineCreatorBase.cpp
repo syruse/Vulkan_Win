@@ -8,15 +8,18 @@ void PipelineCreatorBase::recreate() {
 
     /// make a reset if exists
     m_pipeline.reset();
-    auto deleter = [device = m_vkState._core.getDevice()](VkDescriptorSetLayout* p) {
-        assert(device);
-        Utils::printLog(INFO_PARAM, "removal triggered");
-        vkDestroyDescriptorSetLayout(device, *p, nullptr);
-        delete p;
-    };
-    m_descriptorSetLayout.get_deleter() = deleter;
 
-    createPipeline();
+    if (m_descriptorSetLayout) {
+        auto deleter = [device = m_vkState._core.getDevice()](VkDescriptorSetLayout* p) {
+            assert(device);
+            Utils::printLog(INFO_PARAM, "removal triggered");
+            vkDestroyDescriptorSetLayout(device, *p, nullptr);
+            delete p;
+        };
+        m_descriptorSetLayout.get_deleter() = deleter;
+    }
+
+    createPipeline(); // Call the virtual createPipeline(Template Method pattern)
 }
 
 void PipelineCreatorBase::destroyDescriptorPool() {

@@ -97,10 +97,13 @@ struct VulkanState {
         std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> buffersMemory{};
     };
 
-    VulkanState(std::string_view appName, uint16_t width, uint16_t height);
+    VulkanState(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth = 0u, uint16_t offscreenHeight = 0u);
 
-    uint16_t _width{0u};
-    uint16_t _height{0u};
+    uint16_t _windowWidth{0u};
+    uint16_t _windowHeight{0u};
+    // offscreen render targets for shadow map, ssao, footprint and main render pass
+    uint16_t _offscreenWidth{0u};
+    uint16_t _offscreenHeight{0u};
     uint16_t _footPrintWidthAndHeight{8000u};
     uint16_t _shadowMapWidthAndHeight{8000u};
     VulkanCore _core{nullptr};
@@ -111,8 +114,8 @@ struct VulkanState {
     UBO _ubo{};
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};
-    DepthBuffer _depthBuffer{_width, _height};
-    DepthBuffer _depthTempBuffer{_width, _height};
+    DepthBuffer _depthBuffer{_offscreenWidth, _offscreenHeight};
+    DepthBuffer _depthTempBuffer{_offscreenWidth, _offscreenHeight};
     DepthBuffer _shadowMapBuffer{_shadowMapWidthAndHeight, _shadowMapWidthAndHeight};
     ColorBuffer _colorBuffer{};
     ColorBuffer _viewSpaceBuffer{}; // this is for ssao generation

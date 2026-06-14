@@ -47,9 +47,13 @@ void PipelineCreatorQuad::createPipeline() {
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;  // as a simple set with two triangles for quad drawing
 
-    m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._width, m_vkState._height,
-                                                         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
-                                                         m_subpassAmount, m_pushConstantRange);
+    uint16_t renderTargetWidth = m_isWindowSizeTarget ? m_vkState._windowWidth : m_vkState._offscreenWidth;
+    uint16_t renderTargetHeight = m_isWindowSizeTarget ? m_vkState._windowHeight : m_vkState._offscreenHeight;
+
+    m_pipeline = Pipeliner::getInstance().createPipeLine(
+        m_vertShader, m_fragShader, renderTargetWidth, renderTargetHeight,
+        *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
+        m_subpassAmount, m_pushConstantRange);
 
     assert(m_pipeline);
 }
