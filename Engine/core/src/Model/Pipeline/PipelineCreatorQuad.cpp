@@ -73,12 +73,11 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
     * AMD is sensitive to misusage of INPUT_ATTACHMENT(let's use COMBINED_IMAGE_SAMPLER, that's correct)
     * but looks like NVIDIA detects some issues when using the COMBINED_IMAGE_SAMPLER"
     */
-    const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
+    const bool useCombinedSamplerForSingleColor = !m_isGPassNeeded;
 
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
-    colourInputLayoutBinding.descriptorType = (isNonAmdVendor || m_isGPassNeeded)
-                                                ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                                : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    colourInputLayoutBinding.descriptorType =
+        useCombinedSamplerForSingleColor ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     colourInputLayoutBinding.descriptorCount = 1;
     colourInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -86,8 +85,7 @@ void PipelineCreatorQuad::createDescriptorSetLayout() {
     gPassInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 
     VkDescriptorSetLayoutBinding depthInputLayoutBinding = colourInputLayoutBinding;
-    depthInputLayoutBinding.descriptorType = isNonAmdVendor ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                                      : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     // Array of input attachment bindings
     auto inputBindingsSize = getInputBindingsAmount();
@@ -154,16 +152,14 @@ void PipelineCreatorQuad::createDescriptorPool() {
     // Color Attachment Pool Size
     VkDescriptorPoolSize colorInputPoolSize = {};
     // color attachments: input attachment for GPass, single-color post effects depend on GPU vendor
-    const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
+    const bool useCombinedSamplerForSingleColor = !m_isGPassNeeded;
     colorInputPoolSize.type =
-        (isNonAmdVendor || m_isGPassNeeded) ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                            : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        useCombinedSamplerForSingleColor ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
     VkDescriptorPoolSize depthInputPoolSize = {};
-    depthInputPoolSize.type = isNonAmdVendor ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                       : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    depthInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputPoolSize.descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
 
     VkDescriptorPoolSize shadowMapInputPoolSize = depthInputPoolSize;
@@ -227,7 +223,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
 
         VkDescriptorImageInfo normalAttachmentDescriptor, colorAttachmentDescriptor, ssaoAttachmentDescriptor,
             depthAttachmentDescriptor, depthShadowAttachmentDescriptor;
-        const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
 
         if (m_isGPassNeeded) {
             // GPass Attachment Descriptor
@@ -279,13 +274,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.dstSet = m_descriptorSets[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
-            if (isNonAmdVendor) {
-                colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-                colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-            } else {
-                colorAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
-                colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            }
+            colorAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+            colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             colorWrite.descriptorCount = 1;
             colorWrite.pImageInfo = &colorAttachmentDescriptor;
 
@@ -304,13 +294,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
 
-            if (isNonAmdVendor) {
-                depthAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-            } else {
-                depthAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
-                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            }
+            depthAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentDescriptor;
@@ -329,13 +314,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
             depthWrite.dstBinding = setWrites.size();
             depthWrite.dstArrayElement = 0;
 
-            if (isNonAmdVendor) {
-                depthShadowAttachmentDescriptor.sampler = VK_NULL_HANDLE;
-                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-            } else {
-                depthShadowAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
-                depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            }
+            depthShadowAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthShadowAttachmentDescriptor;
