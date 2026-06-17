@@ -1128,6 +1128,13 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
+    // Make semi-transparent pass color writes visible to FXAA texture sampling on all vendors.
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+        1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
     //---------------------------------------------------------------------------------------------//
     /// FXAA render pass (FINAL PASS) render with native resolution!
 
@@ -1151,8 +1158,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
+        PushConstant fxaaPushConstant = _pushConstant;
+        // FXAA samples from the offscreen color buffer, so texel size must match offscreen dimensions.
+        fxaaPushConstant.windowSize.x = static_cast<float>(_offscreenWidth);
+        fxaaPushConstant.windowSize.y = static_cast<float>(_offscreenHeight);
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
-                           sizeof(PushConstant), &_pushConstant);
+                           sizeof(PushConstant), &fxaaPushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -1919,34 +1930,19 @@ void VulkanRenderer::createRenderPass() {
     swapchainAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     swapchainAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentDescription colorAttachmentFXAA = {};
-    colorAttachmentFXAA.format = _colorBuffer.colorFormat;
-    colorAttachmentFXAA.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachmentFXAA.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachmentFXAA.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachmentFXAA.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachmentFXAA.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachmentFXAA.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    colorAttachmentFXAA.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
     // Attachment reference uses an attachment index that refers to index in the attachment list passed to renderPassCreateInfo
     VkAttachmentReference swapchainColorAttachmentReferenceFXAA{};
     swapchainColorAttachmentReferenceFXAA.attachment = 0;
     swapchainColorAttachmentReferenceFXAA.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    // References to attachments that subpass will take input from
-    VkAttachmentReference inputReferenceFXAA{};
-    inputReferenceFXAA.attachment = 1;
-    inputReferenceFXAA.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
     VkSubpassDescription subpassFXAA{};
     subpassFXAA.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpassFXAA.colorAttachmentCount = 1;
     subpassFXAA.pColorAttachments = &swapchainColorAttachmentReferenceFXAA;
-    subpassFXAA.inputAttachmentCount = 1;
-    subpassFXAA.pInputAttachments = &inputReferenceFXAA;
+    subpassFXAA.inputAttachmentCount = 0;
+    subpassFXAA.pInputAttachments = nullptr;
 
-    std::array<VkAttachmentDescription, 2> renderPassAttachmentsFXAA = {swapchainAttachmentFXAA, colorAttachmentFXAA};
+    std::array<VkAttachmentDescription, 1> renderPassAttachmentsFXAA = {swapchainAttachmentFXAA};
 
     // Subpass dependencies for layout transitions
     VkSubpassDependency dependencyFXAA{};
@@ -1956,7 +1952,7 @@ void VulkanRenderer::createRenderPass() {
     dependencyFXAA.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyFXAA.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyFXAA.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyFXAA.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};
@@ -2276,7 +2272,7 @@ void VulkanRenderer::createFramebuffer() {
             Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
         }
 
-        std::array<VkImageView, 2> attachments = {_swapChain.views[i], _colorBuffer.colorBufferImageView[i]};
+        std::array<VkImageView, 1> attachments = {_swapChain.views[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
         fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

@@ -157,7 +157,7 @@ void PipelineCreatorQuad::createDescriptorPool() {
     const bool isNonAmdVendor = m_vkState._core.getVendorId() != VulkanCore::VendorId::AMD;
     colorInputPoolSize.type =
         (isNonAmdVendor || m_isGPassNeeded) ? VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                                                              : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                                            : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     colorInputPoolSize.descriptorCount = static_cast<uint32_t>(m_colorBuffer->colorBufferImageView.size());
 
     // Depth Attachment Pool Size
@@ -279,9 +279,6 @@ void PipelineCreatorQuad::recreateDescriptors() {
             colorWrite.dstSet = m_descriptorSets[i];
             colorWrite.dstBinding = setWrites.size();
             colorWrite.dstArrayElement = 0;
-            colorWrite.descriptorCount = 1;
-            colorWrite.pImageInfo = &colorAttachmentDescriptor;
-
             if (isNonAmdVendor) {
                 colorAttachmentDescriptor.sampler = VK_NULL_HANDLE;
                 colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
@@ -289,6 +286,8 @@ void PipelineCreatorQuad::recreateDescriptors() {
                 colorAttachmentDescriptor.sampler = *getOrCreateCommonSampler();
                 colorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             }
+            colorWrite.descriptorCount = 1;
+            colorWrite.pImageInfo = &colorAttachmentDescriptor;
 
             setWrites.push_back(colorWrite);
         }
