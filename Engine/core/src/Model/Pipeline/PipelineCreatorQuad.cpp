@@ -168,8 +168,9 @@ void PipelineCreatorQuad::createDescriptorPool() {
     // GPass Color Attachment Pool Size
     VkDescriptorPoolSize gPassColorInputPoolSize = {};
     gPassColorInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    // normal + color + ssao = 3 INPUT_ATTACHMENT bindings per descriptor set
     gPassColorInputPoolSize.descriptorCount =
-        static_cast<uint32_t>(m_vkState._gPassBuffer.size * m_vkState._gPassBuffer.normal.colorBufferImageView.size());
+        static_cast<uint32_t>((m_vkState._gPassBuffer.size + 1) * m_vkState._gPassBuffer.normal.colorBufferImageView.size());
 
     std::vector<VkDescriptorPoolSize> inputPoolSizes;
     inputPoolSizes.reserve(getInputBindingsAmount());
