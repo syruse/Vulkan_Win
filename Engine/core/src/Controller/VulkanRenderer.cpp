@@ -1229,6 +1229,13 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::VulkanCreateImageView(_core.getDevice(), _colorBuffer.colorBufferImage[i], _colorBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _colorBuffer.colorBufferImageView[i]);
 
+        // Optional, Pre-transition to SHADER_READ_ONLY_OPTIMAL so G-pass initialLayout matches on the first frame.
+        // to sync with colorAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool,
+                           _colorBuffer.colorBufferImage[i], _colorBuffer.colorFormat,
+                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                           VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
+
         // the same applied to G pass buffer
 
         Utils::VulkanCreateImage(
@@ -1549,13 +1556,11 @@ void VulkanRenderer::createRenderPass() {
     // Set up Subpass 2 (SSAO)
 
     // References to attachments that subpass will take input from
-    std::array<VkAttachmentReference, 3> inputSSAOReferences;
+    // NOTE: SSAO shader reads normal as subpassInput and depth/viewspace as sampler2D.
+    // Keep only the true subpass input attachment here.
+    std::array<VkAttachmentReference, 1> inputSSAOReferences;
     inputSSAOReferences[0].attachment = 1;
     inputSSAOReferences[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    inputSSAOReferences[1].attachment = 4;
-    inputSSAOReferences[1].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-    inputSSAOReferences[2].attachment = 10;
-    inputSSAOReferences[2].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentSSAOReference{};
     colorAttachmentSSAOReference.attachment = 3;
@@ -1570,17 +1575,15 @@ void VulkanRenderer::createRenderPass() {
     // Set up Subpass 3 (lighting)
 
     // References to attachments that subpass will take input from
-    std::array<VkAttachmentReference, 5> inputReferences;
+    // NOTE: Lighting shader reads normal/color/ssao as subpassInput and depth/shadow via sampler2D.
+    // Keep only the true subpass input attachments here.
+    std::array<VkAttachmentReference, 3> inputReferences;
     inputReferences[0].attachment = 1;
     inputReferences[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputReferences[1].attachment = 2;
     inputReferences[1].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     inputReferences[2].attachment = 3;
     inputReferences[2].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // SSAO
-    inputReferences[3].attachment = 4;
-    inputReferences[3].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-    inputReferences[4].attachment = 5;
-    inputReferences[4].layout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference hdrAttachmentRef{};
     hdrAttachmentRef.attachment = 6;
@@ -1659,6 +1662,11 @@ void VulkanRenderer::createRenderPass() {
 
     // temporary depth buffer for correct geometry output in g-Pass since depthAttachment is already formed before g-pass started
     VkAttachmentDescription depthTemporaryAttachment = depthAttachment;
+
+    // colorBuffer starts in SHADER_READ_ONLY_OPTIMAL after FXAA on every frame after the first.
+    // Declaring this explicitly avoids the UNDEFINED→COLOR_ATTACHMENT implicit transition
+    // that AMD handles incorrectly when the actual layout is SHADER_READ_ONLY_OPTIMAL.
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     std::array<VkAttachmentDescription, 11> renderPassAttachments = {
         colorAttachment,          gPassNormalAttachment,   gPassColorAttachment,  colorAttachmentSSAO,
@@ -1904,9 +1912,9 @@ void VulkanRenderer::createRenderPass() {
     dependencyBloom[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBloom[0].dstSubpass = 0;
     dependencyBloom[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyBloom[0].srcAccessMask = 0;
-    dependencyBloom[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyBloom[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBloom[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBloom[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencyBloom[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoBloom = {};
     renderPassCreateInfoBloom.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -2161,7 +2169,7 @@ void VulkanRenderer::createRenderPass() {
     dependencySSAOblur[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySSAOblur[0].dstSubpass = 0;
     dependencySSAOblur[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencySSAOblur[0].srcAccessMask = 0;
+    dependencySSAOblur[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencySSAOblur[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencySSAOblur[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 

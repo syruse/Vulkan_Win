@@ -168,11 +168,10 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     // Depth attachment
     VkDescriptorSetLayoutBinding depthInputLayoutBinding{};
     depthInputLayoutBinding.binding = 1;
-    // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    depthInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     depthInputLayoutBinding.descriptorCount = 1;
     depthInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    //depthInputLayoutBinding.pImmutableSamplers = getOrCreateDepthSampler(); 
+    depthInputLayoutBinding.pImmutableSamplers = &mSamplerViewSpace;
 
     // Texture
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -198,11 +197,10 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
     // View Space Position attachment
     VkDescriptorSetLayoutBinding viewSpacePosLayoutBinding{};
     viewSpacePosLayoutBinding.binding = 5;
-    // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-    viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    viewSpacePosLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     viewSpacePosLayoutBinding.descriptorCount = 1;
     viewSpacePosLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    //viewSpacePosLayoutBinding.pImmutableSamplers = &mSamplerViewSpace;
+    viewSpacePosLayoutBinding.pImmutableSamplers = &mSamplerViewSpace;
 
     std::array<VkDescriptorSetLayoutBinding, 6u> inputBindings{UBOLayoutBinding, samplerLayoutBinding, normalInputLayoutBinding,
                                                                depthInputLayoutBinding, UBOKernelLayoutBinding, viewSpacePosLayoutBinding};
@@ -237,11 +235,12 @@ void PipelineCreatorSSAO::createDescriptorPool() {
 
     VkDescriptorPoolSize uboKernelPoolSize = uboPoolSize;
 
-    VkDescriptorPoolSize viewSpacePosInputPoolSize = gNormalInputPoolSize;
-    VkDescriptorPoolSize depthInputPoolSize = gNormalInputPoolSize;
+    VkDescriptorPoolSize combinedSamplerPoolSize = texturePoolSize;
+    // noise + depth + viewSpace = 3 combined samplers per descriptor set
+    combinedSamplerPoolSize.descriptorCount = descriptorCount * 3u;
 
-    std::array<VkDescriptorPoolSize, 6u> poolSize{uboPoolSize, texturePoolSize, gNormalInputPoolSize, depthInputPoolSize,
-                                                  uboKernelPoolSize, viewSpacePosInputPoolSize};
+    std::array<VkDescriptorPoolSize, 4u> poolSize{uboPoolSize, combinedSamplerPoolSize, gNormalInputPoolSize,
+                                                  uboKernelPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -301,7 +300,6 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         VkDescriptorImageInfo depthAttachmentInfo{};
         depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         depthAttachmentInfo.imageView = m_vkState._depthBuffer.depthImageView;
-        // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
         depthAttachmentInfo.sampler = VK_NULL_HANDLE;
 
         VkWriteDescriptorSet depthWrite{};
@@ -309,8 +307,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         depthWrite.dstSet = m_descriptorSets[i];
         depthWrite.dstBinding = 1;
         depthWrite.dstArrayElement = 0;
-        // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthWrite.descriptorCount = 1;
         depthWrite.pImageInfo = &depthAttachmentInfo;
 
@@ -363,7 +360,6 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         VkDescriptorImageInfo viewSpacePosInfo{};
         viewSpacePosInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         viewSpacePosInfo.imageView = m_vkState._viewSpaceBuffer.colorBufferImageView[i];
-        // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
         viewSpacePosInfo.sampler = VK_NULL_HANDLE;
 
         // View Space Position Attachment Descriptor Write
@@ -372,8 +368,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
         viewSpacePosWrite.dstSet = m_descriptorSets[i];
         viewSpacePosWrite.dstBinding = 5;
         viewSpacePosWrite.dstArrayElement = 0;
-        // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-        viewSpacePosWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        viewSpacePosWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         viewSpacePosWrite.descriptorCount = 1;
         viewSpacePosWrite.pImageInfo = &viewSpacePosInfo;
 
