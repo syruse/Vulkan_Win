@@ -58,14 +58,13 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     std::vector<VkDescriptorSetLayoutBinding> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
                                                                uboViewProjLayoutBinding};
     if (m_isTessellated) {
-        // Depth attachment with trails
+        // Depth footprint texture, sampled from tessellation evaluation and fragment shaders
         VkDescriptorSetLayoutBinding depthFootPrintInputLayoutBinding{};
         depthFootPrintInputLayoutBinding.binding = 3;
-        // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-        depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthFootPrintInputLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         depthFootPrintInputLayoutBinding.descriptorCount = 1;
         depthFootPrintInputLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-        //depthFootPrintInputLayoutBinding.pImmutableSamplers = getOrCreateDepthSampler();
+        depthFootPrintInputLayoutBinding.pImmutableSamplers = nullptr;
 
         layoutBindings.push_back(depthFootPrintInputLayoutBinding);
     }
@@ -103,8 +102,7 @@ void PipelineCreatorTextured::createDescriptorPool() {
     std::vector<VkDescriptorPoolSize> descriptorPoolSizes{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
     if (m_isTessellated) {
         VkDescriptorPoolSize depthFootPrintInputPoolSize = uboPoolSize;
-        // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-        depthFootPrintInputPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        depthFootPrintInputPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorPoolSizes.push_back(depthFootPrintInputPoolSize);
     }
 
@@ -203,16 +201,14 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
             VkDescriptorImageInfo depthAttachmentInfo{};
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentInfo.imageView = m_vkState._footprintBuffer.depthImageView;
-            // comment it if VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is used
-            depthAttachmentInfo.sampler = VK_NULL_HANDLE;
+            depthAttachmentInfo.sampler = *getOrCreateDepthSampler();
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             depthWrite.dstSet = material.descriptorSets[i];
             depthWrite.dstBinding = 3;
             depthWrite.dstArrayElement = 0;
-            // in fact VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but it crashes on NVIDIA drivers
-            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+            depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             depthWrite.descriptorCount = 1;
             depthWrite.pImageInfo = &depthAttachmentInfo;
 

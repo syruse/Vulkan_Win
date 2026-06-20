@@ -123,7 +123,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
         std::random_device rd;
         std::mt19937 gen(rd());  // seed the generator
         float limit = 0.8f * Z_FAR;
-        std::uniform_real<> distrScale(0.5, 1.0);
+        std::uniform_real_distribution<double> distrScale(0.5, 1.0); 
         int32_t gridLen = std::floor(std::sqrt(semiTransparentInstances.size()));
         float step = 2.0f * limit / gridLen;
         // std::uniform_real<> distr(0.0f, 0.1f * step);
