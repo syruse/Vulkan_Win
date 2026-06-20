@@ -201,7 +201,7 @@ uint32_t PipelineCreatorTextured::createDescriptor(std::weak_ptr<TextureFactory:
             VkDescriptorImageInfo depthAttachmentInfo{};
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             depthAttachmentInfo.imageView = m_vkState._footprintBuffer.depthImageView;
-            depthAttachmentInfo.sampler = *getOrCreateDepthSampler();
+            depthAttachmentInfo.sampler = *getOrCreateCommonSampler();
 
             VkWriteDescriptorSet depthWrite{};
             depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

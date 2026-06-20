@@ -1542,8 +1542,8 @@ void VulkanRenderer::createRenderPass() {
     // Footprint uses a different depth format (_footprintBuffer.depthFormat)
     VkAttachmentDescription footPrintLoadAttachment = depthSSAOReadyAttachment;
     footPrintLoadAttachment.format = _footprintBuffer.depthFormat;
-    footPrintLoadAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    footPrintLoadAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    footPrintLoadAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    footPrintLoadAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription viewSpacePosAttachment = colorAttachment;
     viewSpacePosAttachment.format = _viewSpaceBuffer.colorFormat;
@@ -2116,8 +2116,8 @@ void VulkanRenderer::createRenderPass() {
     depthAttachmentFootPrint.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;  // we accumulate trails of the vehicle
     depthAttachmentFootPrint.format = _footprintBuffer.depthFormat;
     depthAttachmentFootPrint.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachmentFootPrint.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    depthAttachmentFootPrint.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     std::array<VkAttachmentDescription, 1> renderPassAttachmentsFootPrint = {depthAttachmentFootPrint};
 
     VkAttachmentReference footPrintDepthAttachmentReferences = {};
@@ -2136,8 +2136,9 @@ void VulkanRenderer::createRenderPass() {
 
     dependencyFootPrint.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyFootPrint.dstSubpass = 0;
-    dependencyFootPrint.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencyFootPrint.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyFootPrint.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
+                                       VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencyFootPrint.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencyFootPrint.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependencyFootPrint.dstAccessMask =
         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
@@ -2530,13 +2531,14 @@ void VulkanRenderer::createDepthResources() {
 
     Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _footprintBuffer.width, _footprintBuffer.height,
                              _footprintBuffer.depthFormat, VK_IMAGE_TILING_OPTIMAL,
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                 VK_IMAGE_USAGE_SAMPLED_BIT,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _footprintBuffer.depthImage, _footprintBuffer.depthImageMemory);
 
-    // Transition footprint buffer to its primary state immediately after creation
+    // Keep the footprint depth image in its steady sampled/read-only state between passes.
     Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _footprintBuffer.depthImage,
                                        _footprintBuffer.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U);
+                                       VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U);
 
     Utils::VulkanCreateImageView(_core.getDevice(), _footprintBuffer.depthImage, _footprintBuffer.depthFormat,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _footprintBuffer.depthImageView);

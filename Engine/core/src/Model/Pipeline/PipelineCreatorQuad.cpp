@@ -66,13 +66,6 @@ uint32_t PipelineCreatorQuad::getInputBindingsAmount() const {
 }
 
 void PipelineCreatorQuad::createDescriptorSetLayout() {
-    /** Note:
-    * NVIDIA → input attachments, AMD → combined samplers
-    * NVIDIA forgives mistakes when working with VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 
-    * it forgives using sampler2D instead of subpassInput for FXAA shaders and others, 
-    * AMD is sensitive to misusage of INPUT_ATTACHMENT(let's use COMBINED_IMAGE_SAMPLER, that's correct)
-    * but looks like NVIDIA detects some issues when using the COMBINED_IMAGE_SAMPLER"
-    */
     const bool useCombinedSamplerForSingleColor = !m_isGPassNeeded;
 
     VkDescriptorSetLayoutBinding colourInputLayoutBinding{};
