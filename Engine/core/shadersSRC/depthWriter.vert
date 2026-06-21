@@ -15,6 +15,7 @@ layout(set = 0, binding = 1) uniform DynamicUBO {
 } dynamicUBO;
 
 layout(location = 0) out vec4 outPosInViewSpace;
+layout(location = 1) out vec2 outMotionVector;
 
 layout(location = 0) in vec3 inPosition;
 
@@ -34,4 +35,6 @@ void main() {
 	vec3 pos = origin_pos.xyz + posShift;
 	outPosInViewSpace = uboViewProjection.view * vec4(pos, 1.0);
     gl_Position = uboViewProjection.viewProj * vec4(pos, 1.0);
+    vec2 currentNDCPos = gl_Position.xy / gl_Position.w;
+    outMotionVector = currentNDCPos; // TODO
 }
