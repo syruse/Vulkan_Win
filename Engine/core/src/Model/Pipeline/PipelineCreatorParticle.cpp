@@ -20,7 +20,11 @@ void PipelineCreatorParticle::createPipeline() {
     raster.cullMode = VK_CULL_MODE_NONE;
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 1;  // Color output attachment only
+    blendInfo.attachmentCount = 2;  // Color + motion vectors
+    auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+    blendAttachments[1] = blendAttachments[0];
+    blendAttachments[1].blendEnable = VK_FALSE;
+    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
 
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;

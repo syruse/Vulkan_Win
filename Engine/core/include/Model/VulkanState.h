@@ -38,6 +38,9 @@ struct VulkanState {
     struct Model {
         alignas(16) glm::mat4 model;
         alignas(16) glm::mat4 MVP;
+        alignas(16) glm::mat4 prevModel;
+        // 192 bytes + 64 bytes padding = 256 bytes (power of 2 for UBO alignment)
+        alignas(16) glm::mat4 padding; 
     };
 
     struct ViewProj {
@@ -47,6 +50,7 @@ struct VulkanState {
         alignas(16) glm::mat4 proj;
         alignas(16) glm::mat4 view;
         alignas(16) glm::mat4 footPrintViewProj;
+        alignas(16) glm::mat4 prevViewProj;
     };
 
     struct PushConstant {

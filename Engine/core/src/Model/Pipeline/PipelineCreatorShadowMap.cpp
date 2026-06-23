@@ -13,7 +13,7 @@ void PipelineCreatorShadowMap::createPipeline() {
 
     // Make the array static, since a pointer to it is passed to vertexInputInfo and
     // it needs to remain valid for the lifetime of the pipeline
-    static std::array<VkVertexInputAttributeDescription, 7u> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 11u> attributeDescriptions{};
     attributeDescriptions.fill({}); 
 
     attributeDescriptions[0].binding = 0;
@@ -51,9 +51,30 @@ void PipelineCreatorShadowMap::createPipeline() {
     attributeDescriptions[6].format = VK_FORMAT_R16G16B16A16_SFLOAT;
     attributeDescriptions[6].offset = offsetof(Instance, model_col3);
 
+    attributeDescriptions[7].binding = 1;
+    attributeDescriptions[7].location = 11;
+    attributeDescriptions[7].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[7].offset = offsetof(Instance, prev_model_col0);
+
+    attributeDescriptions[8].binding = 1;
+    attributeDescriptions[8].location = 12;
+    attributeDescriptions[8].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[8].offset = offsetof(Instance, prev_model_col1);
+
+    attributeDescriptions[9].binding = 1;
+    attributeDescriptions[9].location = 13;
+    attributeDescriptions[9].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[9].offset = offsetof(Instance, prev_model_col2);
+
+    attributeDescriptions[10].binding = 1;
+    attributeDescriptions[10].location = 14;
+    attributeDescriptions[10].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[10].offset = offsetof(Instance, prev_model_col3);
+
     vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
     vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
-    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+    vertexInputInfo.vertexAttributeDescriptionCount =
+        m_motionVectors ? attributeDescriptions.size() : attributeDescriptions.size() - 4u;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     // avoiding Peter Pan effect, invisible faces generate proper shadows
@@ -64,7 +85,13 @@ void PipelineCreatorShadowMap::createPipeline() {
         VK_TRUE;  // fragments that are beyond the near and far planes are clamped to them as opposed to discarding them
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 1;
+    blendInfo.attachmentCount = m_motionVectors ? 2 : 1;
+    if (m_motionVectors) {
+        auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+        blendAttachments[1] = blendAttachments[0];
+        blendAttachments[1].blendEnable = VK_FALSE;
+        blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    }
 
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_depthBuffer.width, m_depthBuffer.height,
         *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),

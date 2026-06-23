@@ -9,7 +9,7 @@ public:
     PipelineCreatorFootprint(const VulkanState::DepthBuffer& depthBuffer, const VulkanState& vkState, VkRenderPass& renderPass,
                              std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u,
                              VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorShadowMap(depthBuffer, vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
+        : PipelineCreatorShadowMap(depthBuffer, vkState, renderPass, vertShader, fragShader, false, subpass, pushConstantRange) {
     }
 
     void createDescriptorPool() override;

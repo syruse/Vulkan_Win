@@ -8,8 +8,10 @@ layout(location = 1) in float fragDepth;
 layout(location = 2) in float kFading;
 layout(location = 3) flat in int isGradientEnabled;
 layout(location = 4) in float alpha;
+layout(location = 5) in vec2 inMotionVector;
 
 layout(location = 0) out vec4 out_Color;
+layout(location = 1) out vec2 out_motionVectors;
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
@@ -22,5 +24,6 @@ void main() {
     vec4 diffColor = texture(inputTexture, fragTexCoord);
     // if gradient enabled then we multiply the color by gradient color
     out_Color = mix(diffColor, diffColor * vec4(texture(inputGradient, fragTexCoord).rgb, alpha*(1.0 - kFading)), isGradientEnabled);
+    out_motionVectors = inMotionVector;
 	gl_FragDepth = fragDepth;
 }

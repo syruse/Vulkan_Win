@@ -1,5 +1,6 @@
 #include "PipelineCreatorSemiTransparent.h"
 #include <assert.h>
+#include "I3DModel.h"
 #include "Utils.h"
 
 void PipelineCreatorSemiTransparent::createPipeline() {
@@ -7,8 +8,46 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     assert(m_renderPass);
     assert(m_vkState._core.getDevice());
 
+    auto& vertexInputInfo = Pipeliner::getInstance().getVertexInputInfo();
+    auto& bindingDescriptions = I3DModel::Vertex::getBindingDescription();
+    auto baseAttributeDescriptions = I3DModel::Vertex::getAttributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 15> attributeDescriptions{};
+    attributeDescriptions.fill({});
+    for (size_t i = 0; i < baseAttributeDescriptions.size(); ++i) {
+        attributeDescriptions[i] = baseAttributeDescriptions[i];
+    }
+
+    attributeDescriptions[11].binding = 1;
+    attributeDescriptions[11].location = 11;
+    attributeDescriptions[11].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[11].offset = offsetof(Instance, prev_model_col0);
+
+    attributeDescriptions[12].binding = 1;
+    attributeDescriptions[12].location = 12;
+    attributeDescriptions[12].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[12].offset = offsetof(Instance, prev_model_col1);
+
+    attributeDescriptions[13].binding = 1;
+    attributeDescriptions[13].location = 13;
+    attributeDescriptions[13].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[13].offset = offsetof(Instance, prev_model_col2);
+
+    attributeDescriptions[14].binding = 1;
+    attributeDescriptions[14].location = 14;
+    attributeDescriptions[14].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    attributeDescriptions[14].offset = offsetof(Instance, prev_model_col3);
+
+    vertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 1;  // Color output attachment only
+    blendInfo.attachmentCount = 2;  // Color + motion vectors
+    auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+    blendAttachments[1] = blendAttachments[0];
+    blendAttachments[1].blendEnable = VK_FALSE;
+    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
 
     auto& raster = Pipeliner::getInstance().getRasterizationInfo();
     raster.cullMode = VK_CULL_MODE_NONE;
@@ -40,7 +79,15 @@ void PipelineCreatorSemiTransparent::createDescriptorSetLayout() {
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 2u> inputBindings{dynamicUBOLayoutBinding, samplerLayoutBinding};
+    VkDescriptorSetLayoutBinding uboViewProjLayoutBinding{};
+    uboViewProjLayoutBinding.binding = 2;
+    uboViewProjLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboViewProjLayoutBinding.descriptorCount = 1;
+    uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboViewProjLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 3u> inputBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,
+                                                               uboViewProjLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
@@ -69,7 +116,10 @@ void PipelineCreatorSemiTransparent::createDescriptorPool() {
     VkDescriptorPoolSize texturePoolSize = uboPoolSize;
     texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
-    std::array<VkDescriptorPoolSize, 2u> poolSize{uboPoolSize, texturePoolSize};
+    VkDescriptorPoolSize uboViewProjPoolSize = uboPoolSize;
+    uboViewProjPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+    std::array<VkDescriptorPoolSize, 3u> poolSize{uboPoolSize, texturePoolSize, uboViewProjPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -143,8 +193,22 @@ uint32_t PipelineCreatorSemiTransparent::createDescriptor(std::weak_ptr<TextureF
         textureSetWrite.descriptorCount = 1;
         textureSetWrite.pImageInfo = &imageInfo;
 
+        VkDescriptorBufferInfo uboViewProjBufferInfo{};
+        uboViewProjBufferInfo.buffer = m_vkState._ubo.buffers[i];
+        uboViewProjBufferInfo.offset = 0;
+        uboViewProjBufferInfo.range = sizeof(VulkanState::ViewProj);
+
+        VkWriteDescriptorSet uboViewProjSetWrite{};
+        uboViewProjSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uboViewProjSetWrite.dstSet = material.descriptorSets[i];
+        uboViewProjSetWrite.dstBinding = 2;
+        uboViewProjSetWrite.dstArrayElement = 0;
+        uboViewProjSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboViewProjSetWrite.descriptorCount = 1;
+        uboViewProjSetWrite.pBufferInfo = &uboViewProjBufferInfo;
+
         // List of Descriptor Set Writes
-        std::vector<VkWriteDescriptorSet> setWrites{dynamicUBOSetWrite, textureSetWrite};
+        std::vector<VkWriteDescriptorSet> setWrites{dynamicUBOSetWrite, textureSetWrite, uboViewProjSetWrite};
 
         // Update the descriptor sets with new buffer/binding info
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0,

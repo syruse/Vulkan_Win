@@ -7,9 +7,9 @@ public:
     using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
 
     PipelineCreatorShadowMap(const VulkanState::DepthBuffer& depthBuffer, const VulkanState& vkState, VkRenderPass& renderPass,
-                             std::string_view vertShader, std::string_view fragShader, uint32_t subpass = 0u,
+                             std::string_view vertShader, std::string_view fragShader, bool motionVectors = false, uint32_t subpass = 0u,
                              VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange), m_depthBuffer(depthBuffer) {
+        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange), m_depthBuffer(depthBuffer), m_motionVectors(motionVectors) {
     }
 
     void createDescriptorPool() override;
@@ -27,4 +27,5 @@ private:
 protected:
     descriptorSets m_descriptorSets{};
     const VulkanState::DepthBuffer& m_depthBuffer;
+    bool m_motionVectors{false};
 };

@@ -7,6 +7,7 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
     mat4 proj;
     mat4 view;
 	mat4 footPrintViewProj;
+    mat4 prevViewProj;
 } uboViewProjection;
 
 layout(set = 0, binding = 3) uniform UBOParticleObject {
@@ -47,6 +48,7 @@ layout(location = 1) out float fragDepth;
 layout(location = 2) out float kFading;
 layout(location = 3) flat out int isGradientEnabled;
 layout(location = 4) out float alpha;
+layout(location = 5) out vec2 outMotionVector;
 
 void main()
 {
@@ -92,4 +94,15 @@ void main()
     vec4 clip = uboViewProjection.viewProj * vec4(posOrigin, 1.0f);
     float ndc_z = clip.z / clip.w; // no need to execute win_z = ndc_z * 0.5 + 0.5 since we force glm to produce z range [0; 1] 
     fragDepth = ndc_z; // depth value for 2.5D (billboard) is the same for all vertices
+
+    vec3 prevPosOrigin = posOrigin;
+    if (uboParticle.mode == 0) {
+        const float assumedDeltaTime = 0.016f;
+        prevPosOrigin = posOrigin - assumedDeltaTime * speedK * uboParticle.velocity.xyz;
+    }
+
+    vec4 prevClip = uboViewProjection.prevViewProj * vec4(prevPosOrigin, 1.0f);
+    vec2 currentNDCPos = clip.xy / clip.w;
+    vec2 prevNDCPos = prevClip.xy / prevClip.w;
+    outMotionVector = currentNDCPos - prevNDCPos;
 }

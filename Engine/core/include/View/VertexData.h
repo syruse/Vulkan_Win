@@ -23,13 +23,22 @@ struct alignas(16) VertexData
     glm::vec3 bitangent{0.0f};
 };
 
-struct alignas(16) Instance {
+#ifdef __CUDACC__
+struct __align__(16) VertexData
+#else
+struct alignas(16) Instance 
+#endif 
+{
     glm::vec3 posShift{0.0f};
     float scale{1.0f};
     uint64_t model_col0 = glm::packHalf4x16(glm::vec4{1.0f, 0.0f, 0.0f, 0.0f});
     uint64_t model_col1 = glm::packHalf4x16(glm::vec4{0.0f, 1.0f, 0.0f, 0.0f});
     uint64_t model_col2 = glm::packHalf4x16(glm::vec4{0.0f, 0.0f, 1.0f, 0.0f});
     uint64_t model_col3 = glm::packHalf4x16(glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
+    uint64_t prev_model_col0 = model_col0;
+    uint64_t prev_model_col1 = model_col1;
+    uint64_t prev_model_col2 = model_col2;
+    uint64_t prev_model_col3 = model_col3;
 };
 
 namespace md5_animation {

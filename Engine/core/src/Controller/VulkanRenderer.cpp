@@ -88,7 +88,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                                             &this->_bloomBuffer[0],
                                                             PipelineCreatorQuad::BLEND::SRC_ONE_AND_DST_ONE));
     m_pipelineCreators[DEPTH].reset(new PipelineCreatorShadowMap(this->_depthBuffer, *this, m_renderPassDepth,
-                                                                 "vert_depthWriter.spv", "frag_depthWriter.spv"));
+                                                                 "vert_depthWriter.spv", "frag_depthWriter.spv", true));
     m_pipelineCreators[SSAO].reset(
         new PipelineCreatorSSAO(*this, m_renderPass, "vert_ssao.spv", "frag_ssao.spv", 1u, m_pushConstantRange));
     m_pipelineCreators[FOOTPRINT].reset(new PipelineCreatorFootprint(this->_footprintBuffer, *this, m_renderPassFootprint,
@@ -560,7 +560,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& cameraViewProj = mCamera.viewProjMat();
     const auto& model = mCamera.targetModelMat();
 
-    mViewProj.viewProj = cameraViewProj.proj * cameraViewProj.view;
+    static bool firstViewProjUpdate = true;
+    const glm::mat4 currentViewProj = cameraViewProj.proj * cameraViewProj.view;
+    mViewProj.prevViewProj = firstViewProjUpdate ? currentViewProj : mViewProj.viewProj;
+    mViewProj.viewProj = currentViewProj;
+    firstViewProjUpdate = false;
     mViewProj.viewProjInverse = glm::inverse(mViewProj.viewProj);
     mViewProj.lightViewProj = m_lightViewProj;
     mViewProj.proj = cameraViewProj.proj;
@@ -576,11 +580,13 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     // Copy Model data except skybox
     for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
+        pModel->prevModel = pModel->model;
         pModel->model = identityMatrix;
         pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
     Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
+    pModel->prevModel = pModel->model;
     pModel->model = model;
     pModel->MVP = mViewProj.viewProj * pModel->model;
 
@@ -589,6 +595,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     static float skyboxRotationDegree = 0.0f;
     skyboxRotationDegree += 0.0001f * kDelay;
     glm::mat4 rotMat = glm::rotate(glm::radians(static_cast<float>(skyboxRotationDegree)), glm::vec3(0.0f, 1.0f, 0.0f));
+    pModel->prevModel = pModel->model;
     pModel->model = rotMat;
     pModel->MVP = mViewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
@@ -601,15 +608,29 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         if (m_semiTransparentAnimations[i].isAnimationStarted()) {
             m_semiTransparentAnimations[i].updateModelMat(deltaMS);
             const glm::mat4& modelMat = m_semiTransparentAnimations[i].getModelMat();
+            auto& treeCrownInstance = treeCrownInstances[i];
+
+            //----------- Store previous model matrix columns for motion vector calculations-------//
+            treeTrunkInstance.prev_model_col0 = treeTrunkInstance.model_col0;
+            treeTrunkInstance.prev_model_col1 = treeTrunkInstance.model_col1;
+            treeTrunkInstance.prev_model_col2 = treeTrunkInstance.model_col2;
+            treeTrunkInstance.prev_model_col3 = treeTrunkInstance.model_col3;
+
+            treeCrownInstance.prev_model_col0 = treeCrownInstance.model_col0;
+            treeCrownInstance.prev_model_col1 = treeCrownInstance.model_col1;
+            treeCrownInstance.prev_model_col2 = treeCrownInstance.model_col2;
+            treeCrownInstance.prev_model_col3 = treeCrownInstance.model_col3;
+
+            //----------- Store current model matrix columns for general purpose usage-------//
             treeTrunkInstance.model_col0 = glm::packHalf4x16(modelMat[0]);
             treeTrunkInstance.model_col1 = glm::packHalf4x16(modelMat[1]);
             treeTrunkInstance.model_col2 = glm::packHalf4x16(modelMat[2]);
             treeTrunkInstance.model_col3 = glm::packHalf4x16(modelMat[3]);
 
-            treeCrownInstances[i].model_col0 = treeTrunkInstance.model_col0;
-            treeCrownInstances[i].model_col1 = treeTrunkInstance.model_col1;
-            treeCrownInstances[i].model_col2 = treeTrunkInstance.model_col2;
-            treeCrownInstances[i].model_col3 = treeTrunkInstance.model_col3;
+            treeCrownInstance.model_col0 = treeTrunkInstance.model_col0;
+            treeCrownInstance.model_col1 = treeTrunkInstance.model_col1;
+            treeCrownInstance.model_col2 = treeTrunkInstance.model_col2;
+            treeCrownInstance.model_col3 = treeTrunkInstance.model_col3;
             continue;
         }
 
@@ -624,6 +645,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
+        pModel->prevModel = pModel->model;
         pModel->model = m_semiTransparentAnimations[0].getModelMat();
         pModel->MVP = mViewProj.viewProj;
     }
@@ -850,13 +872,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _viewSpaceBuffer.colorBufferImage[currentImage],
                                     _viewSpaceBuffer.colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
-    // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _motionVectorsBuffer.colorBufferImage[currentImage],
-                                    _motionVectorsBuffer.colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
                                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1128,6 +1143,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassSemiTransInfo.pClearValues = semiTransClearValues.data();
     renderPassSemiTransInfo.framebuffer = m_fbsSemiTrans[currentImage];
 
+    // The depth image was sampled as read-only earlier (SSAO/lighting). Re-open it as a depth attachment
+    // so the semi-transparent pass can run depth test and update depth.
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _depthBuffer.depthImage, _depthBuffer.depthFormat,
                                     VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                                     VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U,
@@ -1157,6 +1174,14 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     Utils::VulkanImageMemoryBarrier(
         _cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+        1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    // After writing motion vectors in the semi-transparent pass, transition back to shader-read layout
+    // so subsequent post-process stages (TAA/FSR/DLAA) can safely sample this texture.
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _motionVectorsBuffer.colorBufferImage[currentImage], _motionVectorsBuffer.colorFormat,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1763,18 +1788,29 @@ void VulkanRenderer::createRenderPass() {
     colorAttachmentSemiTransReference.attachment = 0;
     colorAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription motionVectorsAttachmentSemiTrans = colorAttachmentSemiTrans;
+    motionVectorsAttachmentSemiTrans.format = _motionVectorsBuffer.colorFormat;
+
+    VkAttachmentReference motionVectorsAttachmentSemiTransReference{};
+    motionVectorsAttachmentSemiTransReference.attachment = 2;
+    motionVectorsAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference depthAttachmentSemiTransReference{};
     depthAttachmentSemiTransReference.attachment = 1;
     depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
+    std::array<VkAttachmentReference, 2> colorAttachmentsSemiTrans = {
+        colorAttachmentSemiTransReference, motionVectorsAttachmentSemiTransReference};
+
     VkSubpassDescription subpassSemiTrans{};
     subpassSemiTrans.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassSemiTrans.colorAttachmentCount = 1;
-    subpassSemiTrans.pColorAttachments = &colorAttachmentSemiTransReference;
+    subpassSemiTrans.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentsSemiTrans.size());
+    subpassSemiTrans.pColorAttachments = colorAttachmentsSemiTrans.data();
     subpassSemiTrans.inputAttachmentCount = 0;
     subpassSemiTrans.pDepthStencilAttachment = &depthAttachmentSemiTransReference;
 
-    std::array<VkAttachmentDescription, 2> renderPassAttachmentsSemiTrans = {colorAttachmentSemiTrans, depthAttachmentSemiTrans};
+    std::array<VkAttachmentDescription, 3> renderPassAttachmentsSemiTrans = {
+        colorAttachmentSemiTrans, depthAttachmentSemiTrans, motionVectorsAttachmentSemiTrans};
 
     std::array<VkSubpassDependency, 2u> dependencySemiTrans{};
     // color dependancy
@@ -1783,7 +1819,7 @@ void VulkanRenderer::createRenderPass() {
     dependencySemiTrans[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencySemiTrans[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencySemiTrans[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencySemiTrans[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencySemiTrans[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     // depth dependency (depth attachment must be ready for test/write)
     dependencySemiTrans[1].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -2143,7 +2179,11 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentDescription colorAttachmentViewSpacePos = colorAttachment;
     colorAttachmentViewSpacePos.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachmentViewSpacePos.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    colorAttachmentViewSpacePos.format = _viewSpaceBuffer.colorFormat;
     VkAttachmentDescription colorAttachmentMotionVectors = colorAttachmentViewSpacePos;
+    colorAttachmentMotionVectors.format = _motionVectorsBuffer.colorFormat;
+    // we continue writting in motion vectors buffer in the next pass (semi transparent objects)
+    colorAttachmentMotionVectors.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     VkAttachmentDescription depthAttachmentForSSAO = depthAttachment;
     depthAttachmentForSSAO.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     std::array<VkAttachmentDescription, 3> renderPassAttachmentsSSAO = {depthAttachmentForSSAO, colorAttachmentViewSpacePos, colorAttachmentMotionVectors};
@@ -2383,7 +2423,8 @@ void VulkanRenderer::createFramebuffer() {
     //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView};
+        std::array<VkImageView, 3> attachments = {
+            _colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView, _motionVectorsBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
         fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

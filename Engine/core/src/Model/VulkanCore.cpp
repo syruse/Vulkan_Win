@@ -345,6 +345,7 @@ void VulkanCore::createLogicalDevice() {
     deviceFeatures.tessellationShader = VK_TRUE;
     deviceFeatures.depthClamp = VK_TRUE;      // for pRasterizationState->depthClampEnable
     deviceFeatures.dualSrcBlend = VK_TRUE;    // for VK_BLEND_FACTOR_SRC1_ALPHA
+    deviceFeatures.independentBlend = VK_TRUE; // allow different blend state for motion-vector attachment
 
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     devInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pDevExt);
