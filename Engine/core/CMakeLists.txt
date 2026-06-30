@@ -66,6 +66,10 @@ if(WIN32)
 	endif()
 endif()
 
+#NVIDIA DLSS
+set(STREAMLINE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../streamline-sdk-v2.11.1")
+set(STREAMLINE_DLLS "sl.interposer.dll" "sl.common.dll" "sl.dlss.dll" "nvngx_dlss.dll")
+set(STREAMLINE_HEADER "${STREAMLINE_SDK_DIR}/include")
 
 set(IMGUI_HEADER "${CMAKE_SOURCE_DIR}/../imgui")
 set(IMGUI_SRC
@@ -93,7 +97,7 @@ endif()
 
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
 target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=${USE_FSR})
-target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER})
+target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER} ${STREAMLINE_HEADER})
 #enable debug mode for Vulkan by setting VK_DEBUG_ENABLED(deprecated)
 #target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
 
@@ -154,8 +158,28 @@ target_link_libraries(${APP_NAME}
     LinearMath
 )
 
-install(TARGETS ${APP_NAME} DESTINATION ${CMAKE_BINARY_DIR}/Bin)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_BINARY_DIR}/Bin/)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/Bin/)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/Bin/)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pipeline_data.cache DESTINATION ${CMAKE_BINARY_DIR}/Bin/)
+#our bin is built inside Bin dir regardless of build type
+set_target_properties(${APP_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Bin"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Bin"
+)
+
+#at the end of building we copy resources if they are changed
+foreach(dll IN LISTS STREAMLINE_DLLS)
+    add_custom_command(
+        TARGET ${APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<IF:$<CONFIG:Debug>,${STREAMLINE_SDK_DIR}/bin/x64/development/${dll},${STREAMLINE_SDK_DIR}/bin/x64/${dll}>"
+            "${CMAKE_BINARY_DIR}/Bin/${dll}"
+        COMMENT "Copying Streamline DLL: ${dll}"
+    )
+endforeach()
+
+add_custom_command(
+    TARGET ${APP_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/textures" "${CMAKE_BINARY_DIR}/Bin/textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/models" "${CMAKE_BINARY_DIR}/Bin/models"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders" "${CMAKE_BINARY_DIR}/Bin/shaders"
+    COMMENT "Copying assets to target directory"
+)

@@ -24,7 +24,7 @@ struct alignas(16) VertexData
 };
 
 #ifdef __CUDACC__
-struct __align__(16) VertexData
+struct __align__(16) Instance
 #else
 struct alignas(16) Instance 
 #endif 
