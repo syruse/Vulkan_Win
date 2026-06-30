@@ -254,6 +254,8 @@ VulkanRenderer::~VulkanRenderer() {
 #if defined(USE_FSR) && USE_FSR
     if (mFSRSwapChainContext)
         ffxDestroyContext(&mFSRSwapChainContext, nullptr);
+    if (mFSRFrameGenContext)
+        ffxDestroyContext(&mFSRFrameGenContext, nullptr);
 #endif
 
     // Explicitly release resources before the core device/instance cleanup.
@@ -438,7 +440,16 @@ void VulkanRenderer::createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateIn
         return;
     }
 
+    ffx::CreateBackendVKDesc backendDesc{};
+    backendDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
+    backendDesc.header.pNext = nullptr;
+    backendDesc.vkDevice = _core.getDevice();
+    backendDesc.vkPhysicalDevice = _core.getPhysDevice();
+    backendDesc.vkDeviceProcAddr = vkGetDeviceProcAddr;
+
     ffx::CreateContextDescFrameGenerationSwapChainVK createSwapChainDesc{};
+    createSwapChainDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FGSWAPCHAIN_VK;
+    createSwapChainDesc.header.pNext = nullptr;
     createSwapChainDesc.device = _core.getDevice();
     createSwapChainDesc.physicalDevice = _core.getPhysDevice();
     createSwapChainDesc.swapchain = &_swapChain.handle;
@@ -479,10 +490,16 @@ void VulkanRenderer::createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateIn
     frameInterpolationInfo.presentQueue = convertQueueInfo(createSwapChainDesc.presentQueue);
     frameInterpolationInfo.imageAcquireQueue = convertQueueInfo(createSwapChainDesc.imageAcquireQueue);
 
-    ffx::ReturnCode retCode = ffx::CreateContext(mFSRSwapChainContext, nullptr, createSwapChainDesc);
+    ffx::ReturnCode retCode = ffx::CreateContext(mFSRSwapChainContext, nullptr, createSwapChainDesc, backendDesc);
     if (retCode != ffx::ReturnCode::Ok) {
         Utils::printLog(ERROR_PARAM, "Failed to create FSR SwapChain context", static_cast<uint32_t>(retCode));
     }
+
+    if (!mFSRSwapChainContext) {
+        Utils::printLog(ERROR_PARAM, "FSR SwapChain context is null after creation");
+        return;
+    }
+
     // Get replacement function pointers
     ffx::Query(mFSRSwapChainContext, mFSRReplacementFunctions);
 
@@ -505,23 +522,31 @@ void VulkanRenderer::createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateIn
     m_swapchainKeyValueConfig.ptr = nullptr;
     ffx::Configure(mFSRSwapChainContext, m_swapchainKeyValueConfig);
 
-    ffx::CreateBackendVKDesc backendDesc{};
-    backendDesc.vkDevice = _core.getDevice();
-    backendDesc.vkPhysicalDevice = _core.getPhysDevice();
-    backendDesc.vkDeviceProcAddr = vkGetDeviceProcAddr;
-
     ffx::CreateContextDescFrameGeneration createFg{};
-    createFg.displaySize = {_width, _height};
-    createFg.maxRenderSize = {_width, _height};
-    createFg.flags = FFX_FRAMEGENERATION_ENABLE_DEBUG_CHECKING;
-    createFg.flags |= FFX_FRAMEGENERATION_ENABLE_ASYNC_WORKLOAD_SUPPORT;
+    createFg.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION;
+    createFg.header.pNext = reinterpret_cast<ffxApiHeader*>(&backendDesc);
+    //createFg.displaySize = {_windowWidth, _windowHeight};
+    //createFg.maxRenderSize = {_windowWidth, _windowHeight};
+    createFg.displaySize.width  = swapchainCreateInfo.imageExtent.width;
+    createFg.displaySize.height = swapchainCreateInfo.imageExtent.height;
+    createFg.maxRenderSize.width = swapchainCreateInfo.imageExtent.width;
+    createFg.maxRenderSize.height = swapchainCreateInfo.imageExtent.height;
+    //createFg.flags = FFX_FRAMEGENERATION_ENABLE_DEBUG_CHECKING;
+    createFg.flags = FFX_FRAMEGENERATION_ENABLE_ASYNC_WORKLOAD_SUPPORT;
+    createFg.backBufferFormat = ffxApiGetSurfaceFormatVK(swapchainCreateInfo.imageFormat);
 
-    createFg.backBufferFormat = ffxApiGetSurfaceFormatVK(_core.getSurfaceFormat().format);
-
-    // retCode = ffx::CreateContext(mFSRFrameGenContext, nullptr, createFg, backendDesc);
+    retCode = ffx::CreateContext(mFSRFrameGenContext, nullptr, createFg);
     if (retCode != ffx::ReturnCode::Ok) {
-        Utils::printLog(ERROR_PARAM, "Failed to create FSR FG context: ", static_cast<uint32_t>(retCode));
+        Utils::printLog(ERROR_PARAM, "Failed to create FSR FG context. Code: ", static_cast<uint32_t>(retCode));
+        return;
     }
+
+    if (!mFSRFrameGenContext) {
+        Utils::printLog(ERROR_PARAM, "FSR FrameGen context is null after creation");
+        return;
+    }
+
+    Utils::printLog(INFO_PARAM, "FSR contexts created successfully");
 #endif
 }
 

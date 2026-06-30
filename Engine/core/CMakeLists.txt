@@ -4,7 +4,7 @@ project(${APP_NAME} VERSION 1.0 LANGUAGES CXX)
 
 option(USE_PROFILING "compiled for profiling" ON)
 option(USE_CUDA "Use CUDA" ON)
-option(USE_FSR "Use FSR" OFF)
+option(USE_FSR "Use FSR" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -96,7 +96,6 @@ else(WIN32)
 endif()
 
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
-target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=${USE_FSR})
 target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER} ${STREAMLINE_HEADER})
 #enable debug mode for Vulkan by setting VK_DEBUG_ENABLED(deprecated)
 #target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
@@ -122,12 +121,19 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/)
 if(LINUX)
     target_link_libraries(${APP_NAME} "libvulkan.so.1" "libxcb.so" "libSDL2.so")
 else(WIN32)
-    if(USE_FSR)
+	if(USE_FSR)
 		set(FSR3_HEADER "${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/include" "${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/sdk/include")
-		file(COPY ${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/bin/amd_fidelityfx_vk.dll DESTINATION ${CMAKE_BINARY_DIR}/)
-		install(FILES ${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/bin/amd_fidelityfx_vk.dll DESTINATION ${CMAKE_BINARY_DIR}/Bin/)
 		target_include_directories(${APP_NAME} PRIVATE ${FSR3_HEADER})
+		target_compile_definitions(${APP_NAME} PRIVATE USE_FSR=1)
 		target_link_libraries(${APP_NAME} "${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/bin/amd_fidelityfx_vk.lib")
+	
+		add_custom_command(
+			TARGET ${APP_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/bin/amd_fidelityfx_vk.dll"
+				"${CMAKE_BINARY_DIR}/Bin/amd_fidelityfx_vk.dll"
+			COMMENT "Copying FSR3 DLL: amd_fidelityfx_vk.dll"
+		)
 	endif()
 	
     target_link_libraries(${APP_NAME} "vulkan-1.lib" DirectXTK12)
