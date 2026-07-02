@@ -441,6 +441,23 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         createPipeline();
         createDescriptorPoolForImGui();
 
+#if defined(USE_DLSS) && USE_DLSS
+        if (m_slDlssLoaded) {
+            static const sl::ViewportHandle viewport(0);
+            sl::DLSSOptions options{};
+            options.mode = sl::DLSSMode::eMaxQuality;
+            options.outputWidth = _windowWidth;
+            options.outputHeight = _windowHeight;
+            options.colorBuffersHDR = sl::Boolean::eFalse;
+            options.useAutoExposure = sl::Boolean::eFalse;
+            sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
+            if (optionsRes != sl::Result::eOk) {
+                Utils::printLog(ERROR_PARAM, "slDLSSSetOptions failed after resize, sl::Result=%d", static_cast<int>(optionsRes));
+                m_slDlssLoaded = false;
+            }
+        }
+#endif
+
         createFSRContext(swapchainCreateInfo);
     }
 }
@@ -763,6 +780,9 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     SwapChainCreateInfo.imageColorSpace = _core.getSurfaceFormat().colorSpace;
     SwapChainCreateInfo.imageExtent = SurfaceCaps.currentExtent;
     SwapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    if (SurfaceCaps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+        SwapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
     SwapChainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     SwapChainCreateInfo.imageArrayLayers = 1;
     SwapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -899,12 +919,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-    // DEPTH_ATTACHMENT_OPTIMAL -> DEPTH_STENCIL_READ_ONLY_OPTIMAL
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _depthBuffer.depthImage, _depthBuffer.depthFormat,
-                                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U,
-                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    // No explicit barrier needed here: m_renderPassDepth already ends _depthBuffer in
+    // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL (attachment finalLayout).
 
     // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _viewSpaceBuffer.colorBufferImage[currentImage],
@@ -1209,6 +1225,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
+    // Semi-transparent pass uses depth as writable attachment; switch back to read-only
+    // before DLSS tags/evaluation and for a stable end-of-frame layout.
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _depthBuffer.depthImage, _depthBuffer.depthFormat,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        VK_IMAGE_ASPECT_DEPTH_BIT, 1U, 1U,
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
     Utils::VulkanImageMemoryBarrier(
         _cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1223,54 +1248,77 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
+    sl::FrameToken* dlssFrameToken = nullptr;
 #if defined(USE_DLSS) && USE_DLSS
-    setDLSSConstants();
-    // Tag the final per-frame DLSS inputs once all producer passes have completed.
-    setDLSSResourceTags(currentImage);
+    if (m_slDlssLoaded) {
+        sl::Result frameTokenRes = _core.slGetNewFrameTokenSafe(dlssFrameToken, &m_slFrameIndex);
+        if (frameTokenRes != sl::Result::eOk || !dlssFrameToken) {
+            if (!m_slConstantsErrorLogged) {
+                Utils::printLog(ERROR_PARAM, "slGetNewFrameToken failed, sl::Result=%d", static_cast<int>(frameTokenRes));
+                m_slConstantsErrorLogged = true;
+            }
+        } else {
+            // slSetTagForFrame may enqueue internal work using output descriptors immediately,
+            // so transition output image to GENERAL before tagging/evaluation.
+            Utils::VulkanImageMemoryBarrier(
+                _cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+                VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT,
+                1U, 1U, 0, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+            setDLSSConstants(*dlssFrameToken);
+            // Tag the final per-frame DLSS inputs once all producer passes have completed.
+            setDLSSResourceTags(currentImage, *dlssFrameToken);
+            evaluateDLSSPass(currentImage, *dlssFrameToken);
+        }
+        ++m_slFrameIndex;
+    }
 #endif
 
-    //---------------------------------------------------------------------------------------------//
-    /// FXAA render pass (FINAL PASS) render with native resolution!
+    if (!m_slDlssLoaded || !dlssFrameToken) {
+        //---------------------------------------------------------------------------------------------//
+        /// FXAA render pass (FINAL PASS) render with native resolution!
 
-    static std::array<VkClearValue, 2> fxaaClearValues;
-    fxaaClearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
-    fxaaClearValues[1].color = {0.0f, 0.0f, 0.0f, 1.0f};
+        static std::array<VkClearValue, 2> fxaaClearValues;
+        fxaaClearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+        fxaaClearValues[1].color = {0.0f, 0.0f, 0.0f, 1.0f};
 
-    VkRenderPassBeginInfo renderPassFXAAInfo = {};
-    renderPassFXAAInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassFXAAInfo.renderPass = m_renderPassFXAA;
-    renderPassFXAAInfo.renderArea.offset.x = 0;
-    renderPassFXAAInfo.renderArea.offset.y = 0;
-    renderPassFXAAInfo.renderArea.extent.width = _windowWidth;
-    renderPassFXAAInfo.renderArea.extent.height = _windowHeight;
-    renderPassFXAAInfo.clearValueCount = fxaaClearValues.size();
-    renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
-    renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
+        VkRenderPassBeginInfo renderPassFXAAInfo = {};
+        renderPassFXAAInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassFXAAInfo.renderPass = m_renderPassFXAA;
+        renderPassFXAAInfo.renderArea.offset.x = 0;
+        renderPassFXAAInfo.renderArea.offset.y = 0;
+        renderPassFXAAInfo.renderArea.extent.width = _windowWidth;
+        renderPassFXAAInfo.renderArea.extent.height = _windowHeight;
+        renderPassFXAAInfo.clearValueCount = fxaaClearValues.size();
+        renderPassFXAAInfo.pClearValues = fxaaClearValues.data();
+        renderPassFXAAInfo.framebuffer = m_fbsFXAA[currentImage];
 
-    // FXAA render pass begins with the color buffer already in SHADER_READ_ONLY_OPTIMAL after semi-transparent pass.
-    // The render pass begin will handle the layout transition if necessary.
-    vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
-    {
-        const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
-        PushConstant fxaaPushConstant = _pushConstant;
-        // FXAA samples from the offscreen color buffer, so texel size must match offscreen dimensions.
-        fxaaPushConstant.windowSize.x = static_cast<float>(_offscreenWidth);
-        fxaaPushConstant.windowSize.y = static_cast<float>(_offscreenHeight);
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
-                           sizeof(PushConstant), &fxaaPushConstant);
-        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
-        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
-                                pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+        // FXAA render pass begins with the color buffer already in SHADER_READ_ONLY_OPTIMAL after semi-transparent pass.
+        // The render pass begin will handle the layout transition if necessary.
+        vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassFXAAInfo, VK_SUBPASS_CONTENTS_INLINE);
+        {
+            const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
+            PushConstant fxaaPushConstant = _pushConstant;
+            // FXAA samples from the offscreen color buffer, so texel size must match offscreen dimensions.
+            fxaaPushConstant.windowSize.x = static_cast<float>(_offscreenWidth);
+            fxaaPushConstant.windowSize.y = static_cast<float>(_offscreenHeight);
+            vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                               sizeof(PushConstant), &fxaaPushConstant);
+            vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
+            vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
+                                    pipelineCreator->getDescriptorSet(currentImage), 0, nullptr);
+        }
+
+        vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+
+        if (hmiRenderData) {
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+        }
+
+        vkCmdEndRenderPass(_cmdBufs[currentImage]);
     }
-
-    vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
-
-    if (hmiRenderData) {
-        _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
-    }
-
-    vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     res = vkEndCommandBuffer(_cmdBufs[currentImage]);
     CHECK_VULKAN_ERROR("vkEndCommandBuffer error %d\n", res);
@@ -2709,7 +2757,7 @@ void VulkanRenderer::createDepthResources() {
 }
 
 #if defined(USE_DLSS) && USE_DLSS
-void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage) {
+void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken) {
     if (!m_slDlssLoaded) {
         return;
     }
@@ -2735,33 +2783,30 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage) {
     motionRes.height = _offscreenHeight;
     motionRes.nativeFormat = static_cast<uint32_t>(_motionVectorsBuffer.colorFormat);
 
+    sl::Resource outputRes(sl::ResourceType::eTex2d, _swapChain.images[currentImage], nullptr, _swapChain.views[currentImage],
+                           static_cast<uint32_t>(VK_IMAGE_LAYOUT_GENERAL));
+    outputRes.width = _windowWidth;
+    outputRes.height = _windowHeight;
+    outputRes.nativeFormat = static_cast<uint32_t>(_core.getSurfaceFormat().format);
+
     sl::ResourceTag tags[] = {
         {&depthRes, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent},
         {&colorRes, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent},
         {&motionRes, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent},
+        {&outputRes, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilPresent},
     };
 
     static const sl::ViewportHandle viewport(0);
-    sl::Result slRes = _core.slSetTagSafe(viewport, tags, static_cast<uint32_t>(std::size(tags)),
-                                          reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
+    sl::Result slRes = _core.slSetTagForFrameSafe(frameToken, viewport, tags, static_cast<uint32_t>(std::size(tags)),
+                                                  reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
     if (slRes != sl::Result::eOk && !m_slTagErrorLogged) {
-        Utils::printLog(ERROR_PARAM, "slSetTag failed for DLSS resources, sl::Result=%d", static_cast<int>(slRes));
+        Utils::printLog(ERROR_PARAM, "slSetTagForFrame failed for DLSS resources, sl::Result=%d", static_cast<int>(slRes));
         m_slTagErrorLogged = true;
     }
 }
 
-void VulkanRenderer::setDLSSConstants() {
+void VulkanRenderer::setDLSSConstants(const sl::FrameToken& frameToken) {
     if (!m_slDlssLoaded) {
-        return;
-    }
-
-    sl::FrameToken* frameToken = nullptr;
-    sl::Result tokenRes = _core.slGetNewFrameTokenSafe(frameToken, &m_slFrameIndex);
-    if (tokenRes != sl::Result::eOk || !frameToken) {
-        if (!m_slConstantsErrorLogged) {
-            Utils::printLog(ERROR_PARAM, "slGetNewFrameToken failed, sl::Result=%d", static_cast<int>(tokenRes));
-            m_slConstantsErrorLogged = true;
-        }
         return;
     }
 
@@ -2779,6 +2824,7 @@ void VulkanRenderer::setDLSSConstants() {
     constants.prevClipToClip = toSLRowMajor(prevClipToClip);
     constants.jitterOffset = sl::float2(0.0f, 0.0f);
     constants.mvecScale = sl::float2(1.0f, 1.0f);
+    constants.cameraPinholeOffset = sl::float2(0.0f, 0.0f);
     constants.cameraPos = sl::float3(mCamera.cameraPosition().x, mCamera.cameraPosition().y, mCamera.cameraPosition().z);
     // NO MINUS. The top of the world is the top of the camera.
     constants.cameraUp = sl::float3(invView[1][0], invView[1][1], invView[1][2]);
@@ -2801,13 +2847,34 @@ void VulkanRenderer::setDLSSConstants() {
     constants.motionVectorsJittered = sl::Boolean::eFalse;
 
     static const sl::ViewportHandle viewport(0);
-    sl::Result constantsRes = _core.slSetConstantsSafe(constants, *frameToken, viewport);
+    sl::Result constantsRes = _core.slSetConstantsSafe(constants, frameToken, viewport);
     if (constantsRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
         Utils::printLog(ERROR_PARAM, "slSetConstants failed, sl::Result=%d", static_cast<int>(constantsRes));
         m_slConstantsErrorLogged = true;
     }
+}
 
-    ++m_slFrameIndex;
+void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToken& frameToken) {
+    if (!m_slDlssLoaded) {
+        return;
+    }
+
+    static const sl::ViewportHandle viewport(0);
+    const sl::BaseStructure* inputs[] = {&viewport};
+
+    sl::Result evalRes = _core.slEvaluateFeatureSafe(sl::kFeatureDLSS, frameToken, inputs, static_cast<uint32_t>(std::size(inputs)),
+                                                     reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
+    if (evalRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
+        Utils::printLog(ERROR_PARAM, "slEvaluateFeature failed, sl::Result=%d", static_cast<int>(evalRes));
+        m_slConstantsErrorLogged = true;
+    }
+
+    // Ensure present sees the swapchain image in PRESENT layout on DLSS path.
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT,
+        1U, 1U, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 }
 #endif
 
@@ -2828,6 +2895,19 @@ void VulkanRenderer::init() {
     m_slDlssLoaded = (dlssLoadRes == sl::Result::eOk) && dlssLoaded;
     if (!m_slDlssLoaded) {
         Utils::printLog(INFO_PARAM, "DLSS feature is not loaded; SL resource tags are skipped");
+    } else {
+        sl::DLSSOptions options{};
+        options.mode = sl::DLSSMode::eMaxQuality;
+        options.outputWidth = _windowWidth;
+        options.outputHeight = _windowHeight;
+        options.colorBuffersHDR = sl::Boolean::eFalse;
+        options.useAutoExposure = sl::Boolean::eFalse;
+        static const sl::ViewportHandle viewport(0);
+        sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
+        if (optionsRes != sl::Result::eOk) {
+            Utils::printLog(ERROR_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
+            m_slDlssLoaded = false;
+        }
     }
 #endif
 

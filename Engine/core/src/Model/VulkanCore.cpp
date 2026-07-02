@@ -1,5 +1,6 @@
 #include "VulkanCore.h"
 #include <cassert>
+#include <cstring>
 #include <cwchar>
 #include <vector>
 #include "Utils.h"
@@ -10,7 +11,23 @@
 #include <sl_version.h>
 
 void __cdecl MySlLogCallback(sl::LogType type, const char* msg) {
-    Utils::printLog(INFO_PARAM, "[Streamline] %s", msg);
+    (void)type;
+
+    if (!msg) {
+        return;
+    }
+
+    // Streamline/NGX can emit this every frame; it is expected and very noisy.
+    if (std::strstr(msg, "vkGetQueryPoolResults failed: NOT READY") != nullptr) {
+        return;
+    }
+
+    const char* text = msg;
+    if (msg[0] == '%' && msg[1] == 's') {
+        text = msg + 2;
+    }
+
+    Utils::printLog(INFO_PARAM, "[Streamline] ", text);
 }
 #endif
 
@@ -97,6 +114,18 @@ void VulkanCore::init() {
     VulkanGetPhysicalDevices(m_inst, m_surface, m_physDevices);
     selectPhysicalDevice();
     createLogicalDevice();
+
+#if defined(USE_DLSS) && USE_DLSS
+    if (m_slGetFeatureFunctionFn && !m_slDLSSSetOptionsFn) {
+        void* dlssSetOptionsPtr = nullptr;
+        if (m_slGetFeatureFunctionFn(sl::kFeatureDLSS, "slDLSSSetOptions", dlssSetOptionsPtr) == sl::Result::eOk) {
+            m_slDLSSSetOptionsFn = reinterpret_cast<PfnSlDLSSSetOptions>(dlssSetOptionsPtr);
+        }
+        if (!m_slDLSSSetOptionsFn) {
+            Utils::printLog(INFO_PARAM, "Failed to resolve slDLSSSetOptions from Streamline feature function table");
+        }
+    }
+#endif
 }
 
 VkSurfaceKHR VulkanCore::createSurface(VkInstance& inst) {
@@ -304,14 +333,19 @@ bool VulkanCore::loadStreamline() {
     m_slGetFeatureRequirementsFn = (PfnSlGetFeatureRequirements)GetProcAddress(m_slModule, "slGetFeatureRequirements");
     m_slIsFeatureLoadedFn = (PfnSlIsFeatureLoaded)GetProcAddress(m_slModule, "slIsFeatureLoaded");
     m_slSetTagFn = (PfnSlSetTag)GetProcAddress(m_slModule, "slSetTag");
+    m_slSetTagForFrameFn = (PfnSlSetTagForFrame)GetProcAddress(m_slModule, "slSetTagForFrame");
     m_slSetConstantsFn = (PfnSlSetConstants)GetProcAddress(m_slModule, "slSetConstants");
     m_slGetNewFrameTokenFn = (PfnSlGetNewFrameToken)GetProcAddress(m_slModule, "slGetNewFrameToken");
+    m_slEvaluateFeatureFn = (PfnSlEvaluateFeature)GetProcAddress(m_slModule, "slEvaluateFeature");
+    m_slGetFeatureFunctionFn = (PfnSlGetFeatureFunction)GetProcAddress(m_slModule, "slGetFeatureFunction");
     if (!m_slInitFn || !m_slShutdownFn || !m_slGetFeatureRequirementsFn || !m_slIsFeatureLoadedFn || !m_slSetTagFn ||
-        !m_slSetConstantsFn || !m_slGetNewFrameTokenFn) {
+        !m_slSetTagForFrameFn || !m_slSetConstantsFn || !m_slGetNewFrameTokenFn || !m_slEvaluateFeatureFn ||
+        !m_slGetFeatureFunctionFn) {
         Utils::printLog(INFO_PARAM,
-                        "Failed to get address of one or more required Streamline functions (slInit/slShutdown/slGetFeatureRequirements/slIsFeatureLoaded/slSetTag/slSetConstants/slGetNewFrameToken)");
+                        "Failed to get address of one or more required Streamline functions (slInit/slShutdown/slGetFeatureRequirements/slIsFeatureLoaded/slSetTag/slSetTagForFrame/slSetConstants/slGetNewFrameToken/slEvaluateFeature/slGetFeatureFunction)");
         return false;
     }
+
     return true;
 }
 
@@ -331,6 +365,14 @@ sl::Result VulkanCore::slSetTagSafe(const sl::ViewportHandle& viewport, const sl
     return m_slSetTagFn(viewport, tags, numTags, cmdBuffer);
 }
 
+sl::Result VulkanCore::slSetTagForFrameSafe(const sl::FrameToken& frame, const sl::ViewportHandle& viewport,
+                                            const sl::ResourceTag* tags, uint32_t numTags, sl::CommandBuffer* cmdBuffer) const {
+    if (!m_slSetTagForFrameFn) {
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slSetTagForFrameFn(frame, viewport, tags, numTags, cmdBuffer);
+}
+
 sl::Result VulkanCore::slSetConstantsSafe(const sl::Constants& values, const sl::FrameToken& frame,
                                           const sl::ViewportHandle& viewport) const {
     if (!m_slSetConstantsFn) {
@@ -345,6 +387,22 @@ sl::Result VulkanCore::slGetNewFrameTokenSafe(sl::FrameToken*& token, const uint
         return sl::Result::eErrorMissingOrInvalidAPI;
     }
     return m_slGetNewFrameTokenFn(token, frameIndex);
+}
+
+sl::Result VulkanCore::slEvaluateFeatureSafe(sl::Feature feature, const sl::FrameToken& frame,
+                                            const sl::BaseStructure** inputs, uint32_t numInputs,
+                                            sl::CommandBuffer* cmdBuffer) const {
+    if (!m_slEvaluateFeatureFn) {
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slEvaluateFeatureFn(feature, frame, inputs, numInputs, cmdBuffer);
+}
+
+sl::Result VulkanCore::slDLSSSetOptionsSafe(const sl::ViewportHandle& viewport, const sl::DLSSOptions& options) const {
+    if (!m_slDLSSSetOptionsFn) {
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slDLSSSetOptionsFn(viewport, options);
 }
 
 // Initialize DLSS before creating Vulkan instance, so that Streamline can be loaded and initialized properly
@@ -379,9 +437,10 @@ void VulkanCore::initDLSS() {
     pref.numPathsToPlugins = _countof(slPluginPaths);
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.showConsole = false;
+    pref.flags = pref.flags | sl::PreferenceFlags::eUseFrameBasedResourceTagging;
 
 #ifdef _DEBUG
-    pref.logLevel = sl::LogLevel::eVerbose;
+    pref.logLevel = sl::LogLevel::eDefault;
     pref.logMessageCallback = MySlLogCallback;
 #else
     pref.logLevel = sl::LogLevel::eOff;

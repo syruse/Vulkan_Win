@@ -70,8 +70,9 @@ private:
     void createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateInfo);
     void calculateAdditionalMat();
 #if defined(USE_DLSS) && USE_DLSS
-    void setDLSSResourceTags(uint32_t currentImage);
-    void setDLSSConstants();
+    void setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken);
+    void setDLSSConstants(const sl::FrameToken& frameToken);
+    void evaluateDLSSPass(uint32_t currentImage, const sl::FrameToken& frameToken);
 #endif
 
 private:
