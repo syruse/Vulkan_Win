@@ -1,10 +1,13 @@
 #include "VulkanCore.h"
 #include <cassert>
+#include <cwchar>
 #include <vector>
 #include "Utils.h"
 
-#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
-#include <vulkan/vulkan_win32.h>
+#if defined(USE_DLSS) && USE_DLSS
+#include <sl_consts.h>
+#include <sl_dlss.h>
+#include <sl_version.h>
 #endif
 
 using namespace Utils;
@@ -17,6 +20,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(VkDebugReportFlagsEXT flags
 }
 
 VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController) : m_winController(std::move(winController)) {
+#if defined(USE_DLSS) && USE_DLSS
+    // Initialize Streamline as early as possible to avoid API-before-slInit warnings.
+    initDLSS();
+#endif
 }
 
 VulkanCore::~VulkanCore() {
@@ -33,10 +40,41 @@ VulkanCore::~VulkanCore() {
     vkDestroyDevice(m_device, nullptr);
     vkDestroySurfaceKHR(m_inst, m_surface, nullptr);
     vkDestroyInstance(m_inst, nullptr);
+
+#if defined(USE_DLSS) && USE_DLSS
+    if (m_slShutdownFn) {
+        m_slShutdownFn();
+    }
+    if (m_slModule) {
+        FreeLibrary(m_slModule);
+    }
+#endif
 }
 
 void VulkanCore::init() {
     assert(m_winController);
+
+#if defined(USE_DLSS) && USE_DLSS
+    if (!m_slModule) {
+        // Fallback: try once more in case constructor-time init failed due to runtime environment.
+        initDLSS();
+    }
+
+    if (m_slModule) {
+        auto sl_vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)GetProcAddress(m_slModule, "vkGetInstanceProcAddr");
+        if (!sl_vkGetInstanceProcAddr) {
+            Utils::printLog(ERROR_PARAM, "Failed to get vkGetInstanceProcAddr from sl.interposer.dll, fallback to volkInitialize");
+            volkInitialize();
+        } else {
+            volkInitializeCustom(sl_vkGetInstanceProcAddr);
+        }
+    } else {
+        Utils::printLog(ERROR_PARAM, "Failed to load sl.interposer.dll, fallback to volkInitialize");
+        volkInitialize();
+    }
+#else
+    volkInitialize();
+#endif
 
     m_winController->init();
 
@@ -248,6 +286,70 @@ void VulkanCore::selectPhysicalDevice() {
 #endif
 }
 
+#if defined(USE_DLSS) && USE_DLSS
+bool VulkanCore::loadStreamline() {
+    m_slModule = LoadLibraryA("sl.interposer.dll");
+
+    if (!m_slModule) {
+        Utils::printLog(INFO_PARAM, "Failed to load sl.interposer.dll");
+        return false;
+    }
+
+    m_slInitFn = (PfnSlInit)GetProcAddress(m_slModule, "slInit");
+    m_slShutdownFn = (PfnSlShutdown)GetProcAddress(m_slModule, "slShutdown");
+    m_slGetFeatureRequirementsFn = (PfnSlGetFeatureRequirements)GetProcAddress(m_slModule, "slGetFeatureRequirements");
+    if (!m_slInitFn || !m_slShutdownFn || !m_slGetFeatureRequirementsFn) {
+        Utils::printLog(INFO_PARAM, "Failed to get address of slInit, slShutdown, or slGetFeatureRequirements function");
+        return false;
+    }
+    return true;
+}
+// Initialize DLSS before creating Vulkan instance, so that Streamline can be loaded and initialized properly
+void VulkanCore::initDLSS() {
+    if (m_slModule && m_slInitFn) {
+        return;
+    }
+
+    if (!loadStreamline())
+        return;
+
+    sl::Feature features[] = {sl::kFeatureDLSS};
+    sl::Preferences pref;
+    pref.featuresToLoad = features;
+    pref.numFeaturesToLoad = _countof(features);
+
+    // Plugins are deployed next to executable in this project.
+    wchar_t exePath[MAX_PATH]{};
+    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) > 0) {
+        wchar_t* slash = wcsrchr(exePath, L'\\');
+        if (!slash) {
+            slash = wcsrchr(exePath, L'/');
+        }
+        if (slash) {
+            *slash = L'\0';
+        }
+    } else {
+        wcscpy_s(exePath, L".");
+    }
+    const wchar_t* slPluginPaths[] = {exePath};
+    pref.pathsToPlugins = slPluginPaths;
+    pref.numPathsToPlugins = _countof(slPluginPaths);
+    pref.renderAPI = sl::RenderAPI::eVulkan;
+
+#ifdef _DEBUG
+    pref.showConsole = true;
+    pref.logLevel = sl::LogLevel::eVerbose;
+#else
+    pref.showConsole = false;
+    pref.logLevel = sl::LogLevel::eOff;
+#endif
+
+    if (m_slInitFn(pref, sl::kSDKVersion) != sl::Result::eOk) {
+        Utils::printLog(ERROR_PARAM, "Failed to initialize DLSS");
+    }
+}
+#endif
+
 void VulkanCore::createInstance() {
     assert(m_winController);
 
@@ -257,16 +359,40 @@ void VulkanCore::createInstance() {
     appInfo.engineVersion = 1;
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
-    const char* pInstExt[] = {
+    // Create a dynamic vector for instance extensions
+    std::vector<const char*> finalInstanceExtensions;
+
 #if defined(_DEBUG)
-        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+    finalInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 #endif
-        VK_KHR_SURFACE_EXTENSION_NAME, 
+    finalInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 #if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
-        VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
-        VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+    finalInstanceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
+    finalInstanceExtensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME);
 #endif
-        m_winController->getVulkanWindowSurfaceExtension().data()};
+    finalInstanceExtensions.push_back(m_winController->getVulkanWindowSurfaceExtension().data());
+
+#if defined(USE_DLSS) && USE_DLSS
+    // Inject Instance Extensions required by Streamline DLSS
+    if (m_slGetFeatureRequirementsFn) {
+        sl::FeatureRequirements dlssReqs{};
+        sl::Result slRes = m_slGetFeatureRequirementsFn(sl::kFeatureDLSS, dlssReqs);
+
+        if (slRes == sl::Result::eOk) {
+            for (uint32_t i = 0; i < dlssReqs.vkNumInstanceExtensions; ++i) {
+                const char* extName = dlssReqs.vkInstanceExtensions[i];
+                // Avoid duplication
+                auto it = std::find_if(finalInstanceExtensions.begin(), finalInstanceExtensions.end(),
+                                       [extName](const char* ext) { return strcmp(ext, extName) == 0; });
+
+                if (it == finalInstanceExtensions.end()) {
+                    finalInstanceExtensions.push_back(extName);
+                }
+            }
+            Utils::printLog(INFO_PARAM, "Streamline DLSS instance extensions successfully injected");
+        }
+    }
+#endif
 
 #if defined(_DEBUG)
     const char* pInstLayers[] = {"VK_LAYER_KHRONOS_validation"};
@@ -279,11 +405,16 @@ void VulkanCore::createInstance() {
     instInfo.enabledLayerCount = ARRAY_SIZE_IN_ELEMENTS(pInstLayers);
     instInfo.ppEnabledLayerNames = pInstLayers;
 #endif
-    instInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pInstExt);
-    instInfo.ppEnabledExtensionNames = pInstExt;
+
+    // Pass the dynamic extensions vector
+    instInfo.enabledExtensionCount = static_cast<uint32_t>(finalInstanceExtensions.size());
+    instInfo.ppEnabledExtensionNames = finalInstanceExtensions.data();
 
     VkResult res = vkCreateInstance(&instInfo, nullptr, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
+
+    // Load instance-level function pointers (including VK_KHR_win32_surface commands).
+    volkLoadInstance(m_inst);
 
 #if defined(_DEBUG)
     // Get the address to the vkCreateDebugReportCallbackEXT function
@@ -325,31 +456,97 @@ void VulkanCore::createLogicalDevice() {
     }
 
     VkDeviceCreateInfo devInfo = {};
+    std::vector<const char*> finalExtensions;
 
-#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
-    const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
-                             VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME};
+    // Base extensions
+    finalExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
+    // Declare feature structures for Vulkan 1.2 and 1.3
     VkPhysicalDeviceVulkan12Features deviceFeatures12{};
     deviceFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    deviceFeatures12.timelineSemaphore = VK_TRUE;
-    deviceFeatures12.separateDepthStencilLayouts = VK_TRUE; // for DEPTH_ATTACHMENT_OPTIMAL
 
-    devInfo.pNext = &deviceFeatures12;
-#else
-    const char* pDevExt[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-#endif  
+    VkPhysicalDeviceVulkan13Features deviceFeatures13{};
+    deviceFeatures13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+
+#if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
+    finalExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+    finalExtensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
+    finalExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+
+    // Set default features required for CUDA interop
+    deviceFeatures12.timelineSemaphore = VK_TRUE;
+    deviceFeatures12.separateDepthStencilLayouts = VK_TRUE;  // for DEPTH_ATTACHMENT_OPTIMAL
+#endif
+
+#if defined(USE_DLSS) && USE_DLSS
+    if (m_slGetFeatureRequirementsFn) {
+        sl::FeatureRequirements dlssReqs{};
+        sl::Result slRes = m_slGetFeatureRequirementsFn(sl::kFeatureDLSS, dlssReqs);
+
+        if (slRes == sl::Result::eOk) {
+            // Add DLSS device extensions to the finalExtensions vector
+            for (uint32_t i = 0; i < dlssReqs.vkNumDeviceExtensions; ++i) {
+                // Add only if not already present
+                const char* extName = dlssReqs.vkDeviceExtensions[i];
+                auto it = std::find_if(finalExtensions.begin(), finalExtensions.end(),
+                                       [extName](const char* ext) { return strcmp(ext, extName) == 0; });
+
+                if (it == finalExtensions.end()) {
+                    finalExtensions.push_back(extName);
+                }
+            }
+            Utils::printLog(INFO_PARAM, "Streamline DLSS device extensions successfully injected");
+
+            // Unpack physical device features required by Streamline DLSS
+            VkPhysicalDeviceVulkan12Features dlssFeatures12 =
+                sl::getVkPhysicalDeviceVulkan12Features(dlssReqs.vkNumFeatures12, dlssReqs.vkFeatures12);
+            VkPhysicalDeviceVulkan13Features dlssFeatures13 =
+                sl::getVkPhysicalDeviceVulkan13Features(dlssReqs.vkNumFeatures13, dlssReqs.vkFeatures13);
+
+            // Merge Vulkan 1.2 features using logical OR to preserve existing options
+            deviceFeatures12.samplerMirrorClampToEdge |= dlssFeatures12.samplerMirrorClampToEdge;
+            deviceFeatures12.drawIndirectCount |= dlssFeatures12.drawIndirectCount;
+            deviceFeatures12.storageBuffer8BitAccess |= dlssFeatures12.storageBuffer8BitAccess;
+            deviceFeatures12.uniformAndStorageBuffer8BitAccess |= dlssFeatures12.uniformAndStorageBuffer8BitAccess;
+            deviceFeatures12.storagePushConstant8 |= dlssFeatures12.storagePushConstant8;
+            deviceFeatures12.shaderBufferInt64Atomics |= dlssFeatures12.shaderBufferInt64Atomics;
+            deviceFeatures12.shaderSharedInt64Atomics |= dlssFeatures12.shaderSharedInt64Atomics;
+            deviceFeatures12.shaderFloat16 |= dlssFeatures12.shaderFloat16;
+            deviceFeatures12.shaderInt8 |= dlssFeatures12.shaderInt8;
+            deviceFeatures12.descriptorIndexing |= dlssFeatures12.descriptorIndexing;
+            deviceFeatures12.shaderUniformBufferArrayNonUniformIndexing |=
+                dlssFeatures12.shaderUniformBufferArrayNonUniformIndexing;
+            deviceFeatures12.shaderSampledImageArrayNonUniformIndexing |=
+                dlssFeatures12.shaderSampledImageArrayNonUniformIndexing;
+
+            // Merge Vulkan 1.3 features
+            deviceFeatures13.dynamicRendering |= dlssFeatures13.dynamicRendering;
+            deviceFeatures13.synchronization2 |= dlssFeatures13.synchronization2;
+            deviceFeatures13.maintenance4 |= dlssFeatures13.maintenance4;
+
+            Utils::printLog(INFO_PARAM, "Streamline DLSS hardware features successfully merged");
+        } else {
+            Utils::printLog(INFO_PARAM, "Warning: DLSS is not supported on this hardware (slGetFeatureRequirements failed)");
+        }
+    }
+#endif
+
+    // Build the pNext chain for device creation
+    deviceFeatures13.pNext = &deviceFeatures12;
+    devInfo.pNext = &deviceFeatures13;
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = VK_TRUE;
     deviceFeatures.tessellationShader = VK_TRUE;
-    deviceFeatures.depthClamp = VK_TRUE;      // for pRasterizationState->depthClampEnable
-    deviceFeatures.dualSrcBlend = VK_TRUE;    // for VK_BLEND_FACTOR_SRC1_ALPHA
-    deviceFeatures.independentBlend = VK_TRUE; // allow different blend state for motion-vector attachment
+    deviceFeatures.depthClamp = VK_TRUE;        // for pRasterizationState->depthClampEnable
+    deviceFeatures.dualSrcBlend = VK_TRUE;      // for VK_BLEND_FACTOR_SRC1_ALPHA
+    deviceFeatures.independentBlend = VK_TRUE;  // allow different blend state for motion-vector attachment
 
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    devInfo.enabledExtensionCount = ARRAY_SIZE_IN_ELEMENTS(pDevExt);
-    devInfo.ppEnabledExtensionNames = pDevExt;
+
+    devInfo.enabledExtensionCount = static_cast<uint32_t>(finalExtensions.size());
+    devInfo.ppEnabledExtensionNames = finalExtensions.data();
+
     devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     devInfo.pQueueCreateInfos = queueCreateInfos.data();
     devInfo.pEnabledFeatures = &deviceFeatures;
@@ -358,6 +555,9 @@ void VulkanCore::createLogicalDevice() {
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
 
+    // Load device-level function pointers for extension/device commands.
+    volkLoadDevice(m_device);
+
     Utils::printLog(INFO_PARAM, "Device created");
 
     for (auto& queue : m_queues) {
@@ -365,4 +565,5 @@ void VulkanCore::createLogicalDevice() {
             vkGetDeviceQueue(m_device, queue.second.familyIndex, queue.second.queueIndex, &queue.second.queue);
         }
     }
+
 }

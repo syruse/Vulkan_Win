@@ -4,7 +4,7 @@
 
 #include <xcb/xcb.h>
 #include "IControl.h"
-#include "vulkan/vulkan.h"
+#include <volk.h>
 
 class XCBControl : public IControl {
 public:

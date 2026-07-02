@@ -2584,6 +2584,33 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     auto res = vkCreateDescriptorPool(_core.getDevice(), &pool_info, nullptr, &mImguiPool);
     CHECK_VULKAN_ERROR("ImGui reation failed", res);
 
+    // When ImGui Vulkan backend is built with VK_NO_PROTOTYPES (e.g. with volk),
+    // backend-level function pointers must be loaded explicitly before Init.
+    struct ImGuiVulkanLoaderData {
+        VkInstance instance;
+        VkDevice device;
+    } loaderData{_core.getInstance(), _core.getDevice()};
+
+    bool imguiVulkanFnsLoaded = ImGui_ImplVulkan_LoadFunctions(
+        [](const char* function_name, void* user_data) -> PFN_vkVoidFunction {
+            const auto* data = reinterpret_cast<const ImGuiVulkanLoaderData*>(user_data);
+
+            // Device-level commands should be resolved via vkGetDeviceProcAddr first.
+            PFN_vkVoidFunction fn = vkGetDeviceProcAddr(data->device, function_name);
+            if (fn) {
+                return fn;
+            }
+
+            // Fallback to instance-level/global commands.
+            return vkGetInstanceProcAddr(data->instance, function_name);
+        },
+        &loaderData);
+    if (!imguiVulkanFnsLoaded) {
+        Utils::printLog(ERROR_PARAM, "ImGui_ImplVulkan_LoadFunctions failed");
+        assert(false && "ImGui Vulkan function loading failed");
+        return;
+    }
+
     // this initializes imgui for Vulkan
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = _core.getInstance();

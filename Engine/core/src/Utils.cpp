@@ -16,7 +16,6 @@
 #include <windows.h>
 #include <aclapi.h>
 #include <dxgi1_2.h>
-#include <vulkan/vulkan_win32.h>
 
 class WindowsSecurityAttributes {
 protected:

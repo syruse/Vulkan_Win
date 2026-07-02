@@ -4,7 +4,6 @@
 #include "Utils.h"
 
 #include <cassert>
-#include <vulkan/vulkan_win32.h>
 #include <imgui/backends/imgui_impl_win32.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>

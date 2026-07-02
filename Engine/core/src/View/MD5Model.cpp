@@ -7,10 +7,6 @@
 #include "PipelineCreatorTextured.h"
 #include "Utils.h"
 
-#ifdef _WIN32
-#include <vulkan/vulkan_win32.h>
-#endif
-
 #if defined(USE_CUDA) && USE_CUDA
 #include "MD5CudaAnimation.cuh"
 #endif

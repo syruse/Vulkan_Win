@@ -5,6 +5,15 @@
 #include "IControl.h"
 #include "Utils.h"
 
+#if defined(USE_DLSS) && USE_DLSS
+#include "sl_helpers_vk.h" 
+#include <sl.h>
+// signuture of slInit from sl.h
+typedef sl::Result (*PfnSlInit)(const sl::Preferences& pref, uint64_t version);
+typedef sl::Result (*PfnSlShutdown)();
+typedef sl::Result (*PfnSlGetFeatureRequirements)(sl::Feature feature, sl::FeatureRequirements& requirements);
+#endif 
+
 class IControl;
 
 class VulkanCore {
@@ -73,6 +82,10 @@ public:
 
 private:
     void createInstance();
+#if defined(USE_DLSS) && USE_DLSS
+    bool loadStreamline();
+    void initDLSS();
+#endif
     VkSurfaceKHR createSurface(VkInstance& inst);
     void selectPhysicalDevice();
     void createLogicalDevice();
@@ -97,4 +110,10 @@ private:
                                            {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}},
 #endif    
     };
+#if defined(USE_DLSS) && USE_DLSS
+    HMODULE m_slModule = nullptr;
+    PfnSlInit m_slInitFn = nullptr;
+    PfnSlShutdown m_slShutdownFn = nullptr;
+    PfnSlGetFeatureRequirements m_slGetFeatureRequirementsFn = nullptr;
+#endif
 };

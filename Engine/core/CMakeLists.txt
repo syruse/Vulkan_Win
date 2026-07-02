@@ -4,7 +4,8 @@ project(${APP_NAME} VERSION 1.0 LANGUAGES CXX)
 
 option(USE_PROFILING "compiled for profiling" ON)
 option(USE_CUDA "Use CUDA" ON)
-option(USE_FSR "Use FSR" ON)
+option(USE_FSR "Use FSR" OFF)
+option(USE_DLSS "Use DLSS" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -66,11 +67,6 @@ if(WIN32)
 	endif()
 endif()
 
-#NVIDIA DLSS
-set(STREAMLINE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../streamline-sdk-v2.11.1")
-set(STREAMLINE_DLLS "sl.interposer.dll" "sl.common.dll" "sl.dlss.dll" "nvngx_dlss.dll")
-set(STREAMLINE_HEADER "${STREAMLINE_SDK_DIR}/include")
-
 set(IMGUI_HEADER "${CMAKE_SOURCE_DIR}/../imgui")
 set(IMGUI_SRC
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/imgui.cpp"
@@ -81,6 +77,15 @@ set(IMGUI_SRC
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_win32.cpp"
 )
 add_library(imgui STATIC ${IMGUI_SRC})
+target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
+if(WIN32)
+	target_compile_definitions(imgui PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
+#Volk
+set(VOLK_HEADER "${CMAKE_SOURCE_DIR}/../Volk")
+set(VOLK_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../Volk/volk.c"
+)
 
 file(GLOB_RECURSE HEADERS "${CMAKE_SOURCE_DIR}/include/*.h")
 file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
@@ -95,8 +100,8 @@ else(WIN32)
     target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "$ENV{VULKAN_SDK}/include")
 endif()
 
-add_executable(${APP_NAME} ${HEADERS} ${SOURCES})
-target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${BULLET_PHYSICS_HEADER} ${STREAMLINE_HEADER})
+add_executable(${APP_NAME} ${HEADERS} ${SOURCES} ${VOLK_SRC})
+target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${VOLK_HEADER} ${BULLET_PHYSICS_HEADER})
 #enable debug mode for Vulkan by setting VK_DEBUG_ENABLED(deprecated)
 #target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
 
@@ -119,8 +124,12 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/)
 
 if(LINUX)
-    target_link_libraries(${APP_NAME} "libvulkan.so.1" "libxcb.so" "libSDL2.so")
+    target_link_libraries(${APP_NAME} "libxcb.so" "libSDL2.so") # no need "libvulkan.so.1" anymore
+	#Volk resolves external symbols like vkCreateWin32SurfaceKHR since we don't use "libvulkan.so.1"
+	target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
 else(WIN32)
+    #Volk resolves external symbols like vkCreateWin32SurfaceKHR since we don't use "vulkan-1.lib"
+    target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 	if(USE_FSR)
 		set(FSR3_HEADER "${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/ffx-ap/include" "${CMAKE_SOURCE_DIR}/../FidelityFX-SDK-v1.1.4/sdk/include")
 		target_include_directories(${APP_NAME} PRIVATE ${FSR3_HEADER})
@@ -136,7 +145,28 @@ else(WIN32)
 		)
 	endif()
 	
-    target_link_libraries(${APP_NAME} "vulkan-1.lib" DirectXTK12)
+	if(USE_DLSS)
+		#NVIDIA DLSS
+		set(STREAMLINE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../streamline-sdk-v2.11.1")
+		set(STREAMLINE_DLLS "sl.interposer.dll" "sl.common.dll" "sl.dlss.dll" "nvngx_dlss.dll")
+		set(STREAMLINE_HEADER "${STREAMLINE_SDK_DIR}/include")
+		set(STREAMLINE_CONFIG "${STREAMLINE_SDK_DIR}/sl.interposer.json")
+		target_include_directories(${APP_NAME} PRIVATE ${STREAMLINE_HEADER})
+		target_compile_definitions(${APP_NAME} PRIVATE USE_DLSS=1)
+
+		#at the end of building we copy resources if they are changed
+		foreach(dll IN LISTS STREAMLINE_DLLS)
+			add_custom_command(
+				TARGET ${APP_NAME} POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -E copy_if_different
+					"$<IF:$<CONFIG:Debug>,${STREAMLINE_SDK_DIR}/bin/x64/development/${dll},${STREAMLINE_SDK_DIR}/bin/x64/${dll}>"
+					"${CMAKE_BINARY_DIR}/Bin/${dll}"
+				COMMENT "Copying Streamline DLL: ${dll}"
+			)
+		endforeach()
+	endif()
+	
+    target_link_libraries(${APP_NAME} DirectXTK12) # no need "vulkan-1.lib" anymore (now volk is used)
 	if(USE_CUDA)
 		target_link_libraries(${APP_NAME} md5_anim_cuda)
 		target_compile_definitions(${APP_NAME} PRIVATE USE_CUDA=1)
@@ -170,17 +200,6 @@ set_target_properties(${APP_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Bin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Bin"
 )
-
-#at the end of building we copy resources if they are changed
-foreach(dll IN LISTS STREAMLINE_DLLS)
-    add_custom_command(
-        TARGET ${APP_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<IF:$<CONFIG:Debug>,${STREAMLINE_SDK_DIR}/bin/x64/development/${dll},${STREAMLINE_SDK_DIR}/bin/x64/${dll}>"
-            "${CMAKE_BINARY_DIR}/Bin/${dll}"
-        COMMENT "Copying Streamline DLL: ${dll}"
-    )
-endforeach()
 
 add_custom_command(
     TARGET ${APP_NAME} POST_BUILD

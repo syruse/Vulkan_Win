@@ -5,7 +5,7 @@
 #include <windows.h>
 #include "IControl.h"
 #include "string"
-#include "vulkan/vulkan.h"
+#include <volk.h>
 #include <Keyboard.h>
 #include <Mouse.h>
 
