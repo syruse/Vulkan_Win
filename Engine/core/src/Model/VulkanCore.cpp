@@ -8,6 +8,10 @@
 #include <sl_consts.h>
 #include <sl_dlss.h>
 #include <sl_version.h>
+
+void __cdecl MySlLogCallback(sl::LogType type, const char* msg) {
+    Utils::printLog(INFO_PARAM, "[Streamline] %s", msg);
+}
 #endif
 
 using namespace Utils;
@@ -304,6 +308,7 @@ bool VulkanCore::loadStreamline() {
     }
     return true;
 }
+
 // Initialize DLSS before creating Vulkan instance, so that Streamline can be loaded and initialized properly
 void VulkanCore::initDLSS() {
     if (m_slModule && m_slInitFn) {
@@ -335,12 +340,12 @@ void VulkanCore::initDLSS() {
     pref.pathsToPlugins = slPluginPaths;
     pref.numPathsToPlugins = _countof(slPluginPaths);
     pref.renderAPI = sl::RenderAPI::eVulkan;
+    pref.showConsole = false;
 
 #ifdef _DEBUG
-    pref.showConsole = true;
     pref.logLevel = sl::LogLevel::eVerbose;
+    pref.logMessageCallback = MySlLogCallback;
 #else
-    pref.showConsole = false;
     pref.logLevel = sl::LogLevel::eOff;
 #endif
 

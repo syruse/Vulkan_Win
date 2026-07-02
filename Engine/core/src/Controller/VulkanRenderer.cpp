@@ -2595,14 +2595,14 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
         [](const char* function_name, void* user_data) -> PFN_vkVoidFunction {
             const auto* data = reinterpret_cast<const ImGuiVulkanLoaderData*>(user_data);
 
-            // Device-level commands should be resolved via vkGetDeviceProcAddr first.
-            PFN_vkVoidFunction fn = vkGetDeviceProcAddr(data->device, function_name);
+            // Resolve through instance first to avoid querying instance-level commands via vkGetDeviceProcAddr.
+            PFN_vkVoidFunction fn = vkGetInstanceProcAddr(data->instance, function_name);
             if (fn) {
                 return fn;
             }
 
-            // Fallback to instance-level/global commands.
-            return vkGetInstanceProcAddr(data->instance, function_name);
+            // Fallback for commands only exposed through the device dispatch table.
+            return vkGetDeviceProcAddr(data->device, function_name);
         },
         &loaderData);
     if (!imguiVulkanFnsLoaded) {
