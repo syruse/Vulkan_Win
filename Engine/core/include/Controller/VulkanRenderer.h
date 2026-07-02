@@ -69,6 +69,10 @@ private:
     void recreateDescriptorSets();
     void createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateInfo);
     void calculateAdditionalMat();
+#if defined(USE_DLSS) && USE_DLSS
+    void setDLSSResourceTags(uint32_t currentImage);
+    void setDLSSConstants();
+#endif
 
 private:
     uint16_t m_currentFrame = 0u;
@@ -133,6 +137,12 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
+#if defined(USE_DLSS) && USE_DLSS
+    bool m_slDlssLoaded{false};
+    bool m_slTagErrorLogged{false};
+    bool m_slConstantsErrorLogged{false};
+    uint32_t m_slFrameIndex{0};
+#endif
 #if defined(USE_FSR) && USE_FSR
     ffx::Context mFSRSwapChainContext{nullptr};
     ffx::Context mFSRFrameGenContext{nullptr};

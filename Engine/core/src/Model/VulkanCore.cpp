@@ -302,11 +302,49 @@ bool VulkanCore::loadStreamline() {
     m_slInitFn = (PfnSlInit)GetProcAddress(m_slModule, "slInit");
     m_slShutdownFn = (PfnSlShutdown)GetProcAddress(m_slModule, "slShutdown");
     m_slGetFeatureRequirementsFn = (PfnSlGetFeatureRequirements)GetProcAddress(m_slModule, "slGetFeatureRequirements");
-    if (!m_slInitFn || !m_slShutdownFn || !m_slGetFeatureRequirementsFn) {
-        Utils::printLog(INFO_PARAM, "Failed to get address of slInit, slShutdown, or slGetFeatureRequirements function");
+    m_slIsFeatureLoadedFn = (PfnSlIsFeatureLoaded)GetProcAddress(m_slModule, "slIsFeatureLoaded");
+    m_slSetTagFn = (PfnSlSetTag)GetProcAddress(m_slModule, "slSetTag");
+    m_slSetConstantsFn = (PfnSlSetConstants)GetProcAddress(m_slModule, "slSetConstants");
+    m_slGetNewFrameTokenFn = (PfnSlGetNewFrameToken)GetProcAddress(m_slModule, "slGetNewFrameToken");
+    if (!m_slInitFn || !m_slShutdownFn || !m_slGetFeatureRequirementsFn || !m_slIsFeatureLoadedFn || !m_slSetTagFn ||
+        !m_slSetConstantsFn || !m_slGetNewFrameTokenFn) {
+        Utils::printLog(INFO_PARAM,
+                        "Failed to get address of one or more required Streamline functions (slInit/slShutdown/slGetFeatureRequirements/slIsFeatureLoaded/slSetTag/slSetConstants/slGetNewFrameToken)");
         return false;
     }
     return true;
+}
+
+sl::Result VulkanCore::slIsFeatureLoadedSafe(sl::Feature feature, bool& loaded) const {
+    if (!m_slIsFeatureLoadedFn) {
+        loaded = false;
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slIsFeatureLoadedFn(feature, loaded);
+}
+
+sl::Result VulkanCore::slSetTagSafe(const sl::ViewportHandle& viewport, const sl::ResourceTag* tags, uint32_t numTags,
+                                    sl::CommandBuffer* cmdBuffer) const {
+    if (!m_slSetTagFn) {
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slSetTagFn(viewport, tags, numTags, cmdBuffer);
+}
+
+sl::Result VulkanCore::slSetConstantsSafe(const sl::Constants& values, const sl::FrameToken& frame,
+                                          const sl::ViewportHandle& viewport) const {
+    if (!m_slSetConstantsFn) {
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slSetConstantsFn(values, frame, viewport);
+}
+
+sl::Result VulkanCore::slGetNewFrameTokenSafe(sl::FrameToken*& token, const uint32_t* frameIndex) const {
+    if (!m_slGetNewFrameTokenFn) {
+        token = nullptr;
+        return sl::Result::eErrorMissingOrInvalidAPI;
+    }
+    return m_slGetNewFrameTokenFn(token, frameIndex);
 }
 
 // Initialize DLSS before creating Vulkan instance, so that Streamline can be loaded and initialized properly

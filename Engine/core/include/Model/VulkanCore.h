@@ -12,6 +12,12 @@
 typedef sl::Result (*PfnSlInit)(const sl::Preferences& pref, uint64_t version);
 typedef sl::Result (*PfnSlShutdown)();
 typedef sl::Result (*PfnSlGetFeatureRequirements)(sl::Feature feature, sl::FeatureRequirements& requirements);
+typedef sl::Result (*PfnSlIsFeatureLoaded)(sl::Feature feature, bool& loaded);
+typedef sl::Result (*PfnSlSetTag)(const sl::ViewportHandle& viewport, const sl::ResourceTag* tags, uint32_t numTags,
+                                  sl::CommandBuffer* cmdBuffer);
+typedef sl::Result (*PfnSlSetConstants)(const sl::Constants& values, const sl::FrameToken& frame,
+                                        const sl::ViewportHandle& viewport);
+typedef sl::Result (*PfnSlGetNewFrameToken)(sl::FrameToken*& token, const uint32_t* frameIndex);
 #endif 
 
 class IControl;
@@ -80,6 +86,15 @@ public:
         return m_queues;
     }
 
+#if defined(USE_DLSS) && USE_DLSS
+    sl::Result slIsFeatureLoadedSafe(sl::Feature feature, bool& loaded) const;
+    sl::Result slSetTagSafe(const sl::ViewportHandle& viewport, const sl::ResourceTag* tags, uint32_t numTags,
+                            sl::CommandBuffer* cmdBuffer) const;
+    sl::Result slSetConstantsSafe(const sl::Constants& values, const sl::FrameToken& frame,
+                                  const sl::ViewportHandle& viewport) const;
+    sl::Result slGetNewFrameTokenSafe(sl::FrameToken*& token, const uint32_t* frameIndex) const;
+#endif
+
 private:
     void createInstance();
 #if defined(USE_DLSS) && USE_DLSS
@@ -115,5 +130,9 @@ private:
     PfnSlInit m_slInitFn = nullptr;
     PfnSlShutdown m_slShutdownFn = nullptr;
     PfnSlGetFeatureRequirements m_slGetFeatureRequirementsFn = nullptr;
+    PfnSlIsFeatureLoaded m_slIsFeatureLoadedFn = nullptr;
+    PfnSlSetTag m_slSetTagFn = nullptr;
+    PfnSlSetConstants m_slSetConstantsFn = nullptr;
+    PfnSlGetNewFrameToken m_slGetNewFrameTokenFn = nullptr;
 #endif
 };

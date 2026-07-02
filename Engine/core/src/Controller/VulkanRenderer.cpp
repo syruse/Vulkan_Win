@@ -35,6 +35,18 @@ static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
 static constexpr float FOV = 65.0f;
 
+#if defined(USE_DLSS) && USE_DLSS
+namespace {
+sl::float4x4 toSLRowMajor(const glm::mat4& m) {
+    sl::float4x4 out{};
+    for (uint32_t r = 0; r < 4; ++r) {
+        out[r] = sl::float4(m[0][r], m[1][r], m[2][r], m[3][r]);
+    }
+    return out;
+}
+}
+#endif
+
 // light source position offset from the camera
 const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, -Z_FAR);
 // clear depth buffer only once and then we accumulate trails of the vehicle
@@ -1210,6 +1222,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+#if defined(USE_DLSS) && USE_DLSS
+    setDLSSConstants();
+    // Tag the final per-frame DLSS inputs once all producer passes have completed.
+    setDLSSResourceTags(currentImage);
+#endif
 
     //---------------------------------------------------------------------------------------------//
     /// FXAA render pass (FINAL PASS) render with native resolution!
@@ -2690,6 +2708,109 @@ void VulkanRenderer::createDepthResources() {
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _footprintBuffer.depthImageView);
 }
 
+#if defined(USE_DLSS) && USE_DLSS
+void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage) {
+    if (!m_slDlssLoaded) {
+        return;
+    }
+
+    sl::Resource depthRes(sl::ResourceType::eTex2d, _depthBuffer.depthImage, _depthBuffer.depthImageMemory,
+                          _depthBuffer.depthImageView, static_cast<uint32_t>(VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL));
+    depthRes.width = _depthBuffer.width;
+    depthRes.height = _depthBuffer.height;
+    depthRes.nativeFormat = static_cast<uint32_t>(_depthBuffer.depthFormat);
+
+    sl::Resource colorRes(sl::ResourceType::eTex2d, _colorBuffer.colorBufferImage[currentImage],
+                          _colorBuffer.colorBufferImageMemory[currentImage], _colorBuffer.colorBufferImageView[currentImage],
+                          static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+    colorRes.width = _offscreenWidth;
+    colorRes.height = _offscreenHeight;
+    colorRes.nativeFormat = static_cast<uint32_t>(_colorBuffer.colorFormat);
+
+    sl::Resource motionRes(sl::ResourceType::eTex2d, _motionVectorsBuffer.colorBufferImage[currentImage],
+                           _motionVectorsBuffer.colorBufferImageMemory[currentImage],
+                           _motionVectorsBuffer.colorBufferImageView[currentImage],
+                           static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+    motionRes.width = _offscreenWidth;
+    motionRes.height = _offscreenHeight;
+    motionRes.nativeFormat = static_cast<uint32_t>(_motionVectorsBuffer.colorFormat);
+
+    sl::ResourceTag tags[] = {
+        {&depthRes, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent},
+        {&colorRes, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent},
+        {&motionRes, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent},
+    };
+
+    static const sl::ViewportHandle viewport(0);
+    sl::Result slRes = _core.slSetTagSafe(viewport, tags, static_cast<uint32_t>(std::size(tags)),
+                                          reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
+    if (slRes != sl::Result::eOk && !m_slTagErrorLogged) {
+        Utils::printLog(ERROR_PARAM, "slSetTag failed for DLSS resources, sl::Result=%d", static_cast<int>(slRes));
+        m_slTagErrorLogged = true;
+    }
+}
+
+void VulkanRenderer::setDLSSConstants() {
+    if (!m_slDlssLoaded) {
+        return;
+    }
+
+    sl::FrameToken* frameToken = nullptr;
+    sl::Result tokenRes = _core.slGetNewFrameTokenSafe(frameToken, &m_slFrameIndex);
+    if (tokenRes != sl::Result::eOk || !frameToken) {
+        if (!m_slConstantsErrorLogged) {
+            Utils::printLog(ERROR_PARAM, "slGetNewFrameToken failed, sl::Result=%d", static_cast<int>(tokenRes));
+            m_slConstantsErrorLogged = true;
+        }
+        return;
+    }
+
+    // previous frame reprojection, to reproject current Pos to previous frame Pos in clip space
+    const glm::mat4 clipToPrevClip = mViewProj.prevViewProj * glm::inverse(mViewProj.viewProj);
+    // to reproject previous Pos to current frame Pos in clip space
+    const glm::mat4 prevClipToClip = glm::inverse(clipToPrevClip);
+    const glm::mat4 clipToCameraView = glm::inverse(mViewProj.proj);
+    const glm::mat4 invView = glm::inverse(mViewProj.view);
+
+    sl::Constants constants{};
+    constants.cameraViewToClip = toSLRowMajor(mViewProj.proj);
+    constants.clipToCameraView = toSLRowMajor(clipToCameraView);
+    constants.clipToPrevClip = toSLRowMajor(clipToPrevClip);
+    constants.prevClipToClip = toSLRowMajor(prevClipToClip);
+    constants.jitterOffset = sl::float2(0.0f, 0.0f);
+    constants.mvecScale = sl::float2(1.0f, 1.0f);
+    constants.cameraPos = sl::float3(mCamera.cameraPosition().x, mCamera.cameraPosition().y, mCamera.cameraPosition().z);
+    // NO MINUS. The top of the world is the top of the camera.
+    constants.cameraUp = sl::float3(invView[1][0], invView[1][1], invView[1][2]);
+    // NO MINUS. The right of the world is the right of the camera.
+    constants.cameraRight = sl::float3(invView[0][0], invView[0][1], invView[0][2]);
+    //With MINUS. Translates the right-hand vector "back to the eyes" into a left-hand vector "forward to the scene"
+    constants.cameraFwd = sl::float3(-invView[2][0], -invView[2][1], -invView[2][2]);
+
+    const auto& perspective = mCamera.getPerspective();
+    constants.cameraNear = perspective.near_;
+    constants.cameraFar = perspective.far_;
+    constants.cameraFOV = glm::radians(perspective.fovy);
+    constants.cameraAspectRatio = perspective.aspect;
+
+    constants.depthInverted = sl::Boolean::eFalse;
+    constants.cameraMotionIncluded = sl::Boolean::eTrue;
+    constants.motionVectors3D = sl::Boolean::eFalse;
+    constants.reset = (m_slFrameIndex == 0u) ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    constants.motionVectorsDilated = sl::Boolean::eFalse;
+    constants.motionVectorsJittered = sl::Boolean::eFalse;
+
+    static const sl::ViewportHandle viewport(0);
+    sl::Result constantsRes = _core.slSetConstantsSafe(constants, *frameToken, viewport);
+    if (constantsRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
+        Utils::printLog(ERROR_PARAM, "slSetConstants failed, sl::Result=%d", static_cast<int>(constantsRes));
+        m_slConstantsErrorLogged = true;
+    }
+
+    ++m_slFrameIndex;
+}
+#endif
+
 void VulkanRenderer::init() {
     _core.init();
     // Get properties of our new device
@@ -2700,6 +2821,15 @@ void VulkanRenderer::init() {
         Utils::printLog(ERROR_PARAM, "failed to get graphics queue!");
         return;
     }
+
+#if defined(USE_DLSS) && USE_DLSS
+    bool dlssLoaded = false;
+    sl::Result dlssLoadRes = _core.slIsFeatureLoadedSafe(sl::kFeatureDLSS, dlssLoaded);
+    m_slDlssLoaded = (dlssLoadRes == sl::Result::eOk) && dlssLoaded;
+    if (!m_slDlssLoaded) {
+        Utils::printLog(INFO_PARAM, "DLSS feature is not loaded; SL resource tags are skipped");
+    }
+#endif
 
     auto swapchainCreateInfo = createSwapChain();
     createCommandPool();
