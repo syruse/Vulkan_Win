@@ -452,7 +452,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
             options.useAutoExposure = sl::Boolean::eFalse;
             sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
             if (optionsRes != sl::Result::eOk) {
-                Utils::printLog(ERROR_PARAM, "slDLSSSetOptions failed after resize, sl::Result=%d", static_cast<int>(optionsRes));
+                Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed after resize, sl::Result=%d", static_cast<int>(optionsRes));
                 m_slDlssLoaded = false;
             }
         }
@@ -1248,13 +1248,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-    sl::FrameToken* dlssFrameToken = nullptr;
+    bool isDlssFrameTokenValid = true;
 #if defined(USE_DLSS) && USE_DLSS
+    sl::FrameToken* dlssFrameToken = nullptr;
     if (m_slDlssLoaded) {
         sl::Result frameTokenRes = _core.slGetNewFrameTokenSafe(dlssFrameToken, &m_slFrameIndex);
         if (frameTokenRes != sl::Result::eOk || !dlssFrameToken) {
+            isDlssFrameTokenValid = false; 
             if (!m_slConstantsErrorLogged) {
-                Utils::printLog(ERROR_PARAM, "slGetNewFrameToken failed, sl::Result=%d", static_cast<int>(frameTokenRes));
+                Utils::printLog(INFO_PARAM, "slGetNewFrameToken failed, sl::Result=%d", static_cast<int>(frameTokenRes));
                 m_slConstantsErrorLogged = true;
             }
         } else {
@@ -1275,7 +1277,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 #endif
 
-    if (!m_slDlssLoaded || !dlssFrameToken) {
+    if (!m_slDlssLoaded || !isDlssFrameTokenValid) {
         //---------------------------------------------------------------------------------------------//
         /// FXAA render pass (FINAL PASS) render with native resolution!
 
@@ -2800,7 +2802,7 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
     sl::Result slRes = _core.slSetTagForFrameSafe(frameToken, viewport, tags, static_cast<uint32_t>(std::size(tags)),
                                                   reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
     if (slRes != sl::Result::eOk && !m_slTagErrorLogged) {
-        Utils::printLog(ERROR_PARAM, "slSetTagForFrame failed for DLSS resources, sl::Result=%d", static_cast<int>(slRes));
+        Utils::printLog(INFO_PARAM, "slSetTagForFrame failed for DLSS resources, sl::Result=%d", static_cast<int>(slRes));
         m_slTagErrorLogged = true;
     }
 }
@@ -2849,7 +2851,7 @@ void VulkanRenderer::setDLSSConstants(const sl::FrameToken& frameToken) {
     static const sl::ViewportHandle viewport(0);
     sl::Result constantsRes = _core.slSetConstantsSafe(constants, frameToken, viewport);
     if (constantsRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
-        Utils::printLog(ERROR_PARAM, "slSetConstants failed, sl::Result=%d", static_cast<int>(constantsRes));
+        Utils::printLog(INFO_PARAM, "slSetConstants failed, sl::Result=%d", static_cast<int>(constantsRes));
         m_slConstantsErrorLogged = true;
     }
 }
@@ -2865,7 +2867,7 @@ void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToke
     sl::Result evalRes = _core.slEvaluateFeatureSafe(sl::kFeatureDLSS, frameToken, inputs, static_cast<uint32_t>(std::size(inputs)),
                                                      reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
     if (evalRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
-        Utils::printLog(ERROR_PARAM, "slEvaluateFeature failed, sl::Result=%d", static_cast<int>(evalRes));
+        Utils::printLog(INFO_PARAM, "slEvaluateFeature failed, sl::Result=%d", static_cast<int>(evalRes));
         m_slConstantsErrorLogged = true;
     }
 
@@ -2905,7 +2907,7 @@ void VulkanRenderer::init() {
         static const sl::ViewportHandle viewport(0);
         sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
         if (optionsRes != sl::Result::eOk) {
-            Utils::printLog(ERROR_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
+            Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
             m_slDlssLoaded = false;
         }
     }

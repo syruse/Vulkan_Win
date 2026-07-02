@@ -84,13 +84,13 @@ void VulkanCore::init() {
     if (m_slModule) {
         auto sl_vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)GetProcAddress(m_slModule, "vkGetInstanceProcAddr");
         if (!sl_vkGetInstanceProcAddr) {
-            Utils::printLog(ERROR_PARAM, "Failed to get vkGetInstanceProcAddr from sl.interposer.dll, fallback to volkInitialize");
+            Utils::printLog(INFO_PARAM, "Failed to get vkGetInstanceProcAddr from sl.interposer.dll, fallback to volkInitialize");
             volkInitialize();
         } else {
             volkInitializeCustom(sl_vkGetInstanceProcAddr);
         }
     } else {
-        Utils::printLog(ERROR_PARAM, "Failed to load sl.interposer.dll, fallback to volkInitialize");
+        Utils::printLog(INFO_PARAM, "Failed to load sl.interposer.dll, fallback to volkInitialize");
         volkInitialize();
     }
 #else
@@ -447,7 +447,7 @@ void VulkanCore::initDLSS() {
 #endif
 
     if (m_slInitFn(pref, sl::kSDKVersion) != sl::Result::eOk) {
-        Utils::printLog(ERROR_PARAM, "Failed to initialize DLSS");
+        Utils::printLog(INFO_PARAM, "Failed to initialize DLSS");
     }
 }
 #endif

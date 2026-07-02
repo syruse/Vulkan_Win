@@ -138,8 +138,8 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
-#if defined(USE_DLSS) && USE_DLSS
     bool m_slDlssLoaded{false};
+#if defined(USE_DLSS) && USE_DLSS
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};
