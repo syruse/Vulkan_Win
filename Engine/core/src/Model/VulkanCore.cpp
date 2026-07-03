@@ -118,7 +118,8 @@ void VulkanCore::init() {
 #if defined(USE_DLSS) && USE_DLSS
     if (m_slGetFeatureFunctionFn && !m_slDLSSSetOptionsFn) {
         void* dlssSetOptionsPtr = nullptr;
-        if (m_slGetFeatureFunctionFn(sl::kFeatureDLSS, "slDLSSSetOptions", dlssSetOptionsPtr) == sl::Result::eOk) {
+        auto result = m_slGetFeatureFunctionFn(sl::kFeatureDLSS, "slDLSSSetOptions", dlssSetOptionsPtr);
+        if (result == sl::Result::eOk) {
             m_slDLSSSetOptionsFn = reinterpret_cast<PfnSlDLSSSetOptions>(dlssSetOptionsPtr);
         }
         if (!m_slDLSSSetOptionsFn) {
@@ -418,6 +419,10 @@ void VulkanCore::initDLSS() {
     sl::Preferences pref;
     pref.featuresToLoad = features;
     pref.numFeaturesToLoad = _countof(features);
+    pref.applicationId = 0x00000001;
+    pref.engine = sl::EngineType::eCustom;
+    pref.engineVersion = "1.0";
+    pref.renderAPI = sl::RenderAPI::eVulkan;
 
     // Plugins are deployed next to executable in this project.
     wchar_t exePath[MAX_PATH]{};

@@ -156,12 +156,22 @@ else(WIN32)
 
 		#at the end of building we copy resources if they are changed
 		foreach(dll IN LISTS STREAMLINE_DLLS)
+			# Debug
 			add_custom_command(
 				TARGET ${APP_NAME} POST_BUILD
-				COMMAND ${CMAKE_COMMAND} -E copy_if_different
-					"$<IF:$<CONFIG:Debug>,${STREAMLINE_SDK_DIR}/bin/x64/development/${dll},${STREAMLINE_SDK_DIR}/bin/x64/${dll}>"
+				COMMAND $<$<CONFIG:Debug>:${CMAKE_COMMAND}> -E copy_if_different
+					"${STREAMLINE_SDK_DIR}/bin/x64/development/${dll}"
 					"${CMAKE_BINARY_DIR}/Bin/${dll}"
-				COMMENT "Copying Streamline DLL: ${dll}"
+				COMMENT "Copying Streamline Development DLL: ${dll}"
+			)
+		
+			# non Debug
+			add_custom_command(
+				TARGET ${APP_NAME} POST_BUILD
+				COMMAND $<$<NOT:$<CONFIG:Debug>>:${CMAKE_COMMAND}> -E copy_if_different
+					"${STREAMLINE_SDK_DIR}/bin/x64/${dll}"
+					"${CMAKE_BINARY_DIR}/Bin/${dll}"
+				COMMENT "Copying Streamline Production DLL: ${dll}"
 			)
 		endforeach()
 	endif()
@@ -199,6 +209,7 @@ set_target_properties(${APP_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Bin"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Bin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Bin"
+	RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/Bin"
 )
 
 add_custom_command(

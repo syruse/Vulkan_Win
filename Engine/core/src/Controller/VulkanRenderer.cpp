@@ -433,7 +433,9 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _windowWidth = width;
         _windowHeight = height;
         m_currentFrame = 0u;
+#if defined(USE_DLSS) && USE_DLSS
         m_slFrameIndex = 0u;
+#endif
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
