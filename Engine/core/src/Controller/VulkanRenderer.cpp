@@ -346,6 +346,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImage(_core.getDevice(), _shadingBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _shadingBuffer.colorBufferImageMemory[i], nullptr);
 
+        vkDestroyImageView(_core.getDevice(), _dlssOutputBuffer.colorBufferImageView[i], nullptr);
+        vkDestroyImage(_core.getDevice(), _dlssOutputBuffer.colorBufferImage[i], nullptr);
+        vkFreeMemory(_core.getDevice(), _dlssOutputBuffer.colorBufferImageMemory[i], nullptr);
+
         for (auto& buf : _bloomBuffer) {
             vkDestroyImageView(_core.getDevice(), buf.colorBufferImageView[i], nullptr);
             vkDestroyImage(_core.getDevice(), buf.colorBufferImage[i], nullptr);
@@ -384,6 +388,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
     }
 
+    for (auto& framebuffer : m_fbsUIOverlay) {
+        vkDestroyFramebuffer(_core.getDevice(), framebuffer, nullptr);
+    }
+
     for (auto& imageView : _swapChain.views) {
         vkDestroyImageView(_core.getDevice(), imageView, nullptr);
     }
@@ -400,6 +408,7 @@ void VulkanRenderer::cleanupSwapChain() {
 
     vkDestroyRenderPass(_core.getDevice(), m_renderPass, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassFXAA, nullptr);
+    vkDestroyRenderPass(_core.getDevice(), m_renderPassUIOverlay, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassShadowMap, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassSemiTrans, nullptr);
     vkDestroyRenderPass(_core.getDevice(), m_renderPassXBlur, nullptr);
@@ -424,6 +433,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _windowWidth = width;
         _windowHeight = height;
         m_currentFrame = 0u;
+        m_slFrameIndex = 0u;
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
@@ -783,6 +793,9 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     if (SurfaceCaps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
         SwapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     }
+    if (SurfaceCaps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+        SwapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+    }
     SwapChainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     SwapChainCreateInfo.imageArrayLayers = 1;
     SwapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -830,6 +843,10 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
 #endif
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
+
+#if defined(USE_DLSS) && USE_DLSS
+    m_swapchainImageNeedsGeneralTransition.fill(false);
+#endif
 
     return SwapChainCreateInfo;
 }
@@ -1260,18 +1277,27 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
                 m_slConstantsErrorLogged = true;
             }
         } else {
-            // slSetTagForFrame may enqueue internal work using output descriptors immediately,
-            // so transition output image to GENERAL before tagging/evaluation.
-            Utils::VulkanImageMemoryBarrier(
-                _cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
-                VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT,
-                1U, 1U, 0, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-
             setDLSSConstants(*dlssFrameToken);
             // Tag the final per-frame DLSS inputs once all producer passes have completed.
             setDLSSResourceTags(currentImage, *dlssFrameToken);
             evaluateDLSSPass(currentImage, *dlssFrameToken);
+
+            if (hmiRenderData) {
+                VkRenderPassBeginInfo renderPassUIInfo = {};
+                renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassUIInfo.renderPass = m_renderPassUIOverlay;
+                renderPassUIInfo.renderArea.offset.x = 0;
+                renderPassUIInfo.renderArea.offset.y = 0;
+                renderPassUIInfo.renderArea.extent.width = _windowWidth;
+                renderPassUIInfo.renderArea.extent.height = _windowHeight;
+                renderPassUIInfo.clearValueCount = 0;
+                renderPassUIInfo.pClearValues = nullptr;
+                renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
+
+                vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
+                _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+                vkCmdEndRenderPass(_cmdBufs[currentImage]);
+            }
         }
         ++m_slFrameIndex;
     }
@@ -1314,12 +1340,24 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         }
 
         vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
+        vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
         if (hmiRenderData) {
-            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
-        }
+            VkRenderPassBeginInfo renderPassUIInfo = {};
+            renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassUIInfo.renderPass = m_renderPassUIOverlay;
+            renderPassUIInfo.renderArea.offset.x = 0;
+            renderPassUIInfo.renderArea.offset.y = 0;
+            renderPassUIInfo.renderArea.extent.width = _windowWidth;
+            renderPassUIInfo.renderArea.extent.height = _windowHeight;
+            renderPassUIInfo.clearValueCount = 0;
+            renderPassUIInfo.pClearValues = nullptr;
+            renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
 
-        vkCmdEndRenderPass(_cmdBufs[currentImage]);
+            vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+            vkCmdEndRenderPass(_cmdBufs[currentImage]);
+        }
     }
 
     res = vkEndCommandBuffer(_cmdBufs[currentImage]);
@@ -1360,6 +1398,7 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
     _shadingBuffer.colorFormat = _ssaoBuffer.colorFormat;
+    _dlssOutputBuffer.colorFormat = _colorBuffer.colorFormat;
 
     for (size_t i = 0; i < _swapChain.images.size(); ++i) {
         // By keeping G Pass buffers on-tile only (VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT), we can save a lot of bandwidth and
@@ -1476,6 +1515,20 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _shadingBuffer.colorBufferImage[i], _shadingBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _shadingBuffer.colorBufferImageView[i]);
+
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _windowWidth, _windowHeight,
+                                 _dlssOutputBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+                                 VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                     VK_IMAGE_USAGE_SAMPLED_BIT,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _dlssOutputBuffer.colorBufferImage[i],
+                                 _dlssOutputBuffer.colorBufferImageMemory[i]);
+
+        Utils::VulkanCreateImageView(_core.getDevice(), _dlssOutputBuffer.colorBufferImage[i], _dlssOutputBuffer.colorFormat,
+                                     VK_IMAGE_ASPECT_COLOR_BIT, _dlssOutputBuffer.colorBufferImageView[i]);
+
+        Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _dlssOutputBuffer.colorBufferImage[i],
+                                           _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED,
+                                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
     }
 }
 
@@ -2168,6 +2221,57 @@ void VulkanRenderer::createRenderPass() {
     Utils::printLog(INFO_PARAM, "Created a render pass FXAA");
 
     //-------------------------------------------------------//
+    // Create info for Render Pass UI overlay (swapchain load + present)
+    VkAttachmentDescription swapchainAttachmentUI = swapchainAttachmentFXAA;
+    swapchainAttachmentUI.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    swapchainAttachmentUI.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    swapchainAttachmentUI.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference swapchainColorAttachmentReferenceUI{};
+    swapchainColorAttachmentReferenceUI.attachment = 0;
+    swapchainColorAttachmentReferenceUI.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpassUI{};
+    subpassUI.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassUI.colorAttachmentCount = 1;
+    subpassUI.pColorAttachments = &swapchainColorAttachmentReferenceUI;
+
+    VkSubpassDependency dependencyUI{};
+    dependencyUI.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyUI.dstSubpass = 0;
+    dependencyUI.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyUI.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencyUI.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyUI.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyUI.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkSubpassDependency dependencyUIToExternal{};
+    dependencyUIToExternal.srcSubpass = 0;
+    dependencyUIToExternal.dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyUIToExternal.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyUIToExternal.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyUIToExternal.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyUIToExternal.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencyUIToExternal.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    std::array<VkAttachmentDescription, 1> renderPassAttachmentsUI = {swapchainAttachmentUI};
+
+    VkRenderPassCreateInfo renderPassCreateInfoUI = {};
+    renderPassCreateInfoUI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfoUI.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsUI.size());
+    renderPassCreateInfoUI.pAttachments = renderPassAttachmentsUI.data();
+    renderPassCreateInfoUI.subpassCount = 1;
+    renderPassCreateInfoUI.pSubpasses = &subpassUI;
+    std::array<VkSubpassDependency, 2> uiDependencies = {dependencyUI, dependencyUIToExternal};
+    renderPassCreateInfoUI.dependencyCount = static_cast<uint32_t>(uiDependencies.size());
+    renderPassCreateInfoUI.pDependencies = uiDependencies.data();
+
+    res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoUI, nullptr, &m_renderPassUIOverlay);
+    CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
+
+    Utils::printLog(INFO_PARAM, "Created a render pass UI overlay");
+
+    //-------------------------------------------------------//
     // Create info for Render Pass SHADOW MAP
 
     VkAttachmentReference depthAttachmentShadowMapRef{};
@@ -2514,6 +2618,24 @@ void VulkanRenderer::createFramebuffer() {
     }
 
     //-------------------------------------------------------//
+    // FBO UI overlay
+    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+        std::array<VkImageView, 1> attachments = {_swapChain.views[i]};
+
+        VkFramebufferCreateInfo fbCreateInfo = {};
+        fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbCreateInfo.renderPass = m_renderPassUIOverlay;
+        fbCreateInfo.attachmentCount = attachments.size();
+        fbCreateInfo.pAttachments = attachments.data();
+        fbCreateInfo.width = _windowWidth;
+        fbCreateInfo.height = _windowHeight;
+        fbCreateInfo.layers = 1;
+
+        res = vkCreateFramebuffer(_core.getDevice(), &fbCreateInfo, nullptr, &m_fbsUIOverlay[i]);
+        CHECK_VULKAN_ERROR("vkCreateFramebuffer UI overlay error %d\n", res);
+    }
+
+    //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
         std::array<VkImageView, 3> attachments = {
@@ -2689,7 +2811,7 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     init_info.MinImageCount = static_cast<uint32_t>(_swapChain.images.size());
     init_info.ImageCount = static_cast<uint32_t>(_swapChain.images.size());
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.RenderPass = m_renderPassFXAA;
+    init_info.RenderPass = m_renderPassUIOverlay;
 
     ImGui_ImplVulkan_Init(&init_info);
 }
@@ -2785,11 +2907,12 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
     motionRes.height = _offscreenHeight;
     motionRes.nativeFormat = static_cast<uint32_t>(_motionVectorsBuffer.colorFormat);
 
-    sl::Resource outputRes(sl::ResourceType::eTex2d, _swapChain.images[currentImage], nullptr, _swapChain.views[currentImage],
+    sl::Resource outputRes(sl::ResourceType::eTex2d, _dlssOutputBuffer.colorBufferImage[currentImage],
+                           _dlssOutputBuffer.colorBufferImageMemory[currentImage], _dlssOutputBuffer.colorBufferImageView[currentImage],
                            static_cast<uint32_t>(VK_IMAGE_LAYOUT_GENERAL));
     outputRes.width = _windowWidth;
     outputRes.height = _windowHeight;
-    outputRes.nativeFormat = static_cast<uint32_t>(_core.getSurfaceFormat().format);
+    outputRes.nativeFormat = static_cast<uint32_t>(_dlssOutputBuffer.colorFormat);
 
     sl::ResourceTag tags[] = {
         {&depthRes, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent},
@@ -2871,12 +2994,46 @@ void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToke
         m_slConstantsErrorLogged = true;
     }
 
-    // Ensure present sees the swapchain image in PRESENT layout on DLSS path.
-    Utils::VulkanImageMemoryBarrier(
-        _cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
-        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT,
-        1U, 1U, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
+                                _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    
+    const VkImageLayout swapchainOldLayout =
+        m_swapchainImageNeedsGeneralTransition[currentImage] ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+                                    swapchainOldLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U,
+                                    1U, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    
+    VkImageBlit blit{};
+    blit.srcOffsets[0] = {0, 0, 0};
+    blit.srcOffsets[1] = {_windowWidth, _windowHeight, 1};
+    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.srcSubresource.mipLevel = 0;
+    blit.srcSubresource.baseArrayLayer = 0;
+    blit.srcSubresource.layerCount = 1;
+    blit.dstOffsets[0] = {0, 0, 0};
+    blit.dstOffsets[1] = {_windowWidth, _windowHeight, 1};
+    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.dstSubresource.mipLevel = 0;
+    blit.dstSubresource.baseArrayLayer = 0;
+    blit.dstSubresource.layerCount = 1;
+
+    vkCmdBlitImage(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   _swapChain.images[currentImage], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    m_swapchainImageNeedsGeneralTransition[currentImage] = true;
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
+                                    _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_TRANSFER_READ_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 #endif
 

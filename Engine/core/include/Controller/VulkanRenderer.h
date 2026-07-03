@@ -101,6 +101,9 @@ private:
     VkRenderPass m_renderPassFXAA{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFXAA{nullptr};
 
+    VkRenderPass m_renderPassUIOverlay{nullptr};
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsUIOverlay{nullptr};
+
     VkRenderPass m_renderPassShadowMap{nullptr};
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsShadowMap{nullptr};
     glm::mat4 m_lightViewProj{1.0f};
@@ -143,6 +146,7 @@ private:
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};
+    std::array<bool, MAX_FRAMES_IN_FLIGHT> m_swapchainImageNeedsGeneralTransition{};
 #endif
 #if defined(USE_FSR) && USE_FSR
     ffx::Context mFSRSwapChainContext{nullptr};

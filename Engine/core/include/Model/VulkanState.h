@@ -126,6 +126,7 @@ struct VulkanState {
     ColorBuffer _motionVectorsBuffer{};  // this is for DLAA\TAA
     ColorBuffer _ssaoBuffer{};
     ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
+    ColorBuffer _dlssOutputBuffer{};
     DepthBuffer _footprintBuffer{_footPrintWidthAndHeight, _footPrintWidthAndHeight};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)
     GPassBuffer _gPassBuffer{};
