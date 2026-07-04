@@ -173,7 +173,6 @@ VkPresentModeKHR VulkanCore::getPresentMode() const {
     }
     
     // returning common one (with vsync but it may block app untill gpu releases swap image)
-    // but very unlikely since we have 5 frames in swap chain
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 

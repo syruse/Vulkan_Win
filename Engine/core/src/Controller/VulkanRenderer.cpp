@@ -299,15 +299,15 @@ void VulkanRenderer::cleanupSwapChain() {
     // Wait until no actions being run on device before destroying
     vkDeviceWaitIdle(_core.getDevice());
 
+    // Clear tracking of images-in-flight to avoid stale fences pointing to destroyed resources
+    m_imagesInFlight.clear();
+    m_swapchainImageCount = 0;
+
     vkFreeCommandBuffers(_core.getDevice(), _cmdBufPool, static_cast<uint32_t>(_cmdBufs.size()), _cmdBufs.data());
 
     vkDestroyImageView(_core.getDevice(), _depthBuffer.depthImageView, nullptr);
     vkDestroyImage(_core.getDevice(), _depthBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _depthBuffer.depthImageMemory, nullptr);
-
-    vkDestroyImageView(_core.getDevice(), _shadowMapBuffer.depthImageView, nullptr);
-    vkDestroyImage(_core.getDevice(), _shadowMapBuffer.depthImage, nullptr);
-    vkFreeMemory(_core.getDevice(), _shadowMapBuffer.depthImageMemory, nullptr);
 
     vkDestroyImageView(_core.getDevice(), _depthTempBuffer.depthImageView, nullptr);
     vkDestroyImage(_core.getDevice(), _depthTempBuffer.depthImage, nullptr);
@@ -614,11 +614,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     glm::vec4 velocity = mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
     glm::vec4 exhaustPipePos1 =
         mCamera.targetModelMat() *
-        glm::vec4(-4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcorded position of pipe in our model!!!
+        glm::vec4(-4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
     m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, velocity);
     glm::vec4 exhaustPipePos2 =
         mCamera.targetModelMat() *
-        glm::vec4(4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcorded position of pipe in our model!!!
+        glm::vec4(4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
     m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, velocity);
 
     const auto objectsAmount = m_models.size();
@@ -845,6 +845,10 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
 #endif
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
+
+    // initialize image-in-flight tracking
+    m_swapchainImageCount = NumSwapChainImages;
+    m_imagesInFlight.assign(static_cast<size_t>(m_swapchainImageCount), VK_NULL_HANDLE);
 
 #if defined(USE_DLSS) && USE_DLSS
     m_swapchainImageNeedsGeneralTransition.fill(false);
@@ -1599,10 +1603,9 @@ bool VulkanRenderer::renderScene() {
     _pushConstant.windDirElapsedTimeMS.w += deltaTime;
 
     // -- GET NEXT IMAGE --
-    // Wait for given fence to signal (open) from last draw before continuing
+    // Wait for fence of this frame to ensure CPU won't overwrite resources currently used by GPU.
     vkWaitForFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-    // Manually reset (close) fences
-    vkResetFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
+    // NOTE: DO NOT reset fence here. We'll reset it immediately before vkQueueSubmit.
 
     uint32_t ImageIndex = 0;
     VkResult res;
@@ -1619,15 +1622,36 @@ bool VulkanRenderer::renderScene() {
                                 VK_NULL_HANDLE, &ImageIndex);
 #endif
 
+    // If acquire returned VK_ERROR_OUT_OF_DATE_KHR, we will process the resize.
+    if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreateSwapChain(_windowWidth, _windowHeight);
+        return ret_status;
+    }
+    CHECK_VULKAN_ERROR("vkAcquireNextImageKHR error %d\n", res);
+
+    // --- ensure the acquired swapchain image is not still in use by a previous frame
+    VkFence imageFence = m_imagesInFlight[ImageIndex];
+    // WE WAIT ONLY IF this fence belongs to another frame and it is not yet completed
+    if (imageFence != VK_NULL_HANDLE && imageFence != m_drawFences[m_currentFrame]) {
+        // Let's wait until the previous use of this image ends.
+        vkWaitForFences(_core.getDevice(), 1, &imageFence, VK_TRUE, UINT64_MAX);
+    }
+    // mark the image as occupied by the current frame-fence (we'll assign it later, before submitting—but let's save the link now)
+    m_imagesInFlight[ImageIndex] = m_drawFences[m_currentFrame];
+
     VkPipelineStageFlags waitFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &_cmdBufs[ImageIndex];
-    submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame];
+    
+    // Wait for the semaphore of the current virtual frame (m_currentFrame)
+    submitInfo.pWaitSemaphores = &m_presentCompleteSem[m_currentFrame]; 
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitDstStageMask = &waitFlags;
-    submitInfo.pSignalSemaphores = &m_renderCompleteSem[m_currentFrame];
+    
+    // Signal the semaphore unique to this Swapchain image (ImageIndex)
+    submitInfo.pSignalSemaphores = &m_renderCompleteSem[ImageIndex]; 
     submitInfo.signalSemaphoreCount = 1;
 
     updateUniformBuffer(ImageIndex, deltaTime);
@@ -1636,8 +1660,8 @@ bool VulkanRenderer::renderScene() {
         isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
 
         // TODO Check for resolution change from the UI states
-        //if (windowQueueMSG.hmiStates->resolutionChanged) {
-        //}
+        // if (windowQueueMSG.hmiStates->resolutionChanged) {
+        // }
     }
 
     for (auto& model : m_models) {
@@ -1650,16 +1674,23 @@ bool VulkanRenderer::renderScene() {
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
 
+    // RESET fence of the current frame just before submit
+    vkResetFences(_core.getDevice(), 1, &m_drawFences[m_currentFrame]);
+
     res = vkQueueSubmit(_queue, 1, &submitInfo, m_drawFences[m_currentFrame]);
     CHECK_VULKAN_ERROR("vkQueueSubmit error %d\n", res);
 
+    // --- PREPARE PRESENT INFO ---
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &_swapChain.handle;
     presentInfo.pImageIndices = &ImageIndex;
-    presentInfo.pWaitSemaphores = &m_renderCompleteSem[m_currentFrame];
+    
+    // We pass the rendering semaphore associated with this particular Swapchainimage.
+    presentInfo.pWaitSemaphores = &m_renderCompleteSem[ImageIndex]; 
     presentInfo.waitSemaphoreCount = 1;
+
 #if defined(USE_FSR) && USE_FSR
     if (mFSRSwapChainContext) {
         res = mFSRReplacementFunctions.pOutQueuePresentKHR(_queue, &presentInfo);
@@ -1676,7 +1707,7 @@ bool VulkanRenderer::renderScene() {
         CHECK_VULKAN_ERROR("vkQueuePresentKHR error %d\n", res);
     }
 
-    // Get next frame (use % MAX_FRAME_DRAWS to keep value below MAX_FRAME_DRAWS)
+    // Advance frame index
     m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
 
     endTime = std::chrono::high_resolution_clock::now();
@@ -2116,7 +2147,7 @@ void VulkanRenderer::createRenderPass() {
     // Bloom effect
     // we use previously blurred hdr texture and main color output attachment
     VkAttachmentDescription colorAttachment1Bloom = {};
-    colorAttachment1Bloom.format = _core.getSurfaceFormat().format;
+    colorAttachment1Bloom.format = _colorBuffer.colorFormat;
     colorAttachment1Bloom.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment1Bloom.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment1Bloom.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2452,7 +2483,7 @@ void VulkanRenderer::createRenderPass() {
     // SSAO blurring & applying
     // we use previously prepared noisy SSAO passthough texture _shadingBuffer to blur and apply
     VkAttachmentDescription colorAttachmentSSAOblurOutput = {};  // main swapChain buffer for applying
-    colorAttachmentSSAOblurOutput.format = _core.getSurfaceFormat().format;
+    colorAttachmentSSAOblurOutput.format = _colorBuffer.colorFormat;
     colorAttachmentSSAOblurOutput.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachmentSSAOblurOutput.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachmentSSAOblurOutput.storeOp = VK_ATTACHMENT_STORE_OP_STORE;

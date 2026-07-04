@@ -9,6 +9,7 @@
 #endif
 
 #include <array>
+#include <vector>
 
 #include "Camera.h"
 #include "Particle.h"
@@ -90,6 +91,10 @@ private:
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_presentCompleteSem{nullptr};
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_renderCompleteSem{nullptr};
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_drawFences{};
+
+    // fence per swapchain image tracking
+    std::vector<VkFence> m_imagesInFlight;
+    uint32_t m_swapchainImageCount{0};
 
     // intermediate buffer being served for transferring data to gpu memory
     Model* mp_modelTransferSpace{nullptr};
