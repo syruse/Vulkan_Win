@@ -945,12 +945,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     // No explicit barrier needed here: m_renderPassDepth already ends _depthBuffer in
     // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL (attachment finalLayout).
 
-    // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
-    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _viewSpaceBuffer.colorBufferImage[currentImage],
-                                    _viewSpaceBuffer.colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    // No explicit barier needed for _viewSpaceBuffer: COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+    // This is because m_renderPassDepth ends _viewSpaceBuffer in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL (attachment
+    // finalLayout).
 
     //---------------------------------------------------------------------------------------------//
     /// shadow map pass
@@ -1492,11 +1489,6 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::VulkanCreateImageView(_core.getDevice(), _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _viewSpaceBuffer.colorBufferImageView[i]);
 
-        Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool,
-                           _viewSpaceBuffer.colorBufferImage[i], _viewSpaceBuffer.colorFormat,
-                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                           VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
-
         // motion vectors render target
         Utils::VulkanCreateImage(
             _core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight, _motionVectorsBuffer.colorFormat,
@@ -1507,10 +1499,6 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _motionVectorsBuffer.colorBufferImage[i], _motionVectorsBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _motionVectorsBuffer.colorBufferImageView[i]);
-
-        Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool, _motionVectorsBuffer.colorBufferImage[i],
-                                           _motionVectorsBuffer.colorFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
 
         // SHADING render target
         Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
@@ -2407,7 +2395,8 @@ void VulkanRenderer::createRenderPass() {
     dependencyDepthAndViewSpacePosForSSAO[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkAttachmentDescription colorAttachmentViewSpacePos = colorAttachment;
-    colorAttachmentViewSpacePos.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    colorAttachmentViewSpacePos.initialLayout =
+        VK_IMAGE_LAYOUT_UNDEFINED;  // it automatically  transits to COLOR_ATTACHMENT_OPTIMAL when render pass starts
     colorAttachmentViewSpacePos.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachmentViewSpacePos.format = _viewSpaceBuffer.colorFormat;
     VkAttachmentDescription colorAttachmentMotionVectors = colorAttachmentViewSpacePos;
