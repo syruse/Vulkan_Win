@@ -38,7 +38,7 @@ vec2 quadPos[4] = vec2[](
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
-    vec3 lightPos;
+    vec4 lightPos; // w is elapsedMS for previous frame
     vec3 cameraPos;
     vec4 windDirElapsedTimeMS; // xyz is wind dir, w is elapsedMS
 } pushConstant;
@@ -50,14 +50,22 @@ layout(location = 3) flat out int isGradientEnabled;
 layout(location = 4) out float alpha;
 layout(location = 5) out vec2 outMotionVector;
 
+
+vec3 calculateParticlePosition(float elapsedTimeMS, out float calculatedFading)
+{
+    const float fadingMultiplier = 5.0;
+    calculatedFading = fract((speedK * elapsedTimeMS) / lifeDuration); // [0.0 - 1.0]
+    float time = fadingMultiplier * calculatedFading;
+    
+    return uboParticle.dynamicPos.xyz + inPosOrigin + (time * uboParticle.velocity.xyz) + (time * time * acceleration);
+}
+
 void main()
 {
     vec3 posOrigin = inPos;
     vec3 scale = scaleMax;
     if (uboParticle.mode == 0) {
-        kFading = fract((speedK * pushConstant.windDirElapsedTimeMS.w) / lifeDuration); // [0.0 - 1.0]
-        float time = 5 * kFading;
-        posOrigin = uboParticle.dynamicPos.xyz + inPosOrigin + time * uboParticle.velocity.xyz + time *  time * acceleration;
+        posOrigin = calculateParticlePosition(pushConstant.windDirElapsedTimeMS.w, kFading);
         scale = alphaK * mix(scaleMin, scaleMax, kFading);
         alpha = alphaK;
         isGradientEnabled = 1;
@@ -97,8 +105,8 @@ void main()
 
     vec3 prevPosOrigin = posOrigin;
     if (uboParticle.mode == 0) {
-        const float assumedDeltaTime = 0.016f;
-        prevPosOrigin = posOrigin - assumedDeltaTime * speedK * uboParticle.velocity.xyz;
+        float kFadingPrev;
+        prevPosOrigin = calculateParticlePosition(pushConstant.lightPos.w, kFadingPrev);
     }
 
     vec4 prevClip = uboViewProjection.prevViewProj * vec4(prevPosOrigin, 1.0f);

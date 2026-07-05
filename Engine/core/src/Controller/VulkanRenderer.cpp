@@ -65,7 +65,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     using namespace std::literals;
 
     _pushConstant.windowSize = glm::vec4(_windowWidth, _windowHeight, Z_FAR, Z_NEAR);
-    _pushConstant.lightPos = _lightPos;
+    _pushConstant.lightPos = glm::vec4(_lightPos, 0.0f);
 
     calculateAdditionalMat();
 
@@ -725,18 +725,18 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // We "jump" the light source only when the tank moves significantly (10% of Z_FAR).
     // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
-    if (glm::distance(_pushConstant.lightPos, desiredLightPos) > 0.1f * Z_FAR) {
+    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
         // Shadow map resolution is _shadowMapWidthAndHeight (8000x8000).
         // Texel snapping aligns the light frustum to the shadow map grid to prevent sub-texel flickering.
         // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
         float texelSize = (Z_FAR * 2.2f) / _shadowMapWidthAndHeight;
-        _pushConstant.lightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
+        _pushConstant.lightPos = glm::vec4(glm::floor(desiredLightPos / texelSize) * texelSize, _pushConstant.lightPos.w);
     }
 
     // We keep a constant direction vector: from -1000 to +1000 in Z (length 3500).
     // Normalizing the direction ensures that shadow angles remain perfectly static when the light moves.
     glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f, -_lightPos.y, -_lightPos.z)) * (Z_FAR * 3.5f);
-    glm::vec3 target = _pushConstant.lightPos + lightDir;
+    glm::vec3 target = glm::vec3(_pushConstant.lightPos) + lightDir;
 
     // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
     const float shadowSide = Z_FAR * 1.1f;
@@ -745,7 +745,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         // Far=4000 is sufficient, to cover the distance to the tank and the terrain beyond it.
         // Near plane at -500.0f captures high objects (like tall trees) that might be "behind" the light source.
         glm::ortho(-shadowSide, shadowSide, -shadowSide, shadowSide, -500.0f, Z_FAR * 4.0f) *
-        glm::lookAt(_pushConstant.lightPos, target, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::lookAt(glm::vec3(_pushConstant.lightPos), target, glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
 
     // Map the list of model data
@@ -1588,6 +1588,7 @@ bool VulkanRenderer::renderScene() {
     }
 
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
+    _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
     _pushConstant.windDirElapsedTimeMS.w += deltaTime;
 
     // -- GET NEXT IMAGE --

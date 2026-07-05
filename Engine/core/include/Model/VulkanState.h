@@ -55,7 +55,7 @@ struct VulkanState {
 
     struct PushConstant {
         alignas(16) glm::vec4 windowSize{1.0f};  // alighned as vec4 or 16bytes
-        alignas(16) glm::vec3 lightPos{1.0f};
+        alignas(16) glm::vec4 lightPos{1.0f};  //w is elapsedMS for previous frame
         alignas(16) glm::vec4 cameraPos{1.0f}; // w component is tesselation level
         alignas(16) glm::vec4 windDirElapsedTimeMS{0.0f}; // vec3 is velocity and w is elapsedTime
     };
