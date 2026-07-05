@@ -8,7 +8,15 @@ void PipelineCreatorTextured::createPipeline() {
     assert(m_vkState._core.getDevice());
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 3;
+    blendInfo.attachmentCount = 4; // + motion vector buffer for dynamic skybox(morphing clouds)
+
+    // motion vector buffer
+    {
+        auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+        blendAttachments[3] = blendAttachments[0];
+        blendAttachments[3].blendEnable = VK_FALSE;
+        blendAttachments[3].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    }
 
     if (m_isTessellated) {
         auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
@@ -52,7 +60,11 @@ void PipelineCreatorTextured::createDescriptorSetLayout() {
     uboViewProjLayoutBinding.binding = 2;
     uboViewProjLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboViewProjLayoutBinding.descriptorCount = 1;
-    uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    if (m_isTessellated) {
+        uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    } else {
+        uboViewProjLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    }
     uboViewProjLayoutBinding.pImmutableSamplers = nullptr;
 
     std::vector<VkDescriptorSetLayoutBinding> layoutBindings{dynamicUBOLayoutBinding, samplerLayoutBinding,

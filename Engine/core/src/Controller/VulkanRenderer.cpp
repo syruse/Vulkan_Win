@@ -1019,6 +1019,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     /// G pass
     VkClearValue clearValue{};
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
+    // no need to clear MotionVector buffer, since we will write to it in the first subpass
     std::vector<VkClearValue> clearValues(10, clearValue);
     clearValues[7] = VkClearValue{};
     clearValues[7].depthStencil.depth = 1.0f;
@@ -1776,6 +1777,15 @@ void VulkanRenderer::createRenderPass() {
     viewSpacePosAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     viewSpacePosAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Must stay readable for SSAO
 
+    VkAttachmentDescription motionVecAttachment = colorAttachment;
+    motionVecAttachment.format = _motionVectorsBuffer.colorFormat;
+    motionVecAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    // from UNDEFINED to COLOR_ATTACHMENT_OPTIMAL in the first Depth PASS+
+    motionVecAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    motionVecAttachment.format = _motionVectorsBuffer.colorFormat;
+    // we continue writting in motion vectors buffer in the next pass (semi transparent objects)
+    motionVecAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1786,6 +1796,9 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentReference gPassColorAttachmentRef = colorAttachmentRef;
     gPassColorAttachmentRef.attachment = 2;
 
+    VkAttachmentReference motionVecColorAttachmentRef = colorAttachmentRef;
+    motionVecColorAttachmentRef.attachment = 11;
+
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 7;  // temporary depth buffer needed only for correct geometry output in g-pass
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -1794,7 +1807,8 @@ void VulkanRenderer::createRenderPass() {
     footPrintAttachmentRef.attachment = 8;  // depthbuf with trails
     footPrintAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL; // Match descriptor expectation
 
-    std::array<VkAttachmentReference, 3> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef};
+    std::array<VkAttachmentReference, 4> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef,
+                                                         motionVecColorAttachmentRef};
 
     subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpasses[0].colorAttachmentCount = gPassAttachment.size();
@@ -1918,10 +1932,10 @@ void VulkanRenderer::createRenderPass() {
     // that AMD handles incorrectly when the actual layout is SHADER_READ_ONLY_OPTIMAL.
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    std::array<VkAttachmentDescription, 11> renderPassAttachments = {
+    std::array<VkAttachmentDescription, 12> renderPassAttachments = {
         colorAttachment,          gPassNormalAttachment,   gPassColorAttachment,  colorAttachmentSSAO,
         depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,    depthTemporaryAttachment,
-        footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment};
+        footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment, motionVecAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -2532,7 +2546,7 @@ void VulkanRenderer::createRenderPass() {
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
     for (size_t i = 0; i < _swapChain.images.size(); i++) {
-        std::array<VkImageView, 11> attachments = {_colorBuffer.colorBufferImageView[i],
+        std::array<VkImageView, 12> attachments = {_colorBuffer.colorBufferImageView[i],
                                                    _gPassBuffer.normal.colorBufferImageView[i],
                                                    _gPassBuffer.color.colorBufferImageView[i],
                                                    _ssaoBuffer.colorBufferImageView[i],
@@ -2542,7 +2556,8 @@ void VulkanRenderer::createFramebuffer() {
                                                    _depthTempBuffer.depthImageView,
                                                    _footprintBuffer.depthImageView,
                                                    _shadingBuffer.colorBufferImageView[i],
-                                                   _viewSpaceBuffer.colorBufferImageView[i]};
+                                                   _viewSpaceBuffer.colorBufferImageView[i],
+                                                   _motionVectorsBuffer.colorBufferImageView[i]};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
