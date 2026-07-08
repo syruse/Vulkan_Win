@@ -26,6 +26,8 @@ typedef sl::Result (*PfnSlEvaluateFeature)(sl::Feature feature, const sl::FrameT
                                            sl::CommandBuffer* cmdBuffer);
 typedef sl::Result (*PfnSlGetFeatureFunction)(sl::Feature feature, const char* functionName, void*& function);
 typedef sl::Result (*PfnSlDLSSSetOptions)(const sl::ViewportHandle& viewport, const sl::DLSSOptions& options);
+typedef sl::Result (*PfnSlIsFeatureSupported)(sl::Feature feature, const sl::AdapterInfo& adapterInfo);
+typedef sl::Result (*PfnSlSetFeatureLoaded)(sl::Feature feature, bool value);
 #endif 
 
 class IControl;
@@ -109,6 +111,10 @@ public:
     sl::Result slDLSSSetOptionsSafe(const sl::ViewportHandle& viewport, const sl::DLSSOptions& options) const;
 #endif
 
+    bool isDlssSupported() const {
+        return m_isDlssSupported;
+    }
+
 private:
     void createInstance();
 #if defined(USE_DLSS) && USE_DLSS
@@ -126,6 +132,7 @@ private:
     VkSurfaceKHR m_surface = nullptr;
     Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
+    bool m_isDlssSupported = false;
 #if defined(_DEBUG)
     VkDebugReportCallbackEXT m_callback = nullptr;
 #endif
@@ -152,5 +159,7 @@ private:
     PfnSlEvaluateFeature m_slEvaluateFeatureFn = nullptr;
     PfnSlGetFeatureFunction m_slGetFeatureFunctionFn = nullptr;
     PfnSlDLSSSetOptions m_slDLSSSetOptionsFn = nullptr;
+    PfnSlIsFeatureSupported m_slIsFeatureSupportedFn = nullptr;
+    PfnSlSetFeatureLoaded m_slSetFeatureLoadedFn = nullptr;
 #endif
 };

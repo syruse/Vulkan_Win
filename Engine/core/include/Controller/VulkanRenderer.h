@@ -146,7 +146,7 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
-    bool m_slDlssLoaded{false};
+    bool m_isDlssEnabled{true};  // TODO : add UI for enabling/disabling DLSS
 #if defined(USE_DLSS) && USE_DLSS
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};

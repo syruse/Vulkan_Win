@@ -228,6 +228,16 @@ void VulkanCore::selectPhysicalDevice() {
     } else if (pQueueFamilyCount) {
         --(*pQueueFamilyCount);  // reduce queue count by one since we will use one queue for main thread
     }
+
+#if defined(USE_DLSS) && USE_DLSS
+    // Now we can check whether it's NVIDIA GPU
+    // if not, we can skip Streamline abstracted functions and avoid calling them
+    if (getVendorId() != VulkanCore::VendorId::NVIDIA) {
+        volkInitialize();
+        volkLoadInstance(m_inst);
+    }
+#endif
+
 #if defined(USE_FSR) && USE_FSR
     // look up FSR 3 required queues
     // 1. FSRPresent
@@ -338,11 +348,13 @@ bool VulkanCore::loadStreamline() {
     m_slGetNewFrameTokenFn = (PfnSlGetNewFrameToken)GetProcAddress(m_slModule, "slGetNewFrameToken");
     m_slEvaluateFeatureFn = (PfnSlEvaluateFeature)GetProcAddress(m_slModule, "slEvaluateFeature");
     m_slGetFeatureFunctionFn = (PfnSlGetFeatureFunction)GetProcAddress(m_slModule, "slGetFeatureFunction");
+    m_slIsFeatureSupportedFn = (PfnSlIsFeatureSupported)GetProcAddress(m_slModule, "slIsFeatureSupported");
+    m_slSetFeatureLoadedFn = (PfnSlSetFeatureLoaded)GetProcAddress(m_slModule, "slSetFeatureLoaded");
     if (!m_slInitFn || !m_slShutdownFn || !m_slGetFeatureRequirementsFn || !m_slIsFeatureLoadedFn || !m_slSetTagFn ||
         !m_slSetTagForFrameFn || !m_slSetConstantsFn || !m_slGetNewFrameTokenFn || !m_slEvaluateFeatureFn ||
-        !m_slGetFeatureFunctionFn) {
+        !m_slGetFeatureFunctionFn || !m_slIsFeatureSupportedFn || !m_slSetFeatureLoadedFn) {
         Utils::printLog(INFO_PARAM,
-                        "Failed to get address of one or more required Streamline functions (slInit/slShutdown/slGetFeatureRequirements/slIsFeatureLoaded/slSetTag/slSetTagForFrame/slSetConstants/slGetNewFrameToken/slEvaluateFeature/slGetFeatureFunction)");
+                        "Failed to get address of one or more required Streamline functions (slInit/slShutdown/slGetFeatureRequirements/slIsFeatureLoaded/slSetTag/slSetTagForFrame/slSetConstants/slGetNewFrameToken/slEvaluateFeature/slGetFeatureFunction/slIsFeatureSupported/slSetFeatureLoaded)");
         return false;
     }
 
@@ -585,7 +597,7 @@ void VulkanCore::createLogicalDevice() {
 #endif
 
 #if defined(USE_DLSS) && USE_DLSS
-    if (m_slGetFeatureRequirementsFn) {
+    if (getVendorId() == VulkanCore::VendorId::NVIDIA && m_slGetFeatureRequirementsFn) {
         sl::FeatureRequirements dlssReqs{};
         sl::Result slRes = m_slGetFeatureRequirementsFn(sl::kFeatureDLSS, dlssReqs);
 
@@ -665,6 +677,21 @@ void VulkanCore::createLogicalDevice() {
     volkLoadDevice(m_device);
 
     Utils::printLog(INFO_PARAM, "Device created");
+
+#if defined(USE_DLSS) && USE_DLSS
+    bool dlssLoaded = false;
+    sl::Result dlssLoadRes = slIsFeatureLoadedSafe(sl::kFeatureDLSS, dlssLoaded);
+    if (getVendorId() == VendorId::NVIDIA &&(dlssLoadRes == sl::Result::eOk) && dlssLoaded) {
+        sl::AdapterInfo adapterInfo;
+        adapterInfo.vkPhysicalDevice = getPhysDevice();
+        if (m_slIsFeatureSupportedFn(sl::kFeatureDLSS, adapterInfo) != sl::Result::eOk) {
+            Utils::printLog(INFO_PARAM, "DLSS is not supported on this device");
+            m_isDlssSupported = false;
+        } else {
+            m_isDlssSupported = true;
+        }
+    }
+#endif
 
     for (auto& queue : m_queues) {
         if (queue.second.familyIndex > -1) {

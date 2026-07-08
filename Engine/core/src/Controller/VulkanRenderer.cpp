@@ -454,7 +454,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         createDescriptorPoolForImGui();
 
 #if defined(USE_DLSS) && USE_DLSS
-        if (m_slDlssLoaded) {
+        if (_core.isDlssSupported() && m_isDlssEnabled) {
             static const sl::ViewportHandle viewport(0);
             sl::DLSSOptions options{};
             options.mode = sl::DLSSMode::eMaxQuality;
@@ -465,7 +465,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
             sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
             if (optionsRes != sl::Result::eOk) {
                 Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed after resize, sl::Result=%d", static_cast<int>(optionsRes));
-                m_slDlssLoaded = false;
+                m_isDlssEnabled = false;
             }
         }
 #endif
@@ -1272,7 +1272,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     bool isDlssFrameTokenValid = true;
 #if defined(USE_DLSS) && USE_DLSS
     sl::FrameToken* dlssFrameToken = nullptr;
-    if (m_slDlssLoaded) {
+    if (_core.isDlssSupported() && m_isDlssEnabled) {
         sl::Result frameTokenRes = _core.slGetNewFrameTokenSafe(dlssFrameToken, &m_slFrameIndex);
         if (frameTokenRes != sl::Result::eOk || !dlssFrameToken) {
             isDlssFrameTokenValid = false; 
@@ -1285,6 +1285,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             // Tag the final per-frame DLSS inputs once all producer passes have completed.
             setDLSSResourceTags(currentImage, *dlssFrameToken);
             evaluateDLSSPass(currentImage, *dlssFrameToken);
+
+            if (m_slConstantsErrorLogged) {
+                m_isDlssEnabled = false;
+                Utils::printLog(INFO_PARAM, "DLSS disabled due to slGetNewFrameToken failure");
+            }
 
             if (hmiRenderData) {
                 VkRenderPassBeginInfo renderPassUIInfo = {};
@@ -1307,7 +1312,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 #endif
 
-    if (!m_slDlssLoaded || !isDlssFrameTokenValid) {
+    if (!m_isDlssEnabled || !_core.isDlssSupported() || !isDlssFrameTokenValid) {
         //---------------------------------------------------------------------------------------------//
         /// FXAA render pass (FINAL PASS) render with native resolution!
 
@@ -2920,7 +2925,7 @@ void VulkanRenderer::createDepthResources() {
 
 #if defined(USE_DLSS) && USE_DLSS
 void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken) {
-    if (!m_slDlssLoaded) {
+    if (!_core.isDlssSupported()) {
         return;
     }
 
@@ -2969,7 +2974,7 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
 }
 
 void VulkanRenderer::setDLSSConstants(const sl::FrameToken& frameToken) {
-    if (!m_slDlssLoaded) {
+    if (!_core.isDlssSupported()) {
         return;
     }
 
@@ -3018,7 +3023,7 @@ void VulkanRenderer::setDLSSConstants(const sl::FrameToken& frameToken) {
 }
 
 void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToken& frameToken) {
-    if (!m_slDlssLoaded) {
+    if (!_core.isDlssSupported()) {
         return;
     }
 
@@ -3087,10 +3092,7 @@ void VulkanRenderer::init() {
     }
 
 #if defined(USE_DLSS) && USE_DLSS
-    bool dlssLoaded = false;
-    sl::Result dlssLoadRes = _core.slIsFeatureLoadedSafe(sl::kFeatureDLSS, dlssLoaded);
-    m_slDlssLoaded = (dlssLoadRes == sl::Result::eOk) && dlssLoaded;
-    if (!m_slDlssLoaded) {
+    if (!_core.isDlssSupported() && m_isDlssEnabled) {
         Utils::printLog(INFO_PARAM, "DLSS feature is not loaded; SL resource tags are skipped");
     } else {
         sl::DLSSOptions options{};
@@ -3103,7 +3105,7 @@ void VulkanRenderer::init() {
         sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
         if (optionsRes != sl::Result::eOk) {
             Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
-            m_slDlssLoaded = false;
+            m_isDlssEnabled = false;
         }
     }
 #endif
