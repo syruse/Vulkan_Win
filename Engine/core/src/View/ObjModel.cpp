@@ -9,6 +9,7 @@
 #include <tiny_obj_loader.h>
 #include <algorithm>
 #include <unordered_map>
+#include <cstdint>
 
 void ObjModel::init() {
     auto p_device = m_vkState._core.getDevice();
@@ -193,7 +194,7 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
         }
 
         /// Note: each subobject keeps index offset
-        SubObject subObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset), -1};
+        SubObject subObject{realMaterialId, indecesOffset, (indices.size() - indecesOffset), UINT32_MAX};
         subOjectsMap.emplace(materialId, subObject);
         indecesOffset = indices.size();
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 set(APP_NAME VulkanGame)
-project(${APP_NAME} VERSION 1.0 LANGUAGES CXX)
+project(${APP_NAME} VERSION 1.0 LANGUAGES C CXX)
 
 option(USE_PROFILING "compiled for profiling" ON)
 option(USE_CUDA "Use CUDA" ON)
@@ -74,8 +74,12 @@ set(IMGUI_SRC
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/imgui_draw.cpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/imgui_widgets.cpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_vulkan.cpp"
-"${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_win32.cpp"
 )
+if(WIN32)
+    list(APPEND IMGUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_win32.cpp")
+elseif(LINUX)
+	list(APPEND IMGUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_sdl2.cpp")
+endif()
 add_library(imgui STATIC ${IMGUI_SRC})
 target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
 if(WIN32)
@@ -93,7 +97,7 @@ file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 file(GLOB_RECURSE include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
 #THIRD_PARTY_INCLUDE_DIR contains: glm; stb_image; tiny_obj_loader; vulkan; directInput/sdl
 if(LINUX)
-    set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "${VULKAN_INCLUDE_DIR}/include" "${SDL_INCLUDE_DIR}/include")
+	set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "${VULKAN_INCLUDE_DIR}/include")
     target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "${VULKAN_INCLUDE_DIR}/include")
 else(WIN32)
     set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "$ENV{VULKAN_SDK}/include" "${CMAKE_SOURCE_DIR}/../DirectXTK12/Inc")
@@ -124,9 +128,7 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/)
 
 if(LINUX)
-    target_link_libraries(${APP_NAME} "libxcb.so" "libSDL2.so") # no need "libvulkan.so.1" anymore
-	#Volk resolves external symbols like vkCreateWin32SurfaceKHR since we don't use "libvulkan.so.1"
-	target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
+	target_link_libraries(${APP_NAME} SDL2::SDL2) # no need "libvulkan.so.1" anymore
 else(WIN32)
     #Volk resolves external symbols like vkCreateWin32SurfaceKHR since we don't use "vulkan-1.lib"
     target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
@@ -203,6 +205,10 @@ target_link_libraries(${APP_NAME}
     BulletCollision 
     LinearMath
 )
+
+if(LINUX)
+	target_link_libraries(imgui PRIVATE SDL2::SDL2)
+endif()
 
 #our bin is built inside Bin dir regardless of build type
 set_target_properties(${APP_NAME} PROPERTIES

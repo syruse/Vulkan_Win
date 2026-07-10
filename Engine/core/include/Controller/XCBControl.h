@@ -2,17 +2,13 @@
 
 #ifdef __linux__
 
-#include <xcb/xcb.h>
+#include <SDL2/SDL.h>
 #include "IControl.h"
-#include <volk.h>
 
 class XCBControl : public IControl {
 public:
-    static constexpr uint32_t MASK = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_KEY_PRESS |
-                                     XCB_EVENT_MASK_RESIZE_REDIRECT | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-
     constexpr XCBControl(std::string_view appName, size_t width, size_t height)
-        : IControl(appName, width, height), m_pXCBConn(nullptr), m_pXCBScreen(nullptr) {
+        : IControl(appName, width, height) {
     }
 
     virtual ~XCBControl();
@@ -25,10 +21,11 @@ public:
 
     virtual WindowQueueMSG processWindowQueueMSGs() override;
 
+    virtual void imGuiNewFrame(VkCommandBuffer command_buffer) override;
+
 private:
-    xcb_connection_t* m_pXCBConn;
-    xcb_screen_t* m_pXCBScreen;
-    xcb_window_t m_xcbWindow{};
+    SDL_Window* m_window{nullptr};
+    bool m_isUiVisible{false};
     IControl::WindowQueueMSG m_windowQueueMsg{};
 };
 
