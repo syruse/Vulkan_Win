@@ -9,9 +9,11 @@ glm::vec3 _upDir = glm::vec3(0.0f, 1.0f, 0.0f);
 Camera::Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target)
     : m_Perstpective(perstective), mTarget(target) {
     mFromTargetToEye = eye - target;
+    mCurrentFromTargetToEye = mFromTargetToEye;
     mViewProj.view = glm::lookAt(eye, target, _upDir);
     mStartCameraRotation = glm::angleAxis(glm::radians(0.0f), _upDir);
     mEndCameraRotation = mStartCameraRotation;
+    mCurrentCameraRotation = mStartCameraRotation;
     resetPerspective(perstective);
 }
 
@@ -27,7 +29,6 @@ void Camera::resetPerspective(const Perstective& perstective) {
 }
 
 void Camera::update(float deltaTime, bool withSmoothTransition) {
-    static glm::quat interpolatedQuat{};
     static constexpr float ROTATION_DURATION_MS = 500.0f;
 
     if (withSmoothTransition) {
@@ -39,13 +40,13 @@ void Camera::update(float deltaTime, bool withSmoothTransition) {
     }
 
     // normalize the quaternion to prevent accumulation of numerical error
-    interpolatedQuat = glm::normalize(glm::mix(mStartCameraRotation, mEndCameraRotation, mInterpolationK));
+    mCurrentCameraRotation = glm::normalize(glm::mix(mStartCameraRotation, mEndCameraRotation, mInterpolationK));
 
     // Apply the rotation to the vector from the target to the camera.
     // (slerp ensures smooth angular velocity, stabilizing motion vectors)
-    glm::vec3 fromTargetToEye = interpolatedQuat * mFromTargetToEye;
+    mCurrentFromTargetToEye = mCurrentCameraRotation * mFromTargetToEye;
 
-    mViewProj.view = glm::lookAt(mTarget + fromTargetToEye, mTarget, _upDir);
+    mViewProj.view = glm::lookAt(mTarget + mCurrentFromTargetToEye, mTarget, _upDir);
 }
 
 void Camera::move(EDirection dir) {

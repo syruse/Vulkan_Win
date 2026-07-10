@@ -32,7 +32,7 @@ public:
     }
 
     glm::mat4 targetModelMat() {
-        return glm::translate(glm::mat4(1.0f), mTarget) * glm::mat4_cast(mEndCameraRotation);
+        return glm::translate(glm::mat4(1.0f), mTarget) * glm::mat4_cast(mCurrentCameraRotation);
     }
 
     const glm::vec3& targetPos() {
@@ -40,7 +40,7 @@ public:
     }
 
     glm::vec3 cameraPosition() {
-        return mTarget + mFromTargetToEye;
+        return mTarget + mCurrentFromTargetToEye;
     }
 
     bool isInterpolationFinished() {
@@ -57,5 +57,7 @@ private:
     ViewProj mViewProj{};
     glm::quat mStartCameraRotation{};
     glm::quat mEndCameraRotation{};
+    glm::quat mCurrentCameraRotation{};
+    glm::vec3 mCurrentFromTargetToEye{0.0f, 0.0f, 0.0f};
     float mInterpolationK{0.0f};
 };
