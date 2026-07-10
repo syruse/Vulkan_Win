@@ -1564,7 +1564,7 @@ bool VulkanRenderer::renderScene() {
     static auto endTime = std::chrono::high_resolution_clock::now();
     static float deltaTime = 0.0f;
 
-    mCamera.update(deltaTime, true);
+    mCamera.update(deltaTime, false);
 
     auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;

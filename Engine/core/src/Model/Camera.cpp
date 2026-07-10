@@ -28,19 +28,22 @@ void Camera::resetPerspective(const Perstective& perstective) {
 
 void Camera::update(float deltaTime, bool withSmoothTransition) {
     static glm::quat interpolatedQuat{};
+    static constexpr float ROTATION_DURATION_MS = 500.0f;
+
     if (withSmoothTransition) {
-        float kDelay = deltaTime / 33.3;  // camera updating for 30 fps
-        if (mInterpolationK < 1.0f) {
-            mInterpolationK += 0.01f * kDelay;
-        } else {
-            mInterpolationK = 1.0f;
-        }
+        // stable rotation speed at any frame rate, no dependency on deltaTime scale
+        float deltaK = (ROTATION_DURATION_MS > 0.0f) ? (deltaTime / ROTATION_DURATION_MS) : 1.0f;
+        mInterpolationK = std::min(1.0f, mInterpolationK + deltaK);
     } else {
         mInterpolationK = 1.0f;
     }
 
-    interpolatedQuat = glm::mix(mStartCameraRotation, mEndCameraRotation, mInterpolationK);
-    glm::vec3 fromTargetToEye = (-1.0f * interpolatedQuat) * mFromTargetToEye;
+    // normalize the quaternion to prevent accumulation of numerical error
+    interpolatedQuat = glm::normalize(glm::mix(mStartCameraRotation, mEndCameraRotation, mInterpolationK));
+
+    // Apply the rotation to the vector from the target to the camera.
+    // (slerp ensures smooth angular velocity, stabilizing motion vectors)
+    glm::vec3 fromTargetToEye = interpolatedQuat * mFromTargetToEye;
 
     mViewProj.view = glm::lookAt(mTarget + fromTargetToEye, mTarget, _upDir);
 }
