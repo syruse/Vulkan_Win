@@ -29,6 +29,9 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
         m_pipelineCreatorFootprint->increaseUsageCounter();
     }
 
+    m_instancesBuffer.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+    m_instancesBufferMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+
     assert(!m_lowPolyMesh ||
            (m_lowPolyMesh && !m_lowPolyMesh->m_lowPolyMesh) &&
         "LOD error: lowPolyMesh cannot have its own nested lowPolyMesh!");
@@ -53,7 +56,7 @@ I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactor
 }
 
 void I3DModel::sortInstances(uint32_t currentImage, const glm::mat4& viewProj, const glm::vec3& camPos, float z_far) {
-    assert(currentImage < VulkanState::MAX_FRAMES_IN_FLIGHT);
+    assert(currentImage < m_vkState._swapchainImageCount);
     if (m_instances.size() <= 1u) {
         // nothing to update
         m_activeInstances = m_instances;

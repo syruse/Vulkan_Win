@@ -83,7 +83,7 @@ public:
         std::weak_ptr<TextureFactory::Texture> texture;
         VkSampler sampler;
         VkDescriptorSetLayout descriptorSetLayout;
-        std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
+        std::vector<VkDescriptorSet> descriptorSets{};
     };
 
     struct Vertex : VertexData {
@@ -245,8 +245,8 @@ protected:
     VkDeviceMemory m_generalBufferMemory{nullptr};
     std::vector<Instance> m_instances{};
     std::vector<Instance> m_activeInstances{};
-    std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBuffer{};
-    std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> m_instancesBufferMemory{};
+    std::vector<VkBuffer> m_instancesBuffer{};
+    std::vector<VkDeviceMemory> m_instancesBufferMemory{};
 
 private:
     std::vector<std::vector<Instance>> m_activeInstancesTemp{ACTIVE_POOL_THREADS};

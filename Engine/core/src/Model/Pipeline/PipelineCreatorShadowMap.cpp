@@ -135,17 +135,17 @@ void PipelineCreatorShadowMap::createDescriptorSetLayout() {
 void PipelineCreatorShadowMap::createDescriptorPool() {
     VkDescriptorPoolSize uboPoolSize{};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    uboPoolSize.descriptorCount = m_vkState._swapchainImageCount;
 
     VkDescriptorPoolSize dUboPoolSize{};
     dUboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    dUboPoolSize.descriptorCount = static_cast<uint32_t>(m_vkState._swapChain.images.size());
+    dUboPoolSize.descriptorCount = m_vkState._swapchainImageCount;
 
     std::array<VkDescriptorPoolSize, 2> poolSize{uboPoolSize, dUboPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    inputPoolCreateInfo.maxSets = m_vkState._swapChain.images.size();
+    inputPoolCreateInfo.maxSets = m_vkState._swapchainImageCount;
     inputPoolCreateInfo.poolSizeCount = poolSize.size();
     inputPoolCreateInfo.pPoolSizes = poolSize.data();
 
@@ -156,20 +156,21 @@ void PipelineCreatorShadowMap::createDescriptorPool() {
 
 void PipelineCreatorShadowMap::recreateDescriptors() {
     auto descriptorSetLayout = *m_descriptorSetLayout.get();
-    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, descriptorSetLayout);
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setAllocInfo.descriptorPool = m_descriptorPool;
-    setAllocInfo.descriptorSetCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    setAllocInfo.descriptorSetCount = m_vkState._swapchainImageCount;
     setAllocInfo.pSetLayouts = layouts.data();
+    m_descriptorSets.resize(m_vkState._swapchainImageCount);
 
     // Allocate Descriptor Sets
     VkResult result = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, m_descriptorSets.data());
     CHECK_VULKAN_ERROR("Failed to allocate Input Attachment Descriptor Sets %d", result);
 
     // Update each descriptor set with input attachment
-    for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         // UBO DESCRIPTOR
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = m_vkState._ubo.buffers[i];

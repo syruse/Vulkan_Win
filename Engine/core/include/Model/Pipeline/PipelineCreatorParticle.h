@@ -12,7 +12,7 @@ public:
         VkSampler samplerGradient;
         Particle::UBOParticle* uboParticle{nullptr};
         VkDescriptorSetLayout descriptorSetLayout;
-        std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT> descriptorSets{};
+        std::vector<VkDescriptorSet> descriptorSets{};
     };
 
     PipelineCreatorParticle(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,

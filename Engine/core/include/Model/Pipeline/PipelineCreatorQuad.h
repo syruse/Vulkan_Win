@@ -5,7 +5,7 @@
 class PipelineCreatorQuad : public PipelineCreatorBase {
 public:
     enum class BLEND { NONE, SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA, SRC_ONE_AND_DST_ONE };
-    using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
+    using descriptorSets = std::vector<VkDescriptorSet>;
 
     PipelineCreatorQuad(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                         std::string_view fragShader, bool isDepthNeeded = false, bool isGPassNeeded = false,

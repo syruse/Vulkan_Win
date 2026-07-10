@@ -53,8 +53,12 @@ void MD5Model::init() {
         }
         // CPU based approach is using separate buffers for instances
         {
+            assert(m_vkState._swapchainImageCount > 0u);
+            m_instancesBuffer.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+            m_instancesBufferMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+
             const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
-            for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; i++) {
+            for (size_t i = 0u; i < m_vkState._swapchainImageCount; i++) {
                 Utils::VulkanCreateBuffer(p_device, m_vkState._core.getPhysDevice(), instancesSize,
                                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,

@@ -83,7 +83,7 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
 
 void PipelineCreatorParticle::createDescriptorPool() {
     assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
-    uint32_t descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount;
+    uint32_t descriptorCount = m_vkState._swapchainImageCount * m_maxObjectsCount;
 
     VkDescriptorPoolSize uboPoolSize{};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -123,12 +123,12 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
 
     ++m_curMaterialId;
 
-    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
+    std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, *m_descriptorSetLayout.get());
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setAllocInfo.descriptorPool = m_descriptorPool;
-    setAllocInfo.descriptorSetCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    setAllocInfo.descriptorSetCount = m_vkState._swapchainImageCount;
     setAllocInfo.pSetLayouts = layouts.data();
 
     Material material;
@@ -138,6 +138,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
     material.samplerGradient = gradientSampler;
     material.uboParticle = uboParticle;
     material.descriptorSetLayout = *m_descriptorSetLayout.get();
+    material.descriptorSets.resize(m_vkState._swapchainImageCount);
 
     // Allocate Descriptor Sets
     auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, material.descriptorSets.data());
@@ -149,7 +150,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
     m_descriptorSets.try_emplace(m_curMaterialId, material);
 
     // Update each descriptor set with input attachment
-    for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         // UBO DESCRIPTOR
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = m_vkState._ubo.buffers[i];

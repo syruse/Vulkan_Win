@@ -279,14 +279,14 @@ VulkanRenderer::~VulkanRenderer() {
 
     _aligned_free(mp_modelTransferSpace);
 
-    for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0u; i < _swapchainImageCount; i++) {
         vkDestroyBuffer(_core.getDevice(), _ubo.buffers[i], nullptr);
         vkFreeMemory(_core.getDevice(), _ubo.buffersMemory[i], nullptr);
         vkDestroyBuffer(_core.getDevice(), _dynamicUbo.buffers[i], nullptr);
         vkFreeMemory(_core.getDevice(), _dynamicUbo.buffersMemory[i], nullptr);
     }
 
-    for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0u; i < _swapchainImageCount; ++i) {
         vkDestroySemaphore(_core.getDevice(), m_presentCompleteSem[i], nullptr);
         vkDestroySemaphore(_core.getDevice(), m_renderCompleteSem[i], nullptr);
         vkDestroyFence(_core.getDevice(), m_drawFences[i], nullptr);
@@ -301,9 +301,8 @@ void VulkanRenderer::cleanupSwapChain() {
 
     // Clear tracking of images-in-flight to avoid stale fences pointing to destroyed resources
     m_imagesInFlight.clear();
-    m_swapchainImageCount = 0;
 
-    vkFreeCommandBuffers(_core.getDevice(), _cmdBufPool, static_cast<uint32_t>(_cmdBufs.size()), _cmdBufs.data());
+    vkFreeCommandBuffers(_core.getDevice(), _cmdBufPool, _swapchainImageCount, _cmdBufs.data());
 
     vkDestroyImageView(_core.getDevice(), _depthBuffer.depthImageView, nullptr);
     vkDestroyImage(_core.getDevice(), _depthBuffer.depthImage, nullptr);
@@ -317,7 +316,7 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyImage(_core.getDevice(), _footprintBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _footprintBuffer.depthImageMemory, nullptr);
 
-    for (size_t i = 0u; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0u; i < static_cast<size_t>(_swapchainImageCount); ++i) {
         vkDestroyImageView(_core.getDevice(), _colorBuffer.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _colorBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _colorBuffer.colorBufferImageMemory[i], nullptr);
@@ -423,6 +422,8 @@ void VulkanRenderer::cleanupSwapChain() {
     }
     vkDestroyDescriptorPool(_core.getDevice(), mImguiPool, nullptr);
     ImGui_ImplVulkan_Shutdown();
+
+    _swapchainImageCount = 0u;
 }
 
 void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
@@ -778,16 +779,18 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
 
     assert(SurfaceCaps.currentExtent.width != -1);
 
-    // maxImageCount: value of 0 means that there is no limit on the number of images
-    if (SurfaceCaps.maxImageCount) {
-        assert(MAX_FRAMES_IN_FLIGHT <= SurfaceCaps.maxImageCount);
+    // Align desiredSwapchainImageCount with frames-in-flight surface capabilities.
+    uint32_t desiredSwapchainImageCount = REQUESTED_FRAMES_IN_FLIGHT;
+    desiredSwapchainImageCount = std::max<uint32_t>(desiredSwapchainImageCount, SurfaceCaps.minImageCount);
+    if (SurfaceCaps.maxImageCount != 0u) {
+        desiredSwapchainImageCount = std::min<uint32_t>(desiredSwapchainImageCount, SurfaceCaps.maxImageCount);
     }
 
     VkSwapchainCreateInfoKHR SwapChainCreateInfo = {};
 
     SwapChainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     SwapChainCreateInfo.surface = _core.getSurface();
-    SwapChainCreateInfo.minImageCount = MAX_FRAMES_IN_FLIGHT;
+    SwapChainCreateInfo.minImageCount = desiredSwapchainImageCount;
     SwapChainCreateInfo.imageFormat = _core.getSurfaceFormat().format;
     SwapChainCreateInfo.imageColorSpace = _core.getSurfaceFormat().colorSpace;
     SwapChainCreateInfo.imageExtent = SurfaceCaps.currentExtent;
@@ -832,26 +835,79 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, nullptr);
 #endif
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
-    assert(MAX_FRAMES_IN_FLIGHT <= NumSwapChainImages);
     Utils::printLog(INFO_PARAM, "Available number of presentable images ", NumSwapChainImages);
+
+    _swapchainImageCount = NumSwapChainImages;
+
+    _swapChain.images.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _swapChain.views.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _cmdBufs.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _ubo.buffers.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _ubo.buffersMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _dynamicUbo.buffers.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _dynamicUbo.buffersMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+
+    _colorBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _colorBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _colorBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.normal.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.normal.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.normal.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.color.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.color.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _gPassBuffer.color.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _ssaoBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _ssaoBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _ssaoBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _viewSpaceBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _viewSpaceBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _viewSpaceBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _motionVectorsBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _motionVectorsBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _motionVectorsBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _shadingBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _shadingBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _shadingBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _dlssOutputBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _dlssOutputBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _dlssOutputBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    for (auto& buf : _bloomBuffer) {
+        buf.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+        buf.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+        buf.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    }
+
+    m_presentCompleteSem.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_renderCompleteSem.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_drawFences.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbs.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsFXAA.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsUIOverlay.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsShadowMap.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsSemiTrans.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsXBlur.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsYBlur.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsBloom.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsDepth.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsFootprint.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    m_fbsSSAOblur.assign(_swapchainImageCount, VK_NULL_HANDLE);
 #if defined(USE_FSR) && USE_FSR
     if (mFSRSwapChainContext) {
         res = mFSRReplacementFunctions.pOutGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages,
-                                                                 &(_swapChain.images[0]));
+                                                                 _swapChain.images.data());
     } else {
-        res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
+        res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, _swapChain.images.data());
     }
 #else
-    res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, &(_swapChain.images[0]));
+    res = vkGetSwapchainImagesKHR(_core.getDevice(), _swapChain.handle, &NumSwapChainImages, _swapChain.images.data());
 #endif
     CHECK_VULKAN_ERROR("vkGetSwapchainImagesKHR error %d\n", res);
 
     // initialize image-in-flight tracking
-    m_swapchainImageCount = NumSwapChainImages;
-    m_imagesInFlight.assign(static_cast<size_t>(m_swapchainImageCount), VK_NULL_HANDLE);
+    m_imagesInFlight.assign(static_cast<size_t>(_swapchainImageCount), VK_NULL_HANDLE);
 
 #if defined(USE_DLSS) && USE_DLSS
-    m_swapchainImageNeedsGeneralTransition.fill(false);
+    m_swapchainImageNeedsGeneralTransition.assign(_swapchainImageCount, false);
 #endif
 
     return SwapChainCreateInfo;
@@ -868,7 +924,7 @@ void VulkanRenderer::createUniformBuffers() {
      * We should have multiple buffers, because multiple frames may be in flight at the same time and
      * we don't want to update the buffer in preparation of the next frame while a previous one is still reading from it!
      */
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < _swapchainImageCount; i++) {
         Utils::VulkanCreateBuffer(_core.getDevice(), _core.getPhysDevice(), bufferSize,
                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, _ubo.buffers[i],
@@ -898,9 +954,9 @@ void VulkanRenderer::createCommandBuffer() {
     cmdBufAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdBufAllocInfo.commandPool = _cmdBufPool;
     cmdBufAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdBufAllocInfo.commandBufferCount = static_cast<uint32_t>(_swapChain.images.size());
+    cmdBufAllocInfo.commandBufferCount = _swapchainImageCount;
 
-    VkResult res = vkAllocateCommandBuffers(_core.getDevice(), &cmdBufAllocInfo, &_cmdBufs[0]);
+    VkResult res = vkAllocateCommandBuffers(_core.getDevice(), &cmdBufAllocInfo, _cmdBufs.data());
     CHECK_VULKAN_ERROR("vkAllocateCommandBuffers error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Created command buffers");
@@ -1409,7 +1465,7 @@ void VulkanRenderer::createColorBufferImage() {
     _shadingBuffer.colorFormat = _ssaoBuffer.colorFormat;
     _dlssOutputBuffer.colorFormat = _colorBuffer.colorFormat;
 
-    for (size_t i = 0; i < _swapChain.images.size(); ++i) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); ++i) {
         // By keeping G Pass buffers on-tile only (VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT), we can save a lot of bandwidth and
         // memory. we don't need to write the g-buffer data out to memory let's leave everything in tile memory,
         // do the lighting pass within the tile (you read them as input attachments), and then forget them
@@ -1703,7 +1759,7 @@ bool VulkanRenderer::renderScene() {
     }
 
     // Advance frame index
-    m_currentFrame = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+    m_currentFrame = ++m_currentFrame % _swapchainImageCount;
 
     endTime = std::chrono::high_resolution_clock::now();
     deltaTime = std::chrono::duration<float, std::chrono::milliseconds::period>(endTime - startTime).count();
@@ -2550,7 +2606,7 @@ void VulkanRenderer::createRenderPass() {
 
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 12> attachments = {_colorBuffer.colorBufferImageView[i],
                                                    _gPassBuffer.normal.colorBufferImageView[i],
                                                    _gPassBuffer.color.colorBufferImageView[i],
@@ -2583,7 +2639,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss x blurring for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[1].colorBufferImageView[i],
                                                   _bloomBuffer[0].colorBufferImageView[i]};
 
@@ -2602,7 +2658,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO Gauss y blurring for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 2> attachments = {_bloomBuffer[0].colorBufferImageView[i],
                                                   _bloomBuffer[1].colorBufferImageView[i]};
 
@@ -2621,7 +2677,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO for bloom effect
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _bloomBuffer[0].colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2639,7 +2695,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO FXAA
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         if (Utils::VulkanCreateImageView(_core.getDevice(), _swapChain.images[i], _core.getSurfaceFormat().format,
                                          VK_IMAGE_ASPECT_COLOR_BIT, _swapChain.views[i]) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create texture image view!");
@@ -2662,7 +2718,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO UI overlay
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 1> attachments = {_swapChain.views[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2680,7 +2736,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 3> attachments = {
             _colorBuffer.colorBufferImageView[i], _depthBuffer.depthImageView, _motionVectorsBuffer.colorBufferImageView[i]};
 
@@ -2699,7 +2755,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO SHADOW MAP
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         VkImageView attachment = _shadowMapBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2717,7 +2773,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO DEPTH PASS AND VIEW SPACE POS (for SSAO) + MOTION VECTORS BUF (for DLAA)
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 3> attachments = {_depthBuffer.depthImageView, _viewSpaceBuffer.colorBufferImageView[i],
             _motionVectorsBuffer.colorBufferImageView[i]};
 
@@ -2736,7 +2792,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FOOTPRINT PASS (for tire tracks)
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         VkImageView attachment = _footprintBuffer.depthImageView;
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2754,7 +2810,7 @@ void VulkanRenderer::createFramebuffer() {
 
     //-------------------------------------------------------//
     // FBO for SSAO blurring and applying
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         std::array<VkImageView, 2> attachments = {_colorBuffer.colorBufferImageView[i], _shadingBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
@@ -2783,7 +2839,7 @@ void VulkanRenderer::createSemaphores() {
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < _swapChain.images.size(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
         if (vkCreateSemaphore(_core.getDevice(), &semaphoreCreateInfo, nullptr, &m_presentCompleteSem[i]) != VK_SUCCESS ||
             vkCreateSemaphore(_core.getDevice(), &semaphoreCreateInfo, nullptr, &m_renderCompleteSem[i]) != VK_SUCCESS ||
             vkCreateFence(_core.getDevice(), &fenceCreateInfo, nullptr, &m_drawFences[i]) != VK_SUCCESS) {
@@ -2851,8 +2907,8 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
     init_info.Device = _core.getDevice();
     init_info.Queue = _queue;
     init_info.DescriptorPool = mImguiPool;
-    init_info.MinImageCount = static_cast<uint32_t>(_swapChain.images.size());
-    init_info.ImageCount = static_cast<uint32_t>(_swapChain.images.size());
+    init_info.MinImageCount = _swapchainImageCount;
+    init_info.ImageCount = _swapchainImageCount;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.RenderPass = m_renderPassUIOverlay;
 

@@ -7,7 +7,7 @@
 #include "Utils.h"
 
 Particle::~Particle() {
-    for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0u; i < m_vkState._swapchainImageCount; i++) {
         vkDestroyBuffer(m_vkState._core.getDevice(), m_uboParticle.buffers[i], nullptr);
         vkFreeMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i], nullptr);
     }
@@ -96,9 +96,11 @@ void Particle::init() {
     assert(!m_textureFileName.empty());
 
     m_uboParticle.params.mode = static_cast<int32_t>(m_mode);
+    m_uboParticle.buffers.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+    m_uboParticle.buffersMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
     VkDeviceSize uboBufSize = sizeof(UBOParticle::Params);
     void* data;
-    for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         Utils::VulkanCreateBuffer(m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), uboBufSize,
                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,

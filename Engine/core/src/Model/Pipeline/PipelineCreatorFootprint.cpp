@@ -118,7 +118,7 @@ void PipelineCreatorFootprint::createDescriptorSetLayout() {
 void PipelineCreatorFootprint::createDescriptorPool() {
     assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
     // Type of descriptors + how many Descriptors needed to be allocated in pool
-    uint32_t descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT * m_maxObjectsCount *
+    uint32_t descriptorCount = m_vkState._swapchainImageCount * m_maxObjectsCount *
         4;  // Maximum number of Descriptor Sets that can be created from pool (it's because 3d model may consist of 4 wheels at most)
 
     VkDescriptorPoolSize uboPoolSize{};
@@ -157,17 +157,18 @@ uint32_t PipelineCreatorFootprint::createDescriptor(std::weak_ptr<TextureFactory
 
     m_curMaterialId++;
 
-    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
+    std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, *m_descriptorSetLayout.get());
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    allocInfo.descriptorSetCount = m_vkState._swapchainImageCount;
     allocInfo.pSetLayouts = layouts.data();
 
     I3DModel::Material material;
     material.sampler = sampler;
     material.texture = texture;
     material.descriptorSetLayout = *m_descriptorSetLayout.get();
+    material.descriptorSets.resize(m_vkState._swapchainImageCount);
 
     auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &allocInfo, material.descriptorSets.data());
     if (status != VK_SUCCESS) {
@@ -177,7 +178,7 @@ uint32_t PipelineCreatorFootprint::createDescriptor(std::weak_ptr<TextureFactory
     }
 
     // connect the descriptors with buffer when binding
-    for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         // UBO ViewProj DESCRIPTOR
         VkDescriptorBufferInfo UBOBufferInfo{};
         UBOBufferInfo.buffer = m_vkState._ubo.buffers[i];

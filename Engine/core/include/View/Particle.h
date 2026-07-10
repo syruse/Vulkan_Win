@@ -34,8 +34,8 @@ public:
             alignas(16) glm::vec4 velocity{0.0f};
             alignas(16) int32_t mode{static_cast<int32_t>(ParticleMode::DEFAULT)};
         };
-        std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> buffers{};
-        std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> buffersMemory{};
+        std::vector<VkBuffer> buffers{};
+        std::vector<VkDeviceMemory> buffersMemory{};
         Params params;
     };
 

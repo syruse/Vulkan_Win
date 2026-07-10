@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <array>
+#include <vector>
 #include "VulkanCore.h"
 
 #ifdef _WIN32
@@ -21,16 +22,17 @@
 
 struct VulkanState {
     /** Using double buffering and vsync locks rendering to an integer fraction of the vsync rate.
-        anyway the driver may execute some final operations before completly releasing subsequant buffer
-        to avoid wasting time we can use really idle buffer by triple buffering involvement
+    anyway the driver may execute some final operations before completly releasing subsequant buffer
+    to avoid wasting time we can use really idle buffer by triple buffering involvement
     */
     /** triple buffering maximize performance but we can run into cpu stuttering if gpu is not able to process 3 frames in time
         5 is available on most platforms (WIN, Linux, Android) in this case we don't need gamble with VK_PRESENT_MODE_MAILBOX_KHR
         which evicts pending frame from the gpu presenting queue and doesn't force cpu to wait available one
-        and the same time it provides swapImage index in random order but our logic expects incremental m_currentFrame 
+        and the same time it provides swapImage index in random order but our logic expects incremental m_currentFrame
         for available semaphores and fences it may cause unexpected issues
+        Also 5 introduce some latency if it's not VK_PRESENT_MODE_MAILBOX_KHR
     */
-    static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 5;
+    static constexpr uint32_t REQUESTED_FRAMES_IN_FLIGHT = 3;
 
     static constexpr VkShaderStageFlags PUSH_CONSTANT_STAGE_FLAGS =
         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
@@ -74,9 +76,9 @@ struct VulkanState {
 
     struct ColorBuffer {
         VkFormat colorFormat{VK_FORMAT_UNDEFINED};
-        std::array<VkImage, MAX_FRAMES_IN_FLIGHT> colorBufferImage{nullptr};
-        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> colorBufferImageMemory{nullptr};
-        std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> colorBufferImageView{nullptr};
+        std::vector<VkImage> colorBufferImage{};
+        std::vector<VkDeviceMemory> colorBufferImageMemory{};
+        std::vector<VkImageView> colorBufferImageView{};
     };
 
     struct GPassBuffer {
@@ -87,18 +89,18 @@ struct VulkanState {
 
     struct SwapChain {
         VkSwapchainKHR handle{nullptr};
-        std::array<VkImage, MAX_FRAMES_IN_FLIGHT> images{};
-        std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> views{};
+        std::vector<VkImage> images{};
+        std::vector<VkImageView> views{};
     };
 
     struct UBO {
-        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> buffers{};
-        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> buffersMemory{};
+        std::vector<VkBuffer> buffers{};
+        std::vector<VkDeviceMemory> buffersMemory{};
     };
 
     struct DynamicUBO {
-        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> buffers{};
-        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> buffersMemory{};
+        std::vector<VkBuffer> buffers{};
+        std::vector<VkDeviceMemory> buffersMemory{};
     };
 
     VulkanState(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth = 0u, uint16_t offscreenHeight = 0u);
@@ -111,10 +113,11 @@ struct VulkanState {
     uint16_t _footPrintWidthAndHeight{8000u};
     uint16_t _shadowMapWidthAndHeight{8000u};
     VulkanCore _core{nullptr};
+    uint32_t _swapchainImageCount{0u};
     SwapChain _swapChain{};
     VkQueue _queue{nullptr};
     VkCommandPool _cmdBufPool{nullptr};
-    std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> _cmdBufs{};
+    std::vector<VkCommandBuffer> _cmdBufs{};
     UBO _ubo{};
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};

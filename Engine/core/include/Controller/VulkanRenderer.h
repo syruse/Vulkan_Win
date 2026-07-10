@@ -88,48 +88,47 @@ private:
     std::vector<I3DModel::InteractionImpactAnimation> m_semiTransparentAnimations{TREES_COUNT};
     std::vector<std::unique_ptr<I3DModel>> m_semiTransparentModels{};
 
-    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_presentCompleteSem{nullptr};
-    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_renderCompleteSem{nullptr};
-    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_drawFences{};
+    std::vector<VkSemaphore> m_presentCompleteSem{};
+    std::vector<VkSemaphore> m_renderCompleteSem{};
+    std::vector<VkFence> m_drawFences{};
 
     // fence per swapchain image tracking
     std::vector<VkFence> m_imagesInFlight;
-    uint32_t m_swapchainImageCount{0};
 
     // intermediate buffer being served for transferring data to gpu memory
     Model* mp_modelTransferSpace{nullptr};
 
     // the main renderpass based on G-Pass
     VkRenderPass m_renderPass{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbs{};
+    std::vector<VkFramebuffer> m_fbs{};
 
     VkRenderPass m_renderPassFXAA{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFXAA{nullptr};
+    std::vector<VkFramebuffer> m_fbsFXAA{};
 
     VkRenderPass m_renderPassUIOverlay{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsUIOverlay{nullptr};
+    std::vector<VkFramebuffer> m_fbsUIOverlay{};
 
     VkRenderPass m_renderPassShadowMap{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsShadowMap{nullptr};
+    std::vector<VkFramebuffer> m_fbsShadowMap{};
     glm::mat4 m_lightViewProj{1.0f};
 
     VkRenderPass m_renderPassSemiTrans{nullptr};  // semi-transparent objects will be drawn at the end due to g-pass
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSemiTrans{nullptr};
+    std::vector<VkFramebuffer> m_fbsSemiTrans{};
 
     VkRenderPass m_renderPassXBlur{nullptr};  // Gauss x blurring for bloom effect
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsXBlur{nullptr};
+    std::vector<VkFramebuffer> m_fbsXBlur{};
 
     VkRenderPass m_renderPassYBlur{nullptr};  // Gauss y blurring for bloom effect
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsYBlur{nullptr};
+    std::vector<VkFramebuffer> m_fbsYBlur{};
 
     VkRenderPass m_renderPassBloom{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsBloom{nullptr};
+    std::vector<VkFramebuffer> m_fbsBloom{};
 
     VkRenderPass m_renderPassDepth{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsDepth{nullptr};
+    std::vector<VkFramebuffer> m_fbsDepth{};
 
     VkRenderPass m_renderPassFootprint{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsFootprint{nullptr};
+    std::vector<VkFramebuffer> m_fbsFootprint{};
     glm::mat4 m_footPrintViewProj{1.0f};
 
     /** SSAO blurring & applying (for blurring we need the access to neibor pixels hence we have one passthrough _shadingBuffer
@@ -137,7 +136,7 @@ private:
         keeping two buffers (depth and normals) needed for SSAO creation in separate non subpass aproach
     */
     VkRenderPass m_renderPassSSAOblur{nullptr};
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> m_fbsSSAOblur{nullptr};
+    std::vector<VkFramebuffer> m_fbsSSAOblur{};
 
     VkDescriptorPool mImguiPool;
 
@@ -151,7 +150,7 @@ private:
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};
-    std::array<bool, MAX_FRAMES_IN_FLIGHT> m_swapchainImageNeedsGeneralTransition{};
+    std::vector<bool> m_swapchainImageNeedsGeneralTransition{};
 #endif
 #if defined(USE_FSR) && USE_FSR
     ffx::Context mFSRSwapChainContext{nullptr};

@@ -10,8 +10,8 @@ class PipelineCreatorSSAO : public PipelineCreatorQuad {
         struct Params {
             glm::vec4 samples[kernelSize];
         };
-        std::array<VkBuffer, VulkanState::MAX_FRAMES_IN_FLIGHT> buffers{};
-        std::array<VkDeviceMemory, VulkanState::MAX_FRAMES_IN_FLIGHT> buffersMemory{};
+        std::vector<VkBuffer> buffers{};
+        std::vector<VkDeviceMemory> buffersMemory{};
         Params params;
     };
 

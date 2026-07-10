@@ -4,7 +4,7 @@
 
 class PipelineCreatorShadowMap : public PipelineCreatorBase {
 public:
-    using descriptorSets = std::array<VkDescriptorSet, VulkanState::MAX_FRAMES_IN_FLIGHT>;
+    using descriptorSets = std::vector<VkDescriptorSet>;
 
     PipelineCreatorShadowMap(const VulkanState::DepthBuffer& depthBuffer, const VulkanState& vkState, VkRenderPass& renderPass,
                              std::string_view vertShader, std::string_view fragShader, bool motionVectors = false, uint32_t subpass = 0u,

@@ -9,7 +9,7 @@ PipelineCreatorSSAO::PipelineCreatorSSAO(const VulkanState& vkState, VkRenderPas
 }
 
 PipelineCreatorSSAO::~PipelineCreatorSSAO() {
-    for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         vkDestroyBuffer(m_vkState._core.getDevice(), m_ubo.buffers[i], nullptr);
         vkFreeMemory(m_vkState._core.getDevice(), m_ubo.buffersMemory[i], nullptr);
     }
@@ -31,6 +31,8 @@ void PipelineCreatorSSAO::createPipeline() {
 
     // ssaoKernel is semisphere with vectors for sampling
     {
+        m_ubo.buffers.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+        m_ubo.buffersMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
         for (uint32_t i = 0u; i < UBOSemiSpheraKernel::kernelSize; ++i) {
             glm::vec4 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator),
                              0.0f);
@@ -54,7 +56,7 @@ void PipelineCreatorSSAO::createPipeline() {
         memcpy(data, &m_ubo.params, (size_t)uboBufSize);
         vkUnmapMemory(m_vkState._core.getDevice(), stagingBufferMemory);
 
-        for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+        for (size_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
             Utils::VulkanCreateBuffer(m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), uboBufSize,
                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_ubo.buffers[i], m_ubo.buffersMemory[i]);
@@ -221,7 +223,7 @@ void PipelineCreatorSSAO::createDescriptorSetLayout() {
 
 void PipelineCreatorSSAO::createDescriptorPool() {
     assert(m_descriptorPool == nullptr);  // avoid multiple alocation of the same pool
-    uint32_t descriptorCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    uint32_t descriptorCount = m_vkState._swapchainImageCount;
 
     VkDescriptorPoolSize uboPoolSize{};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -263,13 +265,14 @@ void PipelineCreatorSSAO::recreateDescriptors() {
     assert(m_descriptorSetLayout);
     assert(m_noiseTexture.m_textureImageView);
 
-    std::vector<VkDescriptorSetLayout> layouts(VulkanState::MAX_FRAMES_IN_FLIGHT, *m_descriptorSetLayout.get());
+    std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, *m_descriptorSetLayout.get());
     // Input Attachment Descriptor Set Allocation Info
     VkDescriptorSetAllocateInfo setAllocInfo = {};
     setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setAllocInfo.descriptorPool = m_descriptorPool;
-    setAllocInfo.descriptorSetCount = VulkanState::MAX_FRAMES_IN_FLIGHT;
+    setAllocInfo.descriptorSetCount = m_vkState._swapchainImageCount;
     setAllocInfo.pSetLayouts = layouts.data();
+    m_descriptorSets.resize(m_vkState._swapchainImageCount);
 
     // Allocate Descriptor Sets
     auto status = vkAllocateDescriptorSets(m_vkState._core.getDevice(), &setAllocInfo, m_descriptorSets.data());
@@ -279,7 +282,7 @@ void PipelineCreatorSSAO::recreateDescriptors() {
     }
 
     // Update each descriptor set with input attachment
-    for (uint32_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
         // G Normal
         VkDescriptorImageInfo imageGNormalInfo{};
         imageGNormalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

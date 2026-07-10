@@ -34,10 +34,14 @@ void ObjModel::init() {
     Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
     {
+        assert(m_vkState._swapchainImageCount > 0u);
+        m_instancesBuffer.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+        m_instancesBufferMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+
         m_instancesBufferOffset = 0u;  // separete buffer for instances instead common buffer
         const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
         const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
-        for (size_t i = 0u; i < VulkanState::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0u; i < m_vkState._swapchainImageCount; i++) {
             Utils::VulkanCreateBuffer(p_device, m_vkState._core.getPhysDevice(), bufferSize,
                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
