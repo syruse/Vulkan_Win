@@ -188,18 +188,19 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
 
-    // Initialize Bullet
-    btDefaultCollisionConfiguration* config = new btDefaultCollisionConfiguration();
-    btCollisionDispatcher* dispatcher = new btCollisionDispatcher(config);
-    btBroadphaseInterface* broadphase = new btDbvtBroadphase();
-    btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver();
-    btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, config);
-    dynamicsWorld->setGravity(btVector3(0, -9.81, 0));
+    // Initialize Bullet physics world used to drive transforms each frame.
+    m_btCollisionConfig = new btDefaultCollisionConfiguration();
+    m_btDispatcher = new btCollisionDispatcher(m_btCollisionConfig);
+    m_btBroadphase = new btDbvtBroadphase();
+    m_btSolver = new btSequentialImpulseConstraintSolver();
+    m_btDynamicsWorld = new btDiscreteDynamicsWorld(m_btDispatcher, m_btBroadphase, m_btSolver, m_btCollisionConfig);
+    m_btDynamicsWorld->setGravity(btVector3(0, -9.81f, 0));
 
     // Creation of static infinite plane at Y = 0.
     {
         // Normal vector of the plane (0, 1, 0) and Distance from origin (0)
         btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0, 1, 0), 0);
+        m_btCollisionShapes.push_back(groundShape);
         // For static objects, we can skip the MotionState and use a mass of 0.
         // The local inertia for a static plane is always (0, 0, 0).
         btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0,                  // Mass
@@ -207,60 +208,84 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                                               groundShape,        // Collision Shape
                                                               btVector3(0, 0, 0)  // Local Inertia
         );
-        btRigidBody* groundBody = new btRigidBody(groundRBInfo);
-        dynamicsWorld->addRigidBody(groundBody);
+        m_btGroundBody = new btRigidBody(groundRBInfo);
+        m_btDynamicsWorld->addRigidBody(m_btGroundBody);
     }
 
-    // Panzer (main vechicle)
+    // Tree bodies: one kinematic rigid body per tree instance.
+    // The trees stand still and are animated manually when the tank gets close.
     {
-        btCollisionShape* boxShape = new btBoxShape(btVector3(1, 1, 1));
-        // Create the body with mass (dynamic)
-        btScalar mass = 100.0f;
-        btVector3 localInertia(0, 0, 0);
-        boxShape->calculateLocalInertia(mass, localInertia);
-        btTransform startTransform;
-        startTransform.setIdentity();
-        startTransform.setOrigin(btVector3(0, 0, 0));  // TODO
+        btCollisionShape* treeShape =
+            new btCylinderShape(btVector3(2.0f, m_btTreeHalfHeight, 2.0f));
+        m_btCollisionShapes.push_back(treeShape);
 
-        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
-        btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, boxShape, localInertia);
-        btRigidBody* movingBox = new btRigidBody(rbInfo);
-        // Set the velocity (x=0, y=0, z=5.0)
-        // This will make the box slide or fly along the Z axis at 5 units/sec
-        movingBox->setLinearVelocity(btVector3(0, 0, 5.0f));
-        // Prevents the box from rotating/tumbling
-        movingBox->setAngularFactor(btVector3(0, 0, 0));
-        dynamicsWorld->addRigidBody(movingBox);
+        auto& treeInstances = m_semiTransparentModels[0]->instances();
+        m_btTreeBodies.reserve(treeInstances.size());
+        m_btTreeFallStates.reserve(treeInstances.size());
+        for (const auto& treeInstance : treeInstances) {
+            btTransform startTransform;
+            startTransform.setIdentity();
+            startTransform.setOrigin(
+                btVector3(treeInstance.posShift.x, treeInstance.posShift.y + m_btTreeHalfHeight, treeInstance.posShift.z));
+
+            btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+            // mass=0 → kinematic; inertia is irrelevant for kinematic bodies.
+            btRigidBody::btRigidBodyConstructionInfo treeRBInfo(0.0f, motionState, treeShape, btVector3(0, 0, 0));
+            btRigidBody* treeBody = new btRigidBody(treeRBInfo);
+            treeBody->setCollisionFlags(treeBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+            treeBody->setActivationState(DISABLE_DEACTIVATION);
+            m_btDynamicsWorld->addRigidBody(treeBody);
+            m_btTreeBodies.push_back(treeBody);
+
+            TreeFallState state;
+            state.baseX = treeInstance.posShift.x;
+            state.baseZ = treeInstance.posShift.z;
+            m_btTreeFallStates.push_back(state);
+        }
     }
-
-    // Tree
-    {
-        btCollisionShape* boxShape =
-            new btBoxShape(btVector3(1, 60 / 2.0f, 1));  // Bullet uses half-extents (size 60 / 2.0f means width 60)
-        btScalar mass = 1.0f;
-        btVector3 localInertia(0, 0, 0);
-        boxShape->calculateLocalInertia(mass, localInertia);
-
-        btTransform startTransform;
-        startTransform.setIdentity();
-        startTransform.setOrigin(btVector3(0, 0, 0));  // TODO
-        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
-        btRigidBody::btRigidBodyConstructionInfo treeRBInfo(mass, motionState, boxShape, localInertia);
-        btRigidBody* treeBody = new btRigidBody(treeRBInfo);
-        dynamicsWorld->addRigidBody(treeBody);
-    }
-
-    //// 5. Run Simulation
-    // for (int i = 0; i < 150; i++) {
-    //     dynamicsWorld->stepSimulation(1.f / 60.f, 10);
-    //     btTransform trans;
-    //     fallBody->getMotionState()->getWorldTransform(trans);
-    //     std::cout << "Cube Height: " << trans.getOrigin().getY() << std::endl;
-    // }
 }
 
 VulkanRenderer::~VulkanRenderer() {
     Pipeliner::getInstance().saveCache();
+
+    if (m_btDynamicsWorld) {
+        for (auto* body : m_btTreeBodies) {
+            m_btDynamicsWorld->removeRigidBody(body);
+            delete body->getMotionState();
+            delete body;
+        }
+        m_btTreeBodies.clear();
+        m_btTreeFallStates.clear();
+
+        if (m_btTankBody) {
+            m_btDynamicsWorld->removeRigidBody(m_btTankBody);
+            delete m_btTankBody->getMotionState();
+            delete m_btTankBody;
+            m_btTankBody = nullptr;
+        }
+
+        if (m_btGroundBody) {
+            m_btDynamicsWorld->removeRigidBody(m_btGroundBody);
+            delete m_btGroundBody;
+            m_btGroundBody = nullptr;
+        }
+    }
+
+    for (auto* shape : m_btCollisionShapes) {
+        delete shape;
+    }
+    m_btCollisionShapes.clear();
+
+    delete m_btDynamicsWorld;
+    delete m_btSolver;
+    delete m_btBroadphase;
+    delete m_btDispatcher;
+    delete m_btCollisionConfig;
+    m_btDynamicsWorld = nullptr;
+    m_btSolver = nullptr;
+    m_btBroadphase = nullptr;
+    m_btDispatcher = nullptr;
+    m_btCollisionConfig = nullptr;
 
     cleanupSwapChain();
 #if defined(USE_FSR) && USE_FSR
@@ -666,54 +691,66 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = rotMat;
     pModel->MVP = mViewProj.proj * glm::mat4(glm::mat3(cameraViewProj.view)) * pModel->model;
 
-    // trees consist of 2 models: obj(static trunk) and md5(leaves/crown) with identical instances data
+    // Trees consist of two models (trunk + crown) with identical instance transforms.
+    // Pull per-frame transforms from Bullet rigid bodies.
     auto& treeTrunkInstances = m_semiTransparentModels[0]->instances();
     auto& treeCrownInstances = m_semiTransparentModels[1]->instances();
-    for (size_t i = 0; i < TREES_COUNT; i++) {
+    const size_t treesToUpdate = std::min(std::min(treeTrunkInstances.size(), treeCrownInstances.size()), m_btTreeBodies.size());
+    glm::mat4 firstTreeModelMat = identityMatrix;
+    for (size_t i = 0; i < treesToUpdate; i++) {
         auto& treeTrunkInstance = treeTrunkInstances[i];
+        auto& treeCrownInstance = treeCrownInstances[i];
 
-        if (m_semiTransparentAnimations[i].isAnimationStarted()) {
-            m_semiTransparentAnimations[i].updateModelMat(deltaMS);
-            const glm::mat4& modelMat = m_semiTransparentAnimations[i].getModelMat();
-            auto& treeCrownInstance = treeCrownInstances[i];
-
-            //----------- Store previous model matrix columns for motion vector calculations-------//
-            treeTrunkInstance.prev_model_col0 = treeTrunkInstance.model_col0;
-            treeTrunkInstance.prev_model_col1 = treeTrunkInstance.model_col1;
-            treeTrunkInstance.prev_model_col2 = treeTrunkInstance.model_col2;
-            treeTrunkInstance.prev_model_col3 = treeTrunkInstance.model_col3;
-
-            treeCrownInstance.prev_model_col0 = treeCrownInstance.model_col0;
-            treeCrownInstance.prev_model_col1 = treeCrownInstance.model_col1;
-            treeCrownInstance.prev_model_col2 = treeCrownInstance.model_col2;
-            treeCrownInstance.prev_model_col3 = treeCrownInstance.model_col3;
-
-            //----------- Store current model matrix columns for general purpose usage-------//
-            treeTrunkInstance.model_col0 = glm::packHalf4x16(modelMat[0]);
-            treeTrunkInstance.model_col1 = glm::packHalf4x16(modelMat[1]);
-            treeTrunkInstance.model_col2 = glm::packHalf4x16(modelMat[2]);
-            treeTrunkInstance.model_col3 = glm::packHalf4x16(modelMat[3]);
-
-            treeCrownInstance.model_col0 = treeTrunkInstance.model_col0;
-            treeCrownInstance.model_col1 = treeTrunkInstance.model_col1;
-            treeCrownInstance.model_col2 = treeTrunkInstance.model_col2;
-            treeCrownInstance.model_col3 = treeTrunkInstance.model_col3;
-            continue;
+        btTransform transform;
+        if (m_btTreeBodies[i]->getMotionState()) {
+            m_btTreeBodies[i]->getMotionState()->getWorldTransform(transform);
+        } else {
+            transform = m_btTreeBodies[i]->getWorldTransform();
         }
 
-        auto tarpos = mCamera.targetPos();
-        auto dist = glm::distance(treeTrunkInstance.posShift, mCamera.targetPos());
-        auto boundingRadiuses =
-            0.5f * m_models[0]->radius();  // we can skip it for trees '+m_semiTransparentModels[0]->radius() * instance.scale;'
-        if (boundingRadiuses >= dist) {
-            m_semiTransparentAnimations[i].startAnimation(2000.0f);  // 2 seconds
+        const btQuaternion q = transform.getRotation();
+        const glm::quat rot(q.w(), q.x(), q.y(), q.z());
+        const glm::mat4 modelMat = glm::mat4_cast(rot);
+        if (i == 0u) {
+            firstTreeModelMat = modelMat;
         }
+
+        const btVector3 origin = transform.getOrigin();
+        // The visual base (pivot/root) of the tree = CoM minus the *rotated* half-height offset.
+        // For upright trees this equals (x, 0, z).
+        // For tilted trees the base stays at the ground pivot — not underground.
+        const btVector3 baseWS = origin - transform.getBasis() * btVector3(0.0f, m_btTreeHalfHeight, 0.0f);
+        const glm::vec3 bulletPos(baseWS.x(), baseWS.y(), baseWS.z());
+        treeTrunkInstance.posShift = bulletPos;
+        treeCrownInstance.posShift = bulletPos;
+
+        //----------- Store previous model matrix columns for motion vector calculations-------//
+        treeTrunkInstance.prev_model_col0 = treeTrunkInstance.model_col0;
+        treeTrunkInstance.prev_model_col1 = treeTrunkInstance.model_col1;
+        treeTrunkInstance.prev_model_col2 = treeTrunkInstance.model_col2;
+        treeTrunkInstance.prev_model_col3 = treeTrunkInstance.model_col3;
+
+        treeCrownInstance.prev_model_col0 = treeCrownInstance.model_col0;
+        treeCrownInstance.prev_model_col1 = treeCrownInstance.model_col1;
+        treeCrownInstance.prev_model_col2 = treeCrownInstance.model_col2;
+        treeCrownInstance.prev_model_col3 = treeCrownInstance.model_col3;
+
+        //----------- Store current model matrix columns for general purpose usage-------//
+        treeTrunkInstance.model_col0 = glm::packHalf4x16(modelMat[0]);
+        treeTrunkInstance.model_col1 = glm::packHalf4x16(modelMat[1]);
+        treeTrunkInstance.model_col2 = glm::packHalf4x16(modelMat[2]);
+        treeTrunkInstance.model_col3 = glm::packHalf4x16(modelMat[3]);
+
+        treeCrownInstance.model_col0 = treeTrunkInstance.model_col0;
+        treeCrownInstance.model_col1 = treeTrunkInstance.model_col1;
+        treeCrownInstance.model_col2 = treeTrunkInstance.model_col2;
+        treeCrownInstance.model_col3 = treeTrunkInstance.model_col3;
     }
 
     for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->prevModel = pModel->model;
-        pModel->model = m_semiTransparentAnimations[0].getModelMat();
+        pModel->model = firstTreeModelMat;
         pModel->MVP = mViewProj.viewProj;
     }
 
@@ -1608,6 +1645,34 @@ void VulkanRenderer::loadModels() {
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->recreateDescriptors();
     }
+
+    // Panzer (main vechicle)
+    {
+        // Keep a collider close to the visible tank bounds; too small shape lets the mesh visually pass through trees.
+        btCollisionShape* boxShape =
+            new btBoxShape(btVector3(m_models[0]->radius() / 2.0f, m_models[0]->radius() / 4.0f, m_models[0]->radius() / 2.0f));
+        m_btCollisionShapes.push_back(boxShape);
+        // Camera drives the tank transform directly, so keep it kinematic.
+        btScalar mass = 0.0f;
+        btVector3 localInertia(0, 0, 0);
+        btTransform startTransform;
+        startTransform.setIdentity();
+        const glm::vec3 tankPos = mCamera.targetPos();
+        startTransform.setOrigin(btVector3(tankPos.x, tankPos.y, tankPos.z));
+
+        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+        btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, boxShape, localInertia);
+        m_btTankBody = new btRigidBody(rbInfo);
+        m_btTankBody->setCollisionFlags(m_btTankBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+        m_btTankBody->setActivationState(DISABLE_DEACTIVATION);
+        // Enable (kind of shape casting) CCD(Continuous Collision Detection) to prevent the tank from tunneling through tree
+        // colliders at high speeds. Set a small motion threshold to trigger CCD when the tank moves more than 0.01 units in a
+        // single simulation step.
+        m_btTankBody->setCcdMotionThreshold(0.01f);
+        // Set the swept sphere radius to a value smaller than the tank's bounding box to improve CCD accuracy.
+        m_btTankBody->setCcdSweptSphereRadius(2.0f);
+        m_btDynamicsWorld->addRigidBody(m_btTankBody);
+    }
 }
 
 bool VulkanRenderer::renderScene() {
@@ -1652,6 +1717,106 @@ bool VulkanRenderer::renderScene() {
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
     _pushConstant.windDirElapsedTimeMS.w += deltaTime;
+
+    if (m_btTankBody) {
+        static glm::vec3 prevTankPos = mCamera.targetPos();
+        static glm::quat prevTankRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
+
+        const glm::mat4 tankModel = mCamera.targetModelMat();
+        const glm::vec3 tankPos = mCamera.targetPos();
+        const glm::quat tankRot = glm::quat_cast(glm::mat3(tankModel));
+
+        btTransform tankTransform;
+        tankTransform.setIdentity();
+        tankTransform.setOrigin(btVector3(tankPos.x, tankPos.y, tankPos.z));
+        tankTransform.setRotation(btQuaternion(tankRot.x, tankRot.y, tankRot.z, tankRot.w));
+
+        if (m_btTankBody->getMotionState()) {
+            m_btTankBody->getMotionState()->setWorldTransform(tankTransform);
+        }
+        m_btTankBody->setInterpolationWorldTransform(tankTransform);
+        m_btTankBody->setWorldTransform(tankTransform);
+
+         // Calculate delta time in seconds, protecting against division by zero
+        const float dtSec = std::max(0.0001f, deltaTime * 0.001f);
+        
+        // 1. Calculate and apply linear velocity (v = ds / dt)
+        const glm::vec3 vel = (tankPos - prevTankPos) / dtSec;
+        m_btTankBody->setLinearVelocity(btVector3(vel.x, vel.y, vel.z));
+        prevTankPos = tankPos;
+
+        // 2. Calculate and apply angular velocity (w = d_theta / dt)
+        // Find the rotation difference quaternion between current and previous frame
+        const glm::quat deltaRot = tankRot * glm::inverse(prevTankRot);
+        
+        // Extract the rotation axis and the angle in radians from the delta quaternion
+        const float angle = glm::angle(deltaRot);
+        glm::vec3 axis = glm::axis(deltaRot);
+        
+        glm::vec3 angVel(0.0f);
+        // Apply velocity only if a measurable rotation occurred to avoid floating-point noise
+        if (angle > 0.00001f) {
+            angVel = axis * (angle / dtSec);
+        }
+
+        // Pass angular velocity to Bullet so it can realistically spin dynamic objects on collision
+        m_btTankBody->setAngularVelocity(btVector3(angVel.x, angVel.y, angVel.z));
+        prevTankRot = tankRot;
+
+        // Force the rigid body to stay awake so collision detection triggers every frame
+        m_btTankBody->activate(true);
+    }
+
+    if (m_btDynamicsWorld && deltaTime > 0.0f) {
+        // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
+        const glm::vec3 tankPos = mCamera.targetPos();
+        const float tankRadius  = m_models[0]->radius() / 2.0f;
+        constexpr float kTreeRadius   = 2.0f;                        // matches btCylinderShape radius
+        constexpr float kMaxAngle     = 80.0f * SIMD_PI / 180.0f;   // limit to 80° — trunk won't clip into ground
+        constexpr float kFallDuration = 1.5f;                        // seconds for full fall
+        const float     dtSec         = deltaTime * 0.001f;
+        const float     triggerDist   = tankRadius + kTreeRadius;
+
+        for (size_t i = 0; i < m_btTreeBodies.size(); ++i) {
+            TreeFallState& s = m_btTreeFallStates[i];
+
+            if (!s.falling) {
+                const float dx = tankPos.x - s.baseX;
+                const float dz = tankPos.z - s.baseZ;
+                if (dx * dx + dz * dz < triggerDist * triggerDist) {
+                    s.falling = true;
+                    // Fall direction = away from tank (i.e. in the direction the tank is pushing).
+                    float len = std::sqrt(dx * dx + dz * dz);
+                    float fdx = (len > 1e-4f) ? -dx / len : 1.0f;   // tree_base - tank_pos
+                    float fdz = (len > 1e-4f) ? -dz / len : 0.0f;
+                    // Rotation axis = cross((0,1,0), (fdx,0,fdz)) = (fdz, 0, -fdx).
+                    // This makes the tree top tip toward (fdx, 0, fdz) — away from tank.
+                    s.axisX =  fdz;
+                    s.axisZ = -fdx;
+                }
+            }
+
+            if (s.falling && s.angle < 1.0f) {
+                // s.angle is normalized time [0..1].
+                s.angle = std::min(s.angle + dtSec / kFallDuration, 1.0f);
+                // Ease-out via sine curve: fast start, smooth deceleration at the end.
+                const float actualAngle = kMaxAngle * std::sin(s.angle * SIMD_HALF_PI);
+
+                btQuaternion rot(btVector3(s.axisX, 0.0f, s.axisZ).normalized(), actualAngle);
+                btTransform t;
+                t.setIdentity();
+                t.setRotation(rot);
+                const btVector3 comOffset = t * btVector3(0.0f, m_btTreeHalfHeight, 0.0f);
+                t.setOrigin(btVector3(s.baseX, 0.0f, s.baseZ) + comOffset);
+
+                m_btTreeBodies[i]->getMotionState()->setWorldTransform(t);
+                m_btTreeBodies[i]->setWorldTransform(t);
+            }
+        }
+
+        const float deltaSec = deltaTime * 0.001f;
+        m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
+    }
 
     // -- GET NEXT IMAGE --
     // Wait for fence of this frame to ensure CPU won't overwrite resources currently used by GPU.

@@ -18,6 +18,23 @@
 
 #define TREES_COUNT 250
 
+class btDefaultCollisionConfiguration;
+class btCollisionDispatcher;
+class btBroadphaseInterface;
+class btSequentialImpulseConstraintSolver;
+class btDiscreteDynamicsWorld;
+class btCollisionShape;
+class btRigidBody;
+
+struct TreeFallState {
+    float baseX = 0.0f;       // world X of the tree base (y=0)
+    float baseZ = 0.0f;       // world Z of the tree base
+    float axisX = 1.0f;       // fall rotation axis (horizontal)
+    float axisZ = 0.0f;
+    float angle  = 0.0f;      // current tipping angle [0 .. PI/2]
+    bool  falling = false;
+};
+
 class VulkanRenderer : public VulkanState {
 public:
     enum Pipelines {
@@ -87,6 +104,19 @@ private:
     std::array<std::unique_ptr<Particle>, 5u> m_particles;
     std::vector<I3DModel::InteractionImpactAnimation> m_semiTransparentAnimations{TREES_COUNT};
     std::vector<std::unique_ptr<I3DModel>> m_semiTransparentModels{};
+
+    // Bullet physics state used to drive dynamic transforms (tank + trees).
+    btDefaultCollisionConfiguration* m_btCollisionConfig{nullptr};
+    btCollisionDispatcher* m_btDispatcher{nullptr};
+    btBroadphaseInterface* m_btBroadphase{nullptr};
+    btSequentialImpulseConstraintSolver* m_btSolver{nullptr};
+    btDiscreteDynamicsWorld* m_btDynamicsWorld{nullptr};
+    std::vector<btCollisionShape*> m_btCollisionShapes{};
+    btRigidBody* m_btGroundBody{nullptr};
+    btRigidBody* m_btTankBody{nullptr};
+    std::vector<btRigidBody*> m_btTreeBodies{};
+    std::vector<TreeFallState>  m_btTreeFallStates{};
+    float m_btTreeHalfHeight{60.0f};
 
     std::vector<VkSemaphore> m_presentCompleteSem{};
     std::vector<VkSemaphore> m_renderCompleteSem{};
