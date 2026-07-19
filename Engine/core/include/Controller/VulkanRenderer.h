@@ -65,8 +65,10 @@ public:
     bool renderScene();
 
 private:
+    void destroyPerFrameResources();
     void cleanupSwapChain();
-    void recreateSwapChain(uint16_t width, uint16_t height);
+    void recreateSwapChain(uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth = 0u,
+                           uint16_t offscreenHeight = 0u);
 
     VkSwapchainCreateInfoKHR createSwapChain();
     void createUniformBuffers();
@@ -75,6 +77,7 @@ private:
     void updateUniformBuffer(uint32_t currentImage, float deltaMS);
     void createRenderPass();
     void allocateDynamicBufferTransferSpace();
+    void releaseDynamicBufferTransferSpace();
     void createDescriptorPool();
     void createFramebuffer();
     void createPipeline();
@@ -121,6 +124,7 @@ private:
     std::vector<VkSemaphore> m_presentCompleteSem{};
     std::vector<VkSemaphore> m_renderCompleteSem{};
     std::vector<VkFence> m_drawFences{};
+    std::vector<bool> m_footprintCleared{};
 
     // fence per swapchain image tracking
     std::vector<VkFence> m_imagesInFlight;
@@ -175,6 +179,7 @@ private:
 
     Camera mCamera;
     ViewProj mViewProj{};
+    bool m_resetViewProjHistory{true};
     bool m_isDlssEnabled{true};  // TODO : add UI for enabling/disabling DLSS
 #if defined(USE_DLSS) && USE_DLSS
     bool m_slTagErrorLogged{false};

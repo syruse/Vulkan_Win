@@ -162,12 +162,12 @@ Pipeliner::Pipeliner() {
     blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     blendAttachState.alphaBlendOp = VK_BLEND_OP_ADD;
 
-    static std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(MAX_COLOR_ATTACHMENTS, blendAttachState);
+    m_blendAttachments.assign(MAX_COLOR_ATTACHMENTS, blendAttachState);
 
     _blendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     _blendCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-    _blendCreateInfo.attachmentCount = blendAttachments.size();
-    _blendCreateInfo.pAttachments = blendAttachments.data();
+    _blendCreateInfo.attachmentCount = static_cast<uint32_t>(m_blendAttachments.size());
+    _blendCreateInfo.pAttachments = m_blendAttachments.data();
 
     _depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     _depthStencil.depthTestEnable = VK_TRUE;
@@ -193,6 +193,29 @@ Pipeliner::Pipeliner() {
     m_blendCreateInfo = _blendCreateInfo;
     m_depthStencil = _depthStencil;
     m_tessInfo = _tessInfo;
+}
+
+void Pipeliner::resetColorBlendAttachments() {
+    // Restore every attachment slot to the pristine default (all channels writable, standard alpha blend).
+    // Several PipelineCreator::createPipeline() implementations (Particle, SemiTransparent) mutate specific
+    // slots of this SHARED singleton array in place (e.g. restrict colorWriteMask to R|G for their own
+    // motion-vector attachment) and never revert them. Without this reset, those mutations leak into the
+    // NEXT pipeline-(re)creation cycle and corrupt unrelated pipelines/attachments that happen to reuse the
+    // same attachment index for a different purpose (e.g. GPass's normal buffer at index 1).
+    VkPipelineColorBlendAttachmentState blendAttachState = {};
+    blendAttachState.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachState.blendEnable = VK_TRUE;
+    blendAttachState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachState.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachState.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    m_blendAttachments.assign(MAX_COLOR_ATTACHMENTS, blendAttachState);
+    m_blendCreateInfo.attachmentCount = static_cast<uint32_t>(m_blendAttachments.size());
+    m_blendCreateInfo.pAttachments = m_blendAttachments.data();
 }
 
 Pipeliner::pipeline_ptr Pipeliner::createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width,

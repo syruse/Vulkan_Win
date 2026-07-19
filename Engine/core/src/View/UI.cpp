@@ -45,10 +45,12 @@ const UI::States& UI::updateAndDraw() {
         for (int i = 0; i < static_cast<int>(m_resolutions.size()); i++) {
             const bool isSelected = (m_selectedIdx == i);
             if (ImGui::Selectable(m_resolutions[i].label, isSelected)) {
-                m_selectedIdx = i;
-                mStates.nextWidth = m_resolutions[i].width;
-                mStates.nextHeight = m_resolutions[i].height;
-                mStates.resolutionChanged = true;
+                if (!isSelected) {
+                    m_selectedIdx = i;
+                    mStates.nextWidth = m_resolutions[i].width;
+                    mStates.nextHeight = m_resolutions[i].height;
+                    mStates.resolutionChanged = true;
+                }
             }
         }
         ImGui::EndCombo();

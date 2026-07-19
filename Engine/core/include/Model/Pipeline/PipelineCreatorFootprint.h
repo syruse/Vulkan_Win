@@ -27,6 +27,7 @@ public:
 private:
     void createPipeline() override;
     void createDescriptorSetLayout() override;
+    uint32_t createDescriptorWithId(std::weak_ptr<TextureFactory::Texture>, VkSampler, uint32_t materialId);
 
 private:
     uint32_t m_maxObjectsCount{0u};

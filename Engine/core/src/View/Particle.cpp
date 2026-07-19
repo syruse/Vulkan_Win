@@ -7,9 +7,15 @@
 #include "Utils.h"
 
 Particle::~Particle() {
-    for (size_t i = 0u; i < m_vkState._swapchainImageCount; i++) {
-        vkDestroyBuffer(m_vkState._core.getDevice(), m_uboParticle.buffers[i], nullptr);
-        vkFreeMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i], nullptr);
+    for (size_t i = 0u; i < m_uboParticle.buffers.size(); ++i) {
+        if (m_uboParticle.buffers[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_vkState._core.getDevice(), m_uboParticle.buffers[i], nullptr);
+        }
+    }
+    for (size_t i = 0u; i < m_uboParticle.buffersMemory.size(); ++i) {
+        if (m_uboParticle.buffersMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i], nullptr);
+        }
     }
 }
 

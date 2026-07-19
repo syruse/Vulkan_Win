@@ -149,13 +149,18 @@ void PipelineCreatorFootprint::createDescriptorPool() {
 }
 
 uint32_t PipelineCreatorFootprint::createDescriptor(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler) {
+    return createDescriptorWithId(texture, sampler, 0u);
+}
+
+uint32_t PipelineCreatorFootprint::createDescriptorWithId(std::weak_ptr<TextureFactory::Texture> texture, VkSampler sampler,
+                                                          uint32_t materialId) {
     assert(m_vkState._core.getDevice());
 
     assert(m_descriptorSetLayout);
     auto sharedPtrTexture = texture.lock();
     assert(sharedPtrTexture);
 
-    m_curMaterialId++;
+    const uint32_t resolvedMaterialId = materialId == 0u ? ++m_curMaterialId : materialId;
 
     std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, *m_descriptorSetLayout.get());
     VkDescriptorSetAllocateInfo allocInfo{};
@@ -174,7 +179,7 @@ uint32_t PipelineCreatorFootprint::createDescriptor(std::weak_ptr<TextureFactory
     if (status != VK_SUCCESS) {
         Utils::printLog(ERROR_PARAM, "failed to allocate descriptor sets! ", status);
     } else {
-        m_descriptorSets.try_emplace(m_curMaterialId, material);
+        m_descriptorSets.insert_or_assign(resolvedMaterialId, material);
     }
 
     // connect the descriptors with buffer when binding
@@ -232,7 +237,11 @@ uint32_t PipelineCreatorFootprint::createDescriptor(std::weak_ptr<TextureFactory
                                nullptr);
     }
 
-    return m_curMaterialId;
+    if (resolvedMaterialId > m_curMaterialId) {
+        m_curMaterialId = resolvedMaterialId;
+    }
+
+    return resolvedMaterialId;
 }
 
 const VkDescriptorSet* PipelineCreatorFootprint::getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId) const {
@@ -242,13 +251,13 @@ const VkDescriptorSet* PipelineCreatorFootprint::getDescriptorSet(uint32_t descr
 }
 
 void PipelineCreatorFootprint::recreateDescriptors() {
-    // if the counter is bigger than 0 -> no need to create descriptorSets twice
-    if (m_curMaterialId > 0u) {
+    if (m_descriptorSets.empty()) {
         return;
     }
+
     std::unordered_map<uint32_t, I3DModel::Material> descriptorSets(std::move(m_descriptorSets));
     m_descriptorSets.clear();
     for (auto& material : descriptorSets) {
-        createDescriptor(material.second.texture, material.second.sampler);
+        createDescriptorWithId(material.second.texture, material.second.sampler, material.first);
     }
 }

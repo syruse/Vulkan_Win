@@ -114,6 +114,14 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
                                                    VkSampler particleSampler,
                                                    std::weak_ptr<TextureFactory::Texture> gradientTexture,
                                                    VkSampler gradientSampler, Particle::UBOParticle* uboParticle) {
+    return createDescriptorWithId(particleTexture, particleSampler, gradientTexture, gradientSampler, uboParticle, 0u);
+}
+
+uint32_t PipelineCreatorParticle::createDescriptorWithId(std::weak_ptr<TextureFactory::Texture> particleTexture,
+                                                         VkSampler particleSampler,
+                                                         std::weak_ptr<TextureFactory::Texture> gradientTexture,
+                                                         VkSampler gradientSampler, Particle::UBOParticle* uboParticle,
+                                                         uint32_t materialId) {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
     assert(uboParticle);
@@ -121,7 +129,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
     auto sharedPtrTextureGradient = gradientTexture.lock();
     assert(sharedPtrTexture && sharedPtrTextureGradient);
 
-    ++m_curMaterialId;
+    const uint32_t resolvedMaterialId = materialId == 0u ? ++m_curMaterialId : materialId;
 
     std::vector<VkDescriptorSetLayout> layouts(m_vkState._swapchainImageCount, *m_descriptorSetLayout.get());
     // Input Attachment Descriptor Set Allocation Info
@@ -147,7 +155,7 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
         return -1;
     }
 
-    m_descriptorSets.try_emplace(m_curMaterialId, material);
+    m_descriptorSets.insert_or_assign(resolvedMaterialId, material);
 
     // Update each descriptor set with input attachment
     for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
@@ -212,7 +220,11 @@ uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory:
         vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);
     }
 
-    return m_curMaterialId;
+    if (resolvedMaterialId > m_curMaterialId) {
+        m_curMaterialId = resolvedMaterialId;
+    }
+
+    return resolvedMaterialId;
 }
 
 const VkDescriptorSet* PipelineCreatorParticle::getDescriptorSet(uint32_t descriptorSetsIndex, uint32_t materialId) const {
@@ -222,14 +234,15 @@ const VkDescriptorSet* PipelineCreatorParticle::getDescriptorSet(uint32_t descri
 }
 
 void PipelineCreatorParticle::recreateDescriptors() {
-    // if the counter is bigger than 0 -> no need to create descriptorSets twice
-    if (m_curMaterialId > 0u) {
+    if (m_descriptorSets.empty()) {
         return;
     }
+
     auto descriptorSets(std::move(m_descriptorSets));
     m_descriptorSets.clear();
     for (auto& material : descriptorSets) {
-        createDescriptor(material.second.textureParticle, material.second.samplerParticle, material.second.textureGradient,
-                         material.second.samplerGradient, material.second.uboParticle);
+        createDescriptorWithId(material.second.textureParticle, material.second.samplerParticle,
+                               material.second.textureGradient, material.second.samplerGradient,
+                               material.second.uboParticle, material.first);
     }
 }

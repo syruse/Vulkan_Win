@@ -38,6 +38,9 @@ public:
 private:
     void createPipeline() override;
     void createDescriptorSetLayout() override;
+    uint32_t createDescriptorWithId(std::weak_ptr<TextureFactory::Texture> particleTexture, VkSampler particleSampler,
+                                    std::weak_ptr<TextureFactory::Texture> gradientTexture, VkSampler gradientSampler,
+                                    Particle::UBOParticle* uboParticle, uint32_t materialId);
 
 private:
     std::unordered_map<uint32_t, Material> m_descriptorSets{};

@@ -58,13 +58,13 @@ static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 float _footPrintRedrawingK = 0.7f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
-    : VulkanState(appName, windowWidth, windowHeight, 1980, 1024),  // TODO
+    : VulkanState(appName, windowWidth, windowHeight, 1920, 1080),  // TODO
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
       mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
-    _pushConstant.windowSize = glm::vec4(_windowWidth, _windowHeight, Z_FAR, Z_NEAR);
+    _pushConstant.windowSize = glm::vec4(_offscreenWidth, _offscreenHeight, Z_FAR, Z_NEAR);
     _pushConstant.lightPos = glm::vec4(_lightPos, 0.0f);
 
     calculateAdditionalMat();
@@ -302,22 +302,48 @@ VulkanRenderer::~VulkanRenderer() {
 
     mTextureFactory.reset(nullptr);
 
-    _aligned_free(mp_modelTransferSpace);
+    releaseDynamicBufferTransferSpace();
 
-    for (size_t i = 0u; i < _swapchainImageCount; i++) {
-        vkDestroyBuffer(_core.getDevice(), _ubo.buffers[i], nullptr);
-        vkFreeMemory(_core.getDevice(), _ubo.buffersMemory[i], nullptr);
-        vkDestroyBuffer(_core.getDevice(), _dynamicUbo.buffers[i], nullptr);
-        vkFreeMemory(_core.getDevice(), _dynamicUbo.buffersMemory[i], nullptr);
-    }
-
-    for (size_t i = 0u; i < _swapchainImageCount; ++i) {
-        vkDestroySemaphore(_core.getDevice(), m_presentCompleteSem[i], nullptr);
-        vkDestroySemaphore(_core.getDevice(), m_renderCompleteSem[i], nullptr);
-        vkDestroyFence(_core.getDevice(), m_drawFences[i], nullptr);
-    }
+    destroyPerFrameResources();
 
     vkDestroyCommandPool(_core.getDevice(), _cmdBufPool, nullptr);
+}
+
+void VulkanRenderer::destroyPerFrameResources() {
+    for (size_t i = 0u; i < _ubo.buffers.size(); ++i) {
+        if (_ubo.buffers[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(_core.getDevice(), _ubo.buffers[i], nullptr);
+        }
+        if (_ubo.buffersMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(_core.getDevice(), _ubo.buffersMemory[i], nullptr);
+        }
+        if (_dynamicUbo.buffers[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(_core.getDevice(), _dynamicUbo.buffers[i], nullptr);
+        }
+        if (_dynamicUbo.buffersMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(_core.getDevice(), _dynamicUbo.buffersMemory[i], nullptr);
+        }
+    }
+
+    for (size_t i = 0u; i < m_presentCompleteSem.size(); ++i) {
+        if (m_presentCompleteSem[i] != VK_NULL_HANDLE) {
+            vkDestroySemaphore(_core.getDevice(), m_presentCompleteSem[i], nullptr);
+        }
+        if (m_renderCompleteSem[i] != VK_NULL_HANDLE) {
+            vkDestroySemaphore(_core.getDevice(), m_renderCompleteSem[i], nullptr);
+        }
+        if (m_drawFences[i] != VK_NULL_HANDLE) {
+            vkDestroyFence(_core.getDevice(), m_drawFences[i], nullptr);
+        }
+    }
+
+    _ubo.buffers.clear();
+    _ubo.buffersMemory.clear();
+    _dynamicUbo.buffers.clear();
+    _dynamicUbo.buffersMemory.clear();
+    m_presentCompleteSem.clear();
+    m_renderCompleteSem.clear();
+    m_drawFences.clear();
 }
 
 void VulkanRenderer::cleanupSwapChain() {
@@ -445,19 +471,37 @@ void VulkanRenderer::cleanupSwapChain() {
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->destroyDescriptorPool();
     }
-    vkDestroyDescriptorPool(_core.getDevice(), mImguiPool, nullptr);
     ImGui_ImplVulkan_Shutdown();
+    vkDestroyDescriptorPool(_core.getDevice(), mImguiPool, nullptr);
+    mImguiPool = VK_NULL_HANDLE;
 
     _swapchainImageCount = 0u;
 }
 
-void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
-    INFO_FORMAT(" new width=%d; new height=%d", width, height);
-    if (_windowWidth != width || _windowHeight != height) {
-        cleanupSwapChain();
+void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth,
+                                       uint16_t offscreenHeight) {
+    const uint16_t nextOffscreenWidth = offscreenWidth == 0u ? _offscreenWidth : offscreenWidth;
+    const uint16_t nextOffscreenHeight = offscreenHeight == 0u ? _offscreenHeight : offscreenHeight;
+    const uint16_t nextWindowWidth = windowWidth == 0u ? _windowWidth : windowWidth;
+    const uint16_t nextWindowHeight = windowHeight == 0u ? _windowHeight : windowHeight;
 
-        _windowWidth = width;
-        _windowHeight = height;
+    INFO_FORMAT(" new window width=%d; new window height=%d; new offscreen width=%d; new offscreen height=%d", windowWidth,
+                windowHeight, nextOffscreenWidth, nextOffscreenHeight);
+    const bool windowSizeChanged = (_windowWidth != nextWindowWidth) || (_windowHeight != nextWindowHeight);
+    if (windowSizeChanged || _offscreenWidth != nextOffscreenWidth || _offscreenHeight != nextOffscreenHeight) {
+        cleanupSwapChain();
+        destroyPerFrameResources();
+
+        _windowWidth = nextWindowWidth;
+        _windowHeight = nextWindowHeight;
+        _offscreenWidth = nextOffscreenWidth;
+        _offscreenHeight = nextOffscreenHeight;
+        // Keep projection stable for offscreen-only changes; update it only when the window aspect changes.
+        if (windowSizeChanged) {
+            mCamera.resetPerspective(
+                {FOV, static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight), Z_NEAR, Z_FAR});
+        }
+        m_resetViewProjHistory = true;
         m_currentFrame = 0u;
 #if defined(USE_DLSS) && USE_DLSS
         m_slFrameIndex = 0u;
@@ -465,18 +509,21 @@ void VulkanRenderer::recreateSwapChain(uint16_t width, uint16_t height) {
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
-        _pushConstant.windowSize = glm::vec4(_windowWidth, _windowHeight, Z_FAR, Z_NEAR);
+        _pushConstant.windowSize = glm::vec4(_offscreenWidth, _offscreenHeight, Z_FAR, Z_NEAR);
         calculateAdditionalMat();
 
         auto swapchainCreateInfo = createSwapChain();
         createCommandBuffer();
         createDepthResources();
         createColorBufferImage();
+        allocateDynamicBufferTransferSpace();
+        createUniformBuffers();
         createDescriptorPool();
-        recreateDescriptorSets();
         createRenderPass();
         createFramebuffer();
         createPipeline();
+        recreateDescriptorSets();
+        createSemaphores();
         createDescriptorPoolForImGui();
 
 #if defined(USE_DLSS) && USE_DLSS
@@ -652,11 +699,10 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& cameraViewProj = mCamera.viewProjMat();
     const auto& model = mCamera.targetModelMat();
 
-    static bool firstViewProjUpdate = true;
     const glm::mat4 currentViewProj = cameraViewProj.proj * cameraViewProj.view;
-    mViewProj.prevViewProj = firstViewProjUpdate ? currentViewProj : mViewProj.viewProj;
+    mViewProj.prevViewProj = m_resetViewProjHistory ? currentViewProj : mViewProj.viewProj;
     mViewProj.viewProj = currentViewProj;
-    firstViewProjUpdate = false;
+    m_resetViewProjHistory = false;
     mViewProj.viewProjInverse = glm::inverse(mViewProj.viewProj);
     mViewProj.lightViewProj = m_lightViewProj;
     mViewProj.proj = cameraViewProj.proj;
@@ -794,6 +840,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 }
 
 void VulkanRenderer::allocateDynamicBufferTransferSpace() {
+    releaseDynamicBufferTransferSpace();
+
     size_t minUniformBufferOffset = static_cast<size_t>(mDeviceProperties.limits.minUniformBufferOffsetAlignment);
 
     // Calculate alignment of model matrix data
@@ -802,6 +850,13 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds m_models.size()
     mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size()),
                                                     _modelUniformAlignment);
+}
+
+void VulkanRenderer::releaseDynamicBufferTransferSpace() {
+    if (mp_modelTransferSpace) {
+        _aligned_free(mp_modelTransferSpace);
+        mp_modelTransferSpace = nullptr;
+    }
 }
 
 void VulkanRenderer::createDescriptorPool() {
@@ -1430,7 +1485,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         {
             const auto& pipelineCreator = m_pipelineCreators[POST_FXAA];
             PushConstant fxaaPushConstant = _pushConstant;
-            // FXAA samples from the offscreen color buffer, so texel size must match offscreen dimensions.
+            // FXAA samples the offscreen color buffer, so the shader needs the source texture resolution here
+            // even though the render pass output target is the window-sized swapchain image.
             fxaaPushConstant.windowSize.x = static_cast<float>(_offscreenWidth);
             fxaaPushConstant.windowSize.y = static_cast<float>(_offscreenHeight);
             vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
@@ -1641,11 +1697,6 @@ void VulkanRenderer::loadModels() {
         particle->init();
     }
 
-    // for first pair the calling can be skipped since it's already called in model->init()
-    for (auto& pipelineCreator : m_pipelineCreators) {
-        pipelineCreator->recreateDescriptors();
-    }
-
     // Panzer (main vechicle)
     {
         // Keep a collider close to the visible tank bounds; too small shape lets the mesh visually pass through trees.
@@ -1691,8 +1742,17 @@ bool VulkanRenderer::renderScene() {
     ret_status = !windowQueueMSG.isQuited;
 
     if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
-        mCamera.resetPerspective({FOV, (float)windowQueueMSG.width / windowQueueMSG.height, Z_NEAR, Z_FAR});
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
+        return ret_status;
+    }
+
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->resolutionChanged && windowQueueMSG.hmiStates->nextWidth > 0 &&
+        windowQueueMSG.hmiStates->nextHeight > 0) {
+        auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
+        hmiStates->resolutionChanged = false;
+        const uint16_t nextWidth = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextWidth);
+        const uint16_t nextHeight = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextHeight);
+        recreateSwapChain(_windowWidth, _windowHeight, nextWidth, nextHeight);
         return ret_status;
     }
 
@@ -1874,10 +1934,6 @@ bool VulkanRenderer::renderScene() {
     static bool isGPUCalculationFavorable = true;
     if (windowQueueMSG.hmiStates) {
         isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
-
-        // TODO Check for resolution change from the UI states
-        // if (windowQueueMSG.hmiStates->resolutionChanged) {
-        // }
     }
 
     for (auto& model : m_models) {
@@ -1951,6 +2007,9 @@ void VulkanRenderer::createRenderPass() {
 
     VkAttachmentDescription colorAttachmentSSAO = colorAttachment;
     colorAttachmentSSAO.format = _ssaoBuffer.colorFormat;
+    // Same mismatch as gPassNormal/gPassColor above: SSAO's true last use is as an input attachment in
+    // subpass 2 (SHADER_READ_ONLY_OPTIMAL), not COLOR_ATTACHMENT_OPTIMAL inherited from colorAttachment.
+    colorAttachmentSSAO.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription colorAttachmentShading = colorAttachment;
     colorAttachmentShading.format = _shadingBuffer.colorFormat;
@@ -1964,6 +2023,11 @@ void VulkanRenderer::createRenderPass() {
     gPassNormalAttachment.format = _gPassBuffer.normal.colorFormat;
     gPassNormalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // not needed after subpasses completed, for performance
     gPassNormalAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // Its true last use in this render pass is as an input attachment in subpass 2 (SHADER_READ_ONLY_OPTIMAL).
+    // Leaving finalLayout as COLOR_ATTACHMENT_OPTIMAL (inherited from colorAttachment) forces an extra,
+    // unsynchronized layout transition at render pass end that no subpass dependency actually covers,
+    // producing a WRITE_AFTER_WRITE hazard between that transition and vkCmdEndRenderPass's store.
+    gPassNormalAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription gPassColorAttachment = gPassNormalAttachment;
     gPassColorAttachment.format = _gPassBuffer.color.colorFormat;
@@ -2126,8 +2190,13 @@ void VulkanRenderer::createRenderPass() {
     subpassDependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     subpassDependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[2].dstSubpass = 2;
-    subpassDependencies[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    subpassDependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    // dst also needs to cover the implicit store/final-layout event for this attachment (ssao, index 3)
+    // that occurs at vkCmdEndRenderPass, since subpass 2 is its last reference in this render pass.
+    // Without this, the validator sees only a SHADER_READ_BIT@FRAGMENT_SHADER scope here, which does not
+    // order-before that later COLOR_ATTACHMENT_WRITE_BIT@COLOR_ATTACHMENT_OUTPUT_BIT event -> WAW hazard.
+    subpassDependencies[2].dstStageMask =
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     subpassDependencies[3].srcSubpass = 0;
@@ -2135,19 +2204,28 @@ void VulkanRenderer::createRenderPass() {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     subpassDependencies[3].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     subpassDependencies[3].dstSubpass = 2;
-    subpassDependencies[3].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    subpassDependencies[3].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    // Same reasoning as dependency[2] above, but for attachments 1/2 (gPassNormal/gPassColor), whose
+    // last reference in this render pass is also subpass 2's input-attachment read.
+    subpassDependencies[3].dstStageMask =
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDependencies[3].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     subpassDependencies[3].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    // Conversion from VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL to VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-    // Transition must happen after...
+    // Outgoing dependency for subpass 2's other color attachments: hdrBloomAttachment (6, read by the
+    // Gauss Blur X pass) and colorAttachmentShading (9, read by the SSAO blur pass) both have a finalLayout
+    // (SHADER_READ_ONLY_OPTIMAL) that differs from their subpass layout (COLOR_ATTACHMENT_OPTIMAL), so
+    // vkCmdEndRenderPass performs a real layout transition for them here. BOTTOM_OF_PIPE_BIT/MEMORY_READ_BIT
+    // as the dst scope is a no-op anti-pattern: it does not extend to (chain with) the COLOR_ATTACHMENT_OUTPUT_BIT
+    // entry dependency of whichever render pass reads these attachments next, causing
+    // SYNC-HAZARD-READ-AFTER-WRITE at their vkCmdBeginRenderPass regardless of how that consumer's own
+    // dependency is configured.
     subpassDependencies[4].srcSubpass = 2;
     subpassDependencies[4].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     subpassDependencies[4].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     // But must happen before...
     subpassDependencies[4].dstSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDependencies[4].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    subpassDependencies[4].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    subpassDependencies[4].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    subpassDependencies[4].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
     subpassDependencies[4].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     // temporary depth buffer for correct geometry output in g-Pass since depthAttachment is already formed before g-pass started
@@ -2288,15 +2366,30 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurX = {colorAttachment1BlurX, colorAttachment2BlurX};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBlurX{};
+    std::array<VkSubpassDependency, 2u> dependencyBlurX{};
 
     dependencyBlurX[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBlurX[0].dstSubpass = 0;
-    dependencyBlurX[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    // Attachment 1 (input) is _bloomBuffer[0], last written by the G-pass's lighting subpass as a color
+    // attachment (COLOR_ATTACHMENT_OUTPUT_BIT/COLOR_ATTACHMENT_WRITE_BIT). BOTTOM_OF_PIPE_BIT/MEMORY_WRITE_BIT
+    // as srcStage/srcAccess establishes no real execution dependency against that write, causing a
+    // SYNC-HAZARD-READ-AFTER-WRITE when this pass's vkCmdBeginRenderPass loads (reads) that attachment.
+    dependencyBlurX[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurX[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyBlurX[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencyBlurX[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
     dependencyBlurX[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
     dependencyBlurX[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // Outgoing: without this, this pass's own vkCmdEndRenderPass finalLayout transition (of attachment 0,
+    // the output written here) has no producer-side synchronization scope, so nothing the NEXT pass's
+    // entry dependency specifies can actually chain against it -> SYNC-HAZARD-READ-AFTER-WRITE downstream.
+    dependencyBlurX[1].srcSubpass = 0;
+    dependencyBlurX[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBlurX[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurX[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBlurX[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencyBlurX[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencyBlurX[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoBlurX = {};
     renderPassCreateInfoBlurX.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -2348,15 +2441,26 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBlurY = {colorAttachment1BlurY, colorAttachment2BlurY};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBlurY{};
+    std::array<VkSubpassDependency, 2u> dependencyBlurY{};
 
     dependencyBlurY[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBlurY[0].dstSubpass = 0;
-    dependencyBlurY[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    // Same reasoning as dependencyBlurX above: attachment 1 (input) is the output of the BlurX pass,
+    // last written as a color attachment (COLOR_ATTACHMENT_OUTPUT_BIT/COLOR_ATTACHMENT_WRITE_BIT).
+    dependencyBlurY[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurY[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyBlurY[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencyBlurY[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
     dependencyBlurY[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
     dependencyBlurY[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // Outgoing: same reasoning as dependencyBlurX[1] above.
+    dependencyBlurY[1].srcSubpass = 0;
+    dependencyBlurY[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBlurY[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBlurY[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBlurY[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencyBlurY[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencyBlurY[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoBlurY = {};
     renderPassCreateInfoBlurY.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -2408,7 +2512,7 @@ void VulkanRenderer::createRenderPass() {
     std::array<VkAttachmentDescription, 2> renderPassAttachmentsBloom = {colorAttachment1Bloom, colorAttachment2Bloom};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencyBloom{};
+    std::array<VkSubpassDependency, 2u> dependencyBloom{};
 
     dependencyBloom[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyBloom[0].dstSubpass = 0;
@@ -2416,6 +2520,16 @@ void VulkanRenderer::createRenderPass() {
     dependencyBloom[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyBloom[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencyBloom[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+
+    // Outgoing: same reasoning as dependencyBlurX[1] above (attachment 0, _colorBuffer, is read again later
+    // by the semi-transparent pass and sampled by FXAA).
+    dependencyBloom[1].srcSubpass = 0;
+    dependencyBloom[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyBloom[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyBloom[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyBloom[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencyBloom[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencyBloom[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoBloom = {};
     renderPassCreateInfoBloom.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -2468,14 +2582,33 @@ void VulkanRenderer::createRenderPass() {
     dependencyFXAA.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyFXAA.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+    // Outgoing dependency: this pass's write must complete/be visible before whatever comes next.
+    // Two possible consumers exist depending on hmiRenderData at record time: the UI overlay pass
+    // (which LOADs this same swapchain image and reads/writes it at COLOR_ATTACHMENT_OUTPUT), or
+    // directly vkQueuePresentKHR if UI is disabled that frame (BOTTOM_OF_PIPE/MEMORY_READ is the
+    // conventional present-facing pattern). Since this dependency is fixed at render-pass-creation
+    // time (not per-frame), both destination scopes are OR'd together so either path is covered.
+    VkSubpassDependency dependencyFXAAToExternal{};
+    dependencyFXAAToExternal.srcSubpass = 0;
+    dependencyFXAAToExternal.dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyFXAAToExternal.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyFXAAToExternal.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyFXAAToExternal.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencyFXAAToExternal.dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT;
+    dependencyFXAAToExternal.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    std::array<VkSubpassDependency, 2> fxaaDependencies = {dependencyFXAA, dependencyFXAAToExternal};
+
     VkRenderPassCreateInfo renderPassCreateInfoFXAA = {};
     renderPassCreateInfoFXAA.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassCreateInfoFXAA.attachmentCount = static_cast<uint32_t>(renderPassAttachmentsFXAA.size());
     renderPassCreateInfoFXAA.pAttachments = renderPassAttachmentsFXAA.data();
     renderPassCreateInfoFXAA.subpassCount = 1;
     renderPassCreateInfoFXAA.pSubpasses = &subpassFXAA;
-    renderPassCreateInfoFXAA.dependencyCount = 1;
-    renderPassCreateInfoFXAA.pDependencies = &dependencyFXAA;
+    renderPassCreateInfoFXAA.dependencyCount = static_cast<uint32_t>(fxaaDependencies.size());
+    renderPassCreateInfoFXAA.pDependencies = fxaaDependencies.data();
 
     res = vkCreateRenderPass(_core.getDevice(), &renderPassCreateInfoFXAA, nullptr, &m_renderPassFXAA);
     CHECK_VULKAN_ERROR("vkCreateRenderPass error %d\n", res);
@@ -2498,11 +2631,14 @@ void VulkanRenderer::createRenderPass() {
     subpassUI.colorAttachmentCount = 1;
     subpassUI.pColorAttachments = &swapchainColorAttachmentReferenceUI;
 
+    // Entry dependency: this pass always LOADs a swapchain image most recently written by the FXAA
+    // pass's real COLOR_ATTACHMENT_OUTPUT write (see dependencyFXAAToExternal above) -- chain against
+    // that real stage/access directly instead of the present-only BOTTOM_OF_PIPE/MEMORY_READ pattern.
     VkSubpassDependency dependencyUI{};
     dependencyUI.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyUI.dstSubpass = 0;
-    dependencyUI.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencyUI.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencyUI.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyUI.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyUI.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyUI.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyUI.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -2745,14 +2881,24 @@ void VulkanRenderer::createRenderPass() {
                                                                             colorAttachmentSSAOblurInput};
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 1u> dependencySSAOblur{};
+    std::array<VkSubpassDependency, 2u> dependencySSAOblur{};
 
     dependencySSAOblur[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencySSAOblur[0].dstSubpass = 0;
     dependencySSAOblur[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencySSAOblur[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencySSAOblur[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencySSAOblur[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencySSAOblur[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencySSAOblur[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // Outgoing: same reasoning as dependencyBlurX[1] above.
+    dependencySSAOblur[1].srcSubpass = 0;
+    dependencySSAOblur[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencySSAOblur[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencySSAOblur[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencySSAOblur[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencySSAOblur[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    dependencySSAOblur[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassCreateInfoSSAOblur = {};
     renderPassCreateInfoSSAOblur.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -3081,6 +3227,13 @@ void VulkanRenderer::createDescriptorPoolForImGui() {
 }
 
 void VulkanRenderer::createPipeline() {
+    // Reset shared blend-attachment state before any individual PipelineCreator runs. Without this,
+    // mutations made by pipelines created earlier in a PREVIOUS cycle (e.g. Particle/SemiTransparent
+    // restricting colorWriteMask on attachment index 1 for their own motion-vector output) would leak
+    // into this cycle and corrupt unrelated pipelines reusing the same attachment index for a different
+    // purpose (e.g. GPass's normal buffer), causing e.g. a missing B channel after any recreateSwapChain().
+    Pipeliner::getInstance().resetColorBlendAttachments();
+
     for (auto& pipelineCreator : m_pipelineCreators) {
         pipelineCreator->recreate();
     }
@@ -3342,6 +3495,7 @@ void VulkanRenderer::init() {
     createRenderPass();
     createFramebuffer();
     createPipeline();
+    recreateDescriptorSets();
     loadModels();
     createSemaphores();
     createDescriptorPoolForImGui();

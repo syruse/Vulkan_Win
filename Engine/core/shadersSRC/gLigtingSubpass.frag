@@ -121,9 +121,9 @@ void main()
 	out_hdr = vec4(0.0);
 	out_shading = vec4(1.0);
 
-    // excluding skybox etc with zero length normal
-    if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
-		vec3 normal = 2.0 * normalRange_0_1 - 1.0;
+    // Skybox/cleared pixels keep a zero normal; valid packed normals may legally contain 0.0 in one channel.
+    if (dot(normalRange_0_1, normalRange_0_1) > 0.0) {
+		vec3 normal = normalize(2.0 * normalRange_0_1 - 1.0);
 		
 		float ambientOcclusion = subpassLoad(inputSSAO).r;
 		ambientOcclusion = pow(ambientOcclusion, contrastSSAOFactor);

@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 class Pipeliner {
 public:
@@ -34,6 +35,13 @@ public:
     }
 
     bool saveCache();
+
+    /// Restores the shared color-blend-attachments array to its pristine default state (all channels
+    /// writable, standard alpha blend). Must be called once per pipeline-(re)creation cycle, BEFORE any
+    /// individual PipelineCreator::createPipeline() runs, since several creators (Particle, SemiTransparent)
+    /// mutate specific attachment slots (e.g. restrict colorWriteMask to R|G for motion vectors) in place on
+    /// this singleton's shared array, and those mutations otherwise persist into the next cycle.
+    void resetColorBlendAttachments();
 
     /// you can customize states of pipeline by get desired and change before invoking createPipeLine
     pipeline_ptr createPipeLine(std::string_view vertShader, std::string_view fragShader, uint32_t width, uint32_t height,
@@ -90,6 +98,7 @@ private:
     VkPipelineColorBlendStateCreateInfo m_blendCreateInfo{};
     VkPipelineDepthStencilStateCreateInfo m_depthStencil{};
     VkPipelineTessellationStateCreateInfo m_tessInfo{};
+    std::vector<VkPipelineColorBlendAttachmentState> m_blendAttachments;
 
     /// persistent default configuration
     inline static VkPipelineVertexInputStateCreateInfo _vertexInputInfo{};

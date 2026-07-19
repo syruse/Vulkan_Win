@@ -33,14 +33,25 @@ public:
         for (auto& buf : m_CUDAandCPUaccessibleBufs) {
             if (buf != nullptr) {
                 vkDestroyBuffer(m_vkState._core.getDevice(), buf, nullptr);
+                buf = VK_NULL_HANDLE;
             }
         }
         for (auto& mem : m_CUDAandCPUaccessibleMems) {
             if (mem != nullptr) {
                 vkFreeMemory(m_vkState._core.getDevice(), mem, nullptr);
+                mem = VK_NULL_HANDLE;
             }
         }
-        vkDestroySemaphore(m_vkState._core.getDevice(), mVkCudaSyncObject, nullptr);
+
+        // m_generalBuffer/m_generalBufferMemory are referenced by m_CUDAandCPUaccessibleBufs/m_CUDAandCPUaccessibleMems, 
+        // so we need to set them to VK_NULL_HANDLE to avoid double free in I3DModel::~I3DModel
+        m_generalBuffer = VK_NULL_HANDLE;
+        m_generalBufferMemory = VK_NULL_HANDLE;
+
+        if (mVkCudaSyncObject != VK_NULL_HANDLE) {
+            vkDestroySemaphore(m_vkState._core.getDevice(), mVkCudaSyncObject, nullptr);
+            mVkCudaSyncObject = VK_NULL_HANDLE;
+        }
     }
     void init() override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;

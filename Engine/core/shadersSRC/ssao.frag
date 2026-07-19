@@ -41,8 +41,8 @@ const int contrastFactor = 7;
 void main()
 {
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
-    // skybox etc has zero length normal
-    if (all(greaterThan(normalRange_0_1, vec3(0.0)))) {
+	// Skybox/cleared pixels keep a zero normal; valid packed normals may legally contain 0.0 in one channel.
+	if (dot(normalRange_0_1, normalRange_0_1) > 0.0) {
         vec4 posInViewSpace = texture(inputViewSpacePos, in_uv);
 		
 		float distance = distance(vec3(0.0, 0.0, 0.0), posInViewSpace.xyz);
@@ -50,7 +50,7 @@ void main()
         {
             out_color = vec4(1.0);
         } else {
-		    vec3 normal = 2.0 * normalRange_0_1 - 1.0;
+		    vec3 normal = normalize(2.0 * normalRange_0_1 - 1.0);
 		    float depth = texture(inputDepth, in_uv).r;
 			/* Note: alternative way to calculate over depth texture (memory optimized but affacts performance)
 		    * vec4 clip = vec4(in_uv * 2.0 - 1.0, depth, 1.0);
