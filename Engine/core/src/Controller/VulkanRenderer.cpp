@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "UI.h"
 #include "MD5Model.h"
 #include "ObjModel.h"
 #include "Particle.h"
@@ -58,7 +59,7 @@ static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 float _footPrintRedrawingK = 0.7f;
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
-    : VulkanState(appName, windowWidth, windowHeight, 1920, 1080),  // TODO
+    : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
       mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);

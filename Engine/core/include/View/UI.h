@@ -12,26 +12,33 @@ struct ResolutionEntry {
 
 class UI {
 public:
+    static constexpr int kDefaultResolutionIdx = 1;
+    static constexpr std::array<ResolutionEntry, 4> kResolutions{{
+        { 1280,  720,  "1280x720"  },
+        { 1920,  1080, "1920x1080" },
+        { 2560,  1440, "2560x1440" },
+        { 3840,  2160, "3840x2160" }
+    }};
+
+    static constexpr ResolutionEntry defaultResolution() {
+        return kResolutions[kDefaultResolutionIdx];
+    }
+
     struct States {
         std::pair<const char*, bool> gpuAnimationEnabled{"favor animation calculation on GPU", true};
         std::pair<const char*, bool> placeHolder1{"placeHolder1", true};
         std::pair<const char*, bool> placeHolder2{"placeHolder2", true};
         bool resolutionChanged = false;
-        int16_t nextWidth = 0;
-        int16_t nextHeight = 0;
+        int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;
+        int16_t nextHeight = kResolutions[kDefaultResolutionIdx].height;
     };
 
-    constexpr UI() : m_resolutions{{
-        { 1280, 720, "1280x720" },
-        { 1920, 1080, "1920x1080" },
-        { 2560, 1440, "2560x1440" },
-        { 3840, 2160, "3840x2160" }
-    }} {}
+    constexpr UI() : m_resolutions(kResolutions) {}
 
     const States& updateAndDraw();
 
 private:
     States mStates;
     std::array<ResolutionEntry, 4> m_resolutions;
-    int m_selectedIdx = 0;
+    int m_selectedIdx = kDefaultResolutionIdx;
 };

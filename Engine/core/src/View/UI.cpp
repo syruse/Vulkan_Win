@@ -52,6 +52,8 @@ const UI::States& UI::updateAndDraw() {
                     mStates.resolutionChanged = true;
                 }
             }
+            if (isSelected)
+                ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
