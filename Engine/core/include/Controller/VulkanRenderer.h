@@ -94,6 +94,7 @@ private:
     void setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken);
     void setDLSSConstants(const sl::FrameToken& frameToken);
     void evaluateDLSSPass(uint32_t currentImage, const sl::FrameToken& frameToken);
+    void applyDLSSOptions();
 #endif
 
 private:
@@ -180,8 +181,14 @@ private:
     Camera mCamera;
     ViewProj mViewProj{};
     bool m_resetViewProjHistory{true};
-    bool m_isDlssEnabled{true};  // TODO : add UI for enabling/disabling DLSS
+    bool m_isDlssEnabled{false};
+    /// Display resolution chosen by the user in the UI combo (independent of upscaler).
+    /// Render targets are _offscreenWidth/_offscreenHeight multiplying by UpscalerPreset scale(if enabled);
+    /// the upscaler outputs into this resolution; it then gets blitted to the native window resolution.
+    uint16_t m_uiDisplayWidth{UI::kResolutions[UI::kDefaultResolutionIdx].width};
+    uint16_t m_uiDisplayHeight{UI::kResolutions[UI::kDefaultResolutionIdx].height};
 #if defined(USE_DLSS) && USE_DLSS
+    sl::DLSSMode m_dlssMode{sl::DLSSMode::eMaxQuality};
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};

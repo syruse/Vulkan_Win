@@ -12,6 +12,13 @@
 #endif
 
 #include "VertexData.h"
+#include "UI.h"
+
+#if defined(USE_DLSS) && USE_DLSS
+namespace sl {
+enum class DLSSMode : unsigned int;
+}
+#endif
 
 namespace Utils {
 
@@ -46,6 +53,14 @@ void printLog(bool isCritical, Args... args) {
 
 void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
 void printErrorF(const char* pFileName, size_t line, const char* pFuncName, const char* msg, ...);
+
+float upscalerPresetToScale(UpscalerPreset preset);
+void calculateUpscaledOffscreenResolution(const UI::States& hmiStates, uint16_t displayWidth, uint16_t displayHeight,
+                                          uint16_t& offscreenWidth, uint16_t& offscreenHeight, float& scale);
+
+#if defined(USE_DLSS) && USE_DLSS
+sl::DLSSMode upscalerPresetToDLSSMode(UpscalerPreset preset);
+#endif
 
 std::string formPath(std::string_view dir, std::string_view fileName);
 

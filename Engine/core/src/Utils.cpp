@@ -12,6 +12,11 @@
 #include <fstream>
 #include <memory>
 
+#if defined(USE_DLSS) && USE_DLSS
+#include <sl.h>
+#include <sl_dlss.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <aclapi.h>
@@ -99,6 +104,48 @@ void printInfoF(const char* pFileName, size_t line, const char* pFuncName, const
 
     printLog(false, "\nin file: ", pFileName, " at line: ", line, " from function: ", pFuncName, " \n ", msg);
 }
+
+float upscalerPresetToScale(UpscalerPreset preset) {
+    switch (preset) {
+        case UpscalerPreset::NativeAA:         return 1.0000f;
+        case UpscalerPreset::UltraQuality:     return 0.8543f;
+        case UpscalerPreset::Quality:          return 0.6667f;
+        case UpscalerPreset::Balanced:         return 0.5882f;
+        case UpscalerPreset::Performance:      return 0.5000f;
+        case UpscalerPreset::UltraPerformance: return 0.3333f;
+    }
+    return 1.0f;
+}
+
+void calculateUpscaledOffscreenResolution(const UI::States& hmiStates, uint16_t displayWidth, uint16_t displayHeight,
+                                          uint16_t& offscreenWidth, uint16_t& offscreenHeight, float& scale) {
+    offscreenWidth = displayWidth;
+    offscreenHeight = displayHeight;
+    scale = 1.0f;
+
+    if (hmiStates.upscalerType == UpscalerType::None) {
+        return;
+    }
+
+    scale = upscalerPresetToScale(hmiStates.upscalerPreset);
+    // Round down to the nearest even number to avoid issues with certain upscalers that require even dimensions.
+    offscreenWidth = static_cast<uint16_t>(static_cast<float>(displayWidth) * scale) & ~uint16_t(1);
+    offscreenHeight = static_cast<uint16_t>(static_cast<float>(displayHeight) * scale) & ~uint16_t(1);
+}
+
+#if defined(USE_DLSS) && USE_DLSS
+sl::DLSSMode upscalerPresetToDLSSMode(UpscalerPreset preset) {
+    switch (preset) {
+        case UpscalerPreset::NativeAA:         return sl::DLSSMode::eDLAA;
+        case UpscalerPreset::UltraQuality:     return sl::DLSSMode::eMaxQuality;
+        case UpscalerPreset::Quality:          return sl::DLSSMode::eMaxQuality;
+        case UpscalerPreset::Balanced:         return sl::DLSSMode::eBalanced;
+        case UpscalerPreset::Performance:      return sl::DLSSMode::eMaxPerformance;
+        case UpscalerPreset::UltraPerformance: return sl::DLSSMode::eUltraPerformance;
+    }
+    return sl::DLSSMode::eMaxQuality;
+}
+#endif
 
 void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps) {
     uint32_t NumExt = 0;

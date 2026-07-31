@@ -12,17 +12,20 @@ const UI::States& UI::updateAndDraw() {
     const char* off = "OFF";
     const char* on = "ON";
 
-    ImGui::BeginChild("First", ImVec2(300, 200));
+    ImGui::BeginChild("First", ImVec2(300, 280));
     ImGui::Text(mStates.gpuAnimationEnabled.first);
     ImGui::Text(mStates.placeHolder1.first);
     ImGui::Text(mStates.placeHolder2.first);
     ImGui::Separator();
     ImGui::Text("Screen Resolution");
+    ImGui::Separator();
+    ImGui::Text("Upscaler");
+    ImGui::Text("Preset");
     ImGui::EndChild();
 
     ImGui::SameLine();
 
-    ImGui::BeginChild("Second", ImVec2(200, 200));
+    ImGui::BeginChild("Second", ImVec2(260, 280));
     ImGui::PushID(100);
     if (ImGui::Button(mStates.gpuAnimationEnabled.second ? on : off)) {
         mStates.gpuAnimationEnabled.second = !mStates.gpuAnimationEnabled.second;
@@ -56,6 +59,35 @@ const UI::States& UI::updateAndDraw() {
                 ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
+    }
+
+    ImGui::Separator();
+    mStates.upscalerChanged = false;
+    {
+        int idx = static_cast<int>(mStates.upscalerType);
+        bool changed = false;
+        if (ImGui::RadioButton("None", &idx, 0)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("DLSS", &idx, 1)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("XeSS", &idx, 2)) changed = true;
+        if (changed) {
+            mStates.upscalerType   = static_cast<UpscalerType>(idx);
+            mStates.upscalerChanged = true;
+        }
+    }
+    {
+        const bool hasUpscaler = (mStates.upscalerType != UpscalerType::None);
+        if (!hasUpscaler) ImGui::BeginDisabled();
+        static const char* kPresetLabels[] = {
+            "Native AA", "Ultra Quality", "Quality", "Balanced", "Performance", "Ultra Performance"
+        };
+        int presetIdx = static_cast<int>(mStates.upscalerPreset);
+        if (ImGui::Combo("##preset", &presetIdx, kPresetLabels, 6)) {
+            mStates.upscalerPreset  = static_cast<UpscalerPreset>(presetIdx);
+            if (hasUpscaler) mStates.upscalerChanged = true;
+        }
+        if (!hasUpscaler) ImGui::EndDisabled();
     }
 
     ImGui::EndChild();

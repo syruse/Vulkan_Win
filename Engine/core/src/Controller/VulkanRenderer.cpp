@@ -504,9 +504,6 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
         }
         m_resetViewProjHistory = true;
         m_currentFrame = 0u;
-#if defined(USE_DLSS) && USE_DLSS
-        m_slFrameIndex = 0u;
-#endif
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 
@@ -528,20 +525,8 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
         createDescriptorPoolForImGui();
 
 #if defined(USE_DLSS) && USE_DLSS
-        if (_core.isDlssSupported() && m_isDlssEnabled) {
-            static const sl::ViewportHandle viewport(0);
-            sl::DLSSOptions options{};
-            options.mode = sl::DLSSMode::eMaxQuality;
-            options.outputWidth = _windowWidth;
-            options.outputHeight = _windowHeight;
-            options.colorBuffersHDR = sl::Boolean::eFalse;
-            options.useAutoExposure = sl::Boolean::eFalse;
-            sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
-            if (optionsRes != sl::Result::eOk) {
-                Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed after resize, sl::Result=%d", static_cast<int>(optionsRes));
-                m_isDlssEnabled = false;
-            }
-        }
+        if (m_isDlssEnabled)
+            applyDLSSOptions();
 #endif
 
         createFSRContext(swapchainCreateInfo);
@@ -1437,10 +1422,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
             if (m_slConstantsErrorLogged) {
                 m_isDlssEnabled = false;
-                Utils::printLog(INFO_PARAM, "DLSS disabled due to slGetNewFrameToken failure");
+                Utils::printLog(INFO_PARAM, "DLSS disabled due to Streamline failure");
             }
 
-            if (hmiRenderData) {
+            // Run UI overlay here only when DLSS path successfully brought swapchain image to PRESENT layout.
+            // If DLSS got disabled in evaluateDLSSPass(), fallback FXAA path below will render + overlay safely.
+            if (hmiRenderData && m_isDlssEnabled) {
                 VkRenderPassBeginInfo renderPassUIInfo = {};
                 renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1666,7 +1653,9 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::VulkanCreateImageView(_core.getDevice(), _shadingBuffer.colorBufferImage[i], _shadingBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _shadingBuffer.colorBufferImageView[i]);
 
-        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _windowWidth, _windowHeight,
+        // DLSS output buffer must match m_uiDisplayWidth/Height (= applyDLSSOptions outputWidth/outputRes.width).
+        // Do NOT use _windowWidth here: Streamline validates the VkImage size against outputWidth.
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), m_uiDisplayWidth, m_uiDisplayHeight,
                                  _dlssOutputBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
                                  VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                      VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1751,9 +1740,50 @@ bool VulkanRenderer::renderScene() {
         windowQueueMSG.hmiStates->nextHeight > 0) {
         auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
         hmiStates->resolutionChanged = false;
-        const uint16_t nextWidth = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextWidth);
-        const uint16_t nextHeight = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextHeight);
-        recreateSwapChain(_windowWidth, _windowHeight, nextWidth, nextHeight);
+        m_uiDisplayWidth  = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextWidth);
+        m_uiDisplayHeight = static_cast<uint16_t>(windowQueueMSG.hmiStates->nextHeight);
+
+        uint16_t offW = m_uiDisplayWidth;
+        uint16_t offH = m_uiDisplayHeight;
+        float scale = 1.0f;
+        Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+
+        recreateSwapChain(_windowWidth, _windowHeight, offW, offH);
+        return ret_status;
+    }
+
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->upscalerChanged) {
+        auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
+        hmiStates->upscalerChanged = false;
+
+        const bool wantDlss = (hmiStates->upscalerType == UpscalerType::DLSS);
+#if defined(USE_DLSS) && USE_DLSS
+        // Set DLSS state before swapchain recreation so recreateSwapChain() can apply options.
+        m_isDlssEnabled = wantDlss;
+        if (wantDlss) {
+            m_dlssMode = Utils::upscalerPresetToDLSSMode(hmiStates->upscalerPreset);
+        }
+#endif
+
+        uint16_t offW = m_uiDisplayWidth;
+        uint16_t offH = m_uiDisplayHeight;
+        float scale = 1.0f;
+        Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+
+        // If geometry size stays the same, recreateSwapChain() will be a no-op.
+        // In that case we still must push fresh DLSS options for the new preset/mode.
+        const bool isSwapchainRecreateNeeded = (_offscreenWidth != offW) || (_offscreenHeight != offH);
+
+        if (isSwapchainRecreateNeeded)
+        {
+            recreateSwapChain(_windowWidth, _windowHeight, offW, offH);
+        }
+        
+#if defined(USE_DLSS) && USE_DLSS
+        if (wantDlss && !isSwapchainRecreateNeeded) {
+            applyDLSSOptions();
+        }
+#endif
         return ret_status;
     }
 
@@ -3299,6 +3329,31 @@ void VulkanRenderer::createDepthResources() {
 }
 
 #if defined(USE_DLSS) && USE_DLSS
+void VulkanRenderer::applyDLSSOptions() {
+    if (!_core.isDlssSupported()) {
+        Utils::printLog(INFO_PARAM, "DLSS feature is not loaded; SL resource tags are skipped");
+        m_isDlssEnabled = false;
+        return;
+    }
+
+    m_slFrameIndex = 0u;
+    m_slTagErrorLogged = false;
+    m_slConstantsErrorLogged = false;
+
+    static const sl::ViewportHandle viewport(0);
+    sl::DLSSOptions options{};
+    options.mode = m_dlssMode;
+    options.outputWidth = m_uiDisplayWidth;
+    options.outputHeight = m_uiDisplayHeight;
+    options.colorBuffersHDR = sl::Boolean::eFalse;
+    options.useAutoExposure = sl::Boolean::eFalse;
+    sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
+    if (optionsRes != sl::Result::eOk) {
+        Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
+        m_isDlssEnabled = false;
+    }
+}
+
 void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken) {
     if (!_core.isDlssSupported()) {
         return;
@@ -3328,8 +3383,8 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
     sl::Resource outputRes(sl::ResourceType::eTex2d, _dlssOutputBuffer.colorBufferImage[currentImage],
                            _dlssOutputBuffer.colorBufferImageMemory[currentImage], _dlssOutputBuffer.colorBufferImageView[currentImage],
                            static_cast<uint32_t>(VK_IMAGE_LAYOUT_GENERAL));
-    outputRes.width = _windowWidth;
-    outputRes.height = _windowHeight;
+    outputRes.width = m_uiDisplayWidth;
+    outputRes.height = m_uiDisplayHeight;
     outputRes.nativeFormat = static_cast<uint32_t>(_dlssOutputBuffer.colorFormat);
 
     sl::ResourceTag tags[] = {
@@ -3407,9 +3462,14 @@ void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToke
 
     sl::Result evalRes = _core.slEvaluateFeatureSafe(sl::kFeatureDLSS, frameToken, inputs, static_cast<uint32_t>(std::size(inputs)),
                                                      reinterpret_cast<sl::CommandBuffer*>(_cmdBufs[currentImage]));
-    if (evalRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
-        Utils::printLog(INFO_PARAM, "slEvaluateFeature failed, sl::Result=%d", static_cast<int>(evalRes));
-        m_slConstantsErrorLogged = true;
+    if (evalRes != sl::Result::eOk) {
+        if (!m_slConstantsErrorLogged) {
+            Utils::printLog(INFO_PARAM, "slEvaluateFeature failed, sl::Result=%d", static_cast<int>(evalRes));
+            m_slConstantsErrorLogged = true;
+        }
+        // Prevent repeated NGX failures/spam after a resize edge-case. User can re-enable DLSS from UI.
+        m_isDlssEnabled = false;
+        return;
     }
 
     Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
@@ -3426,7 +3486,7 @@ void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToke
     
     VkImageBlit blit{};
     blit.srcOffsets[0] = {0, 0, 0};
-    blit.srcOffsets[1] = {_windowWidth, _windowHeight, 1};
+    blit.srcOffsets[1] = {m_uiDisplayWidth, m_uiDisplayHeight, 1};
     blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     blit.srcSubresource.mipLevel = 0;
     blit.srcSubresource.baseArrayLayer = 0;
@@ -3467,22 +3527,8 @@ void VulkanRenderer::init() {
     }
 
 #if defined(USE_DLSS) && USE_DLSS
-    if (!_core.isDlssSupported() && m_isDlssEnabled) {
-        Utils::printLog(INFO_PARAM, "DLSS feature is not loaded; SL resource tags are skipped");
-    } else {
-        sl::DLSSOptions options{};
-        options.mode = sl::DLSSMode::eMaxQuality;
-        options.outputWidth = _windowWidth;
-        options.outputHeight = _windowHeight;
-        options.colorBuffersHDR = sl::Boolean::eFalse;
-        options.useAutoExposure = sl::Boolean::eFalse;
-        static const sl::ViewportHandle viewport(0);
-        sl::Result optionsRes = _core.slDLSSSetOptionsSafe(viewport, options);
-        if (optionsRes != sl::Result::eOk) {
-            Utils::printLog(INFO_PARAM, "slDLSSSetOptions failed, sl::Result=%d", static_cast<int>(optionsRes));
-            m_isDlssEnabled = false;
-        }
-    }
+    if (m_isDlssEnabled)
+        applyDLSSOptions();
 #endif
 
     auto swapchainCreateInfo = createSwapChain();

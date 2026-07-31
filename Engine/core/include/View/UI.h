@@ -4,6 +4,9 @@
 #include <array>
 #include <cstdint>
 
+enum class UpscalerType   : uint8_t { None = 0, DLSS, XESS };
+enum class UpscalerPreset : uint8_t { NativeAA = 0, UltraQuality, Quality, Balanced, Performance, UltraPerformance };
+
 struct ResolutionEntry {
     int16_t width;
     int16_t height;
@@ -31,6 +34,10 @@ public:
         bool resolutionChanged = false;
         int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;
         int16_t nextHeight = kResolutions[kDefaultResolutionIdx].height;
+
+        UpscalerType   upscalerType    = UpscalerType::None;
+        UpscalerPreset upscalerPreset = UpscalerPreset::UltraQuality;
+        bool           upscalerChanged = false;
     };
 
     constexpr UI() : m_resolutions(kResolutions) {}
