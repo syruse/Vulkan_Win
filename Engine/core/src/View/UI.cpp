@@ -2,49 +2,62 @@
 #include <imgui/imgui.h>
 
 const UI::States& UI::updateAndDraw() {
-    ImGui::SetNextWindowBgAlpha(0.5f);
-    ImGui::Begin(
-        "Menu", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-    ImGui::SetWindowSize(ImVec2(0, 0));
-    ImGui::SetWindowFontScale(1.15);
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 28.0f, viewport->WorkPos.y + 28.0f),
+                            ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(520.0f, 480.0f), ImGuiCond_Always);
 
-    const char* off = "OFF";
-    const char* on = "ON";
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 16.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 10.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.045f, 0.06f, 0.075f, 0.96f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.27f, 0.54f, 0.57f, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.08f, 0.28f, 0.30f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.10f, 0.38f, 0.40f, 1.0f));
 
-    ImGui::BeginChild("First", ImVec2(300, 280));
-    ImGui::Text(mStates.gpuAnimationEnabled.first);
-    ImGui::Text(mStates.placeHolder1.first);
-    ImGui::Text(mStates.placeHolder2.first);
+    ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.95f, 0.91f, 1.0f));
+    ImGui::TextUnformatted("Settings");
+    ImGui::PopStyleColor();
     ImGui::Separator();
-    ImGui::Text("Screen Resolution");
-    ImGui::Separator();
-    ImGui::Text("Upscaler");
-    ImGui::Text("Preset");
-    ImGui::EndChild();
 
-    ImGui::SameLine();
+    const auto drawToggle = [](const char* id, bool& enabled) {
+        ImGui::PushID(id);
+        ImGui::PushStyleColor(ImGuiCol_Button, enabled ? ImVec4(0.08f, 0.42f, 0.37f, 1.0f) : ImVec4(0.18f, 0.20f, 0.22f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, enabled ? ImVec4(0.11f, 0.54f, 0.47f, 1.0f) : ImVec4(0.25f, 0.28f, 0.30f, 1.0f));
+        const bool pressed = ImGui::Button(enabled ? "ON" : "OFF", ImVec2(62.0f, 0.0f));
+        ImGui::PopStyleColor(2);
+        ImGui::PopID();
+        return pressed;
+    };
 
-    ImGui::BeginChild("Second", ImVec2(260, 280));
-    ImGui::PushID(100);
-    if (ImGui::Button(mStates.gpuAnimationEnabled.second ? on : off)) {
+    ImGui::TextDisabled("PERFORMANCE");
+    ImGui::TextUnformatted("GPU animation");
+    ImGui::SameLine(300.0f);
+    if (drawToggle("gpuAnimation", mStates.gpuAnimationEnabled.second)) {
         mStates.gpuAnimationEnabled.second = !mStates.gpuAnimationEnabled.second;
     }
-    ImGui::PopID();
-    ImGui::PushID(101);
-    if (ImGui::Button(mStates.placeHolder1.second ? on : off)) {
-        mStates.placeHolder1.second = !mStates.placeHolder1.second;    
+    ImGui::TextUnformatted("Option slot 1");
+    ImGui::SameLine(300.0f);
+    if (drawToggle("optionOne", mStates.placeHolder1.second)) {
+        mStates.placeHolder1.second = !mStates.placeHolder1.second;
     }
-    ImGui::PopID();
-    ImGui::PushID(102);
-    if (ImGui::Button(mStates.placeHolder2.second ? on : off)) {
-        mStates.placeHolder2.second = !mStates.placeHolder2.second;    
+    ImGui::TextUnformatted("Option slot 2");
+    ImGui::SameLine(300.0f);
+    if (drawToggle("optionTwo", mStates.placeHolder2.second)) {
+        mStates.placeHolder2.second = !mStates.placeHolder2.second;
     }
-    ImGui::PopID();
 
     ImGui::Separator();
+    ImGui::TextDisabled("DISPLAY");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Resolution");
+    ImGui::SameLine(130.0f);
     mStates.resolutionChanged = false;
-    if (ImGui::BeginCombo("##res", m_resolutions[m_selectedIdx].label)) {
+    if (ImGui::BeginCombo("##resolution", m_resolutions[m_selectedIdx].label, ImGuiComboFlags_WidthFitPreview)) {
         for (int i = 0; i < static_cast<int>(m_resolutions.size()); i++) {
             const bool isSelected = (m_selectedIdx == i);
             if (ImGui::Selectable(m_resolutions[i].label, isSelected)) {
@@ -62,11 +75,12 @@ const UI::States& UI::updateAndDraw() {
     }
 
     ImGui::Separator();
+    ImGui::TextDisabled("UPSCALE");
     mStates.upscalerChanged = false;
     {
         int idx = static_cast<int>(mStates.upscalerType);
         bool changed = false;
-        if (ImGui::RadioButton("None", &idx, 0)) changed = true;
+        if (ImGui::RadioButton("Native", &idx, 0)) changed = true;
         ImGui::SameLine();
         if (ImGui::RadioButton("DLSS", &idx, 1)) changed = true;
         ImGui::SameLine();
@@ -83,6 +97,10 @@ const UI::States& UI::updateAndDraw() {
             "Native AA", "Ultra Quality", "Quality", "Balanced", "Performance", "Ultra Performance"
         };
         int presetIdx = static_cast<int>(mStates.upscalerPreset);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Quality preset");
+        ImGui::SameLine(130.0f);
+        ImGui::SetNextItemWidth(190.0f);
         if (ImGui::Combo("##preset", &presetIdx, kPresetLabels, 6)) {
             mStates.upscalerPreset  = static_cast<UpscalerPreset>(presetIdx);
             if (hasUpscaler) mStates.upscalerChanged = true;
@@ -90,8 +108,11 @@ const UI::States& UI::updateAndDraw() {
         if (!hasUpscaler) ImGui::EndDisabled();
     }
 
-    ImGui::EndChild();
+    ImGui::Separator();
+    ImGui::TextDisabled("VULKAN GAME");
     ImGui::End();
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar(4);
     ImGui::Render();
 
     return mStates;

@@ -1930,10 +1930,17 @@ bool VulkanRenderer::renderScene() {
     static auto endTime = std::chrono::high_resolution_clock::now();
     static float deltaTime = 0.0f;
 
-    mCamera.update(deltaTime, false);
-
     auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;
+
+#if defined(_DEBUG)
+    const bool isGamePaused = false;
+#else
+    const bool isGamePaused = windowQueueMSG.hmiRenderData;
+#endif
+    const float sceneDeltaTime = isGamePaused ? 0.0f : deltaTime;
+
+    mCamera.update(sceneDeltaTime, false);
 
     if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
@@ -2014,49 +2021,49 @@ bool VulkanRenderer::renderScene() {
     };
 
     // USER INPUT handling
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP)) {
         _footPrintRedrawingK = 0.7f;
         if (canMoveTank(Camera::EDirection::Forward)) {
             mCamera.move(Camera::EDirection::Forward);
         }
     }
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT)) {
         _footPrintRedrawingK = 0.03f;
         if (canMoveTank(Camera::EDirection::Left)) {
             mCamera.move(Camera::EDirection::Left);
         }
     }
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT)) {
         _footPrintRedrawingK = 0.03f;
         if (canMoveTank(Camera::EDirection::Right)) {
             mCamera.move(Camera::EDirection::Right);
         }
     }
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW)) {
         _footPrintRedrawingK = 0.7f;
         if (canMoveTank(Camera::EDirection::Back)) {
             mCamera.move(Camera::EDirection::Back);
         }
     }
 
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_LEFT) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_LEFT)) {
         // Q/E affects only the CameraPanzer view/barrel yaw, not tank movement vector.
         mCamera.adjustViewYaw(-0.35f);
     }
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_RIGHT) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_RIGHT)) {
         mCamera.adjustViewYaw(0.35f);
     }
 
-    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::FIRE) {
+    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::FIRE)) {
         // FIRE is edge-triggered in input layer, so one click -> one projectile spawn.
         tryFireProjectile();
     }
 
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
-    _pushConstant.windDirElapsedTimeMS.w += deltaTime;
+    _pushConstant.windDirElapsedTimeMS.w += sceneDeltaTime;
 
-    if (m_btTankBody) {
+    if (!isGamePaused && m_btTankBody) {
         static glm::vec3 prevTankPos = mCamera.targetPos();
         static glm::quat prevTankRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
 
@@ -2105,7 +2112,7 @@ bool VulkanRenderer::renderScene() {
         m_btTankBody->activate(true);
     }
 
-    if (m_btDynamicsWorld && deltaTime > 0.0f) {
+    if (!isGamePaused && m_btDynamicsWorld && deltaTime > 0.0f) {
         // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
         const glm::vec3 tankPos = mCamera.targetPos();
         glm::vec3 projectilePos(0.0f);
@@ -2226,18 +2233,20 @@ bool VulkanRenderer::renderScene() {
     submitInfo.pSignalSemaphores = &m_renderCompleteSem[ImageIndex]; 
     submitInfo.signalSemaphoreCount = 1;
 
-    updateUniformBuffer(ImageIndex, deltaTime);
+    updateUniformBuffer(ImageIndex, sceneDeltaTime);
     static bool isGPUCalculationFavorable = true;
     if (windowQueueMSG.hmiStates) {
         isGPUCalculationFavorable = windowQueueMSG.hmiStates->gpuAnimationEnabled.second;
     }
 
     for (auto& model : m_models) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR, mCamera.cameraPosition());
+        model->update(sceneDeltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR,
+                  mCamera.cameraPosition());
     }
 
     for (auto& model : m_semiTransparentModels) {
-        model->update(deltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR, mCamera.cameraPosition());
+        model->update(sceneDeltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR,
+                  mCamera.cameraPosition());
     }
 
     recordCommandBuffers(ImageIndex, windowQueueMSG.hmiRenderData);
