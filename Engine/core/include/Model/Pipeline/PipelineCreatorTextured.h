@@ -8,17 +8,19 @@ class PipelineCreatorTextured : public PipelineCreatorBase {
 public:
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, uint32_t subpass = 0u,
-                            VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                            VkPushConstantRange pushConstantRange = {0u, 0u, 0u}, bool expectsArrayTexture = true)
         : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, std::string_view{}, std::string_view{}, subpass,
-                                  pushConstantRange) {
+                                  pushConstantRange, expectsArrayTexture) {
     }
 
     PipelineCreatorTextured(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, std::string_view tessCtrlShader, std::string_view tessEvalShader,
-                            uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
+                            uint32_t subpass = 0u, VkPushConstantRange pushConstantRange = {0u, 0u, 0u},
+                            bool expectsArrayTexture = true)
         : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange),
           m_tessCtrlShader(tessCtrlShader),
-          m_tessEvalShader(tessEvalShader) {
+          m_tessEvalShader(tessEvalShader),
+          m_expectsArrayTexture(expectsArrayTexture) {
         m_isTessellated = !m_tessCtrlShader.empty() && !m_tessEvalShader.empty();
     }
 
@@ -33,6 +35,11 @@ public:
         ++m_maxObjectsCount;
     }
 
+    // Whether this pipeline's fragment shader binds materials as sampler2DArray (true) or plain sampler2D (false).
+    bool expectsArrayTexture() const {
+        return m_expectsArrayTexture;
+    }
+
 private:
     void createDescriptorSetLayout() override;
     void createPipeline() override;
@@ -44,5 +51,6 @@ protected:
     std::string_view m_tessCtrlShader{};
     std::string_view m_tessEvalShader{};
     bool m_isTessellated{false};
+    bool m_expectsArrayTexture{true};
     std::unordered_map<uint32_t, I3DModel::Material> m_descriptorSets{};
 };

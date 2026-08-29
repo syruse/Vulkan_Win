@@ -3,6 +3,8 @@
 #include "MD5Model.h"
 #include "ObjModel.h"
 #include "Particle.h"
+#include "SphereModel.h"
+#include "CubeModel.h"
 #include "PipelineCreatorFootprint.h"
 #include "PipelineCreatorParticle.h"
 #include "PipelineCreatorQuad.h"
@@ -19,6 +21,7 @@
 #include <chrono>
 #include <limits>
 #include <random>
+#include <cmath>
 
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
@@ -57,6 +60,24 @@ static bool _oneOffClearingFootPrint = true;
 static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
 float _footPrintRedrawingK = 0.7f;
+
+namespace {
+std::vector<Instance> makeBoundaryCubeInstances(float halfExtent, float sceneHalfSize, float spacing) {
+    // Build a closed rectangular perimeter from cube instances.
+    // Cubes are placed on the four borders of the play area and reused by both
+    // rendering (instanced CubeModel) and gameplay collision checks.
+    std::vector<Instance> out;
+    for (float x = -sceneHalfSize; x <= sceneHalfSize; x += spacing) {
+        out.push_back({glm::vec3(x, halfExtent, -sceneHalfSize), 1.0f});
+        out.push_back({glm::vec3(x, halfExtent, sceneHalfSize), 1.0f});
+    }
+    for (float z = -sceneHalfSize + spacing; z <= sceneHalfSize - spacing; z += spacing) {
+        out.push_back({glm::vec3(-sceneHalfSize, halfExtent, z), 1.0f});
+        out.push_back({glm::vec3(sceneHalfSize, halfExtent, z), 1.0f});
+    }
+    return out;
+}
+}
 
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
     : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
@@ -117,9 +138,31 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
         }
     }
 
-    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "Tank.obj"sv,
+    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "TankHull.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 75.0f));
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
+                                       {}, nullptr, false));
+
+    // barrel of the panzer: the tank splitted into hull + barrel models.
+    // It currently inherits tank transform and then adds an extra yaw from Q/E.
+    m_barrelModelIndex = static_cast<uint32_t>(m_models.size());
+    m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "TankBarrel.obj"sv,
+                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                                       static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
+                                       {}, nullptr, false));
+
+    // Projectile visual model. Physics body drives instance position every frame.
+    m_projectileModelIndex = static_cast<uint32_t>(m_models.size());
+    m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg",
+                                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                                          PROJECTILE_RADIUS));
+
+    // Perimeter cubes around the map: visible wall + static Bullet colliders.
+    m_boundaryCubeInstances = makeBoundaryCubeInstances(BOUNDARY_CUBE_HALF_EXTENT, 0.92f * Z_FAR, 2.5f * BOUNDARY_CUBE_HALF_EXTENT);
+    m_boundaryModelIndex = static_cast<uint32_t>(m_models.size());
+    m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg",
+                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
+                                        BOUNDARY_CUBE_HALF_EXTENT, m_boundaryCubeInstances));
 
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
@@ -217,7 +260,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     // The trees stand still and are animated manually when the tank gets close.
     {
         btCollisionShape* treeShape =
-            new btCylinderShape(btVector3(2.0f, m_btTreeHalfHeight, 2.0f));
+            new btCylinderShape(btVector3(2.0f, TREE_HALF_HEIGHT, 2.0f));
         m_btCollisionShapes.push_back(treeShape);
 
         auto& treeInstances = m_semiTransparentModels[0]->instances();
@@ -227,7 +270,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
             btTransform startTransform;
             startTransform.setIdentity();
             startTransform.setOrigin(
-                btVector3(treeInstance.posShift.x, treeInstance.posShift.y + m_btTreeHalfHeight, treeInstance.posShift.z));
+                btVector3(treeInstance.posShift.x, treeInstance.posShift.y + TREE_HALF_HEIGHT, treeInstance.posShift.z));
 
             btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
             // mass=0 → kinematic; inertia is irrelevant for kinematic bodies.
@@ -264,6 +307,20 @@ VulkanRenderer::~VulkanRenderer() {
             delete m_btTankBody;
             m_btTankBody = nullptr;
         }
+
+        if (m_btProjectileBody) {
+            m_btDynamicsWorld->removeRigidBody(m_btProjectileBody);
+            delete m_btProjectileBody->getMotionState();
+            delete m_btProjectileBody;
+            m_btProjectileBody = nullptr;
+        }
+
+        for (auto* body : m_btBoundaryBodies) {
+            m_btDynamicsWorld->removeRigidBody(body);
+            delete body->getMotionState();
+            delete body;
+        }
+        m_btBoundaryBodies.clear();
 
         if (m_btGroundBody) {
             m_btDynamicsWorld->removeRigidBody(m_btGroundBody);
@@ -714,6 +771,14 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->model = model;
     pModel->MVP = mViewProj.viewProj * pModel->model;
 
+    // Barrel placeholder follows tank transform, but rotates by independent Q/E yaw.
+    if (m_barrelModelIndex < objectsAmount) {
+        Model* pBarrel = (Model*)((uint64_t)mp_modelTransferSpace + (m_barrelModelIndex * _modelUniformAlignment));
+        pBarrel->prevModel = pBarrel->model;
+        pBarrel->model = mCamera.barrelModelMat();
+        pBarrel->MVP = mViewProj.viewProj * pBarrel->model;
+    }
+
     // rotate skybox slowly
     pModel = (Model*)((uint64_t)mp_modelTransferSpace + (objectsAmount - 1) * _modelUniformAlignment);
     static float skyboxRotationDegree = 0.0f;
@@ -751,7 +816,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         // The visual base (pivot/root) of the tree = CoM minus the *rotated* half-height offset.
         // For upright trees this equals (x, 0, z).
         // For tilted trees the base stays at the ground pivot — not underground.
-        const btVector3 baseWS = origin - transform.getBasis() * btVector3(0.0f, m_btTreeHalfHeight, 0.0f);
+        const btVector3 baseWS = origin - transform.getBasis() * btVector3(0.0f, TREE_HALF_HEIGHT, 0.0f);
         const glm::vec3 bulletPos(baseWS.x(), baseWS.y(), baseWS.z());
         treeTrunkInstance.posShift = bulletPos;
         treeCrownInstance.posShift = bulletPos;
@@ -1101,7 +1166,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassShadowMapInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // draw shadow of 3d mesh only
+    // draw shadow of 3d mesh only (without ground and skybox)
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size() - 2u; ++meshIndex) {
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
@@ -1714,6 +1779,136 @@ void VulkanRenderer::loadModels() {
         m_btTankBody->setCcdSweptSphereRadius(2.0f);
         m_btDynamicsWorld->addRigidBody(m_btTankBody);
     }
+
+    // Projectile body: dynamic sphere that can bounce from cubes and hit trees.
+    {
+        btCollisionShape* sphereShape = new btSphereShape(PROJECTILE_RADIUS);
+        m_btCollisionShapes.push_back(sphereShape);
+
+        btTransform startTransform;
+        startTransform.setIdentity();
+        // by default it's under the ground
+        startTransform.setOrigin(btVector3(0.0f, -2000.0f, 0.0f));
+
+        btScalar mass = 35.0f;
+        btVector3 localInertia(0, 0, 0);
+        sphereShape->calculateLocalInertia(mass, localInertia);
+
+        btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+        btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, sphereShape, localInertia);
+        m_btProjectileBody = new btRigidBody(rbInfo);
+        // it can bounce off other objects
+        m_btProjectileBody->setRestitution(0.8f);
+        m_btProjectileBody->setFriction(0.4f);
+        // ecable Continuous Collision Detection (CCD) to prevent tunneling at high speeds.
+        m_btProjectileBody->setCcdMotionThreshold(0.01f);
+        // sphere radius is smaller than the projectile's bounding sphere to avoid false negatives in CCD.
+        m_btProjectileBody->setCcdSweptSphereRadius(PROJECTILE_RADIUS * 0.7f);
+        m_btProjectileBody->setActivationState(DISABLE_DEACTIVATION);
+        m_btDynamicsWorld->addRigidBody(m_btProjectileBody);
+    }
+
+    // Boundary cubes around scene perimeter: block tank and reflect projectile.
+    {
+        btCollisionShape* cubeShape = new btBoxShape(btVector3(BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                                                                BOUNDARY_CUBE_HALF_EXTENT));
+        m_btCollisionShapes.push_back(cubeShape);
+        m_btBoundaryBodies.reserve(m_boundaryCubeInstances.size());
+
+        for (const auto& cube : m_boundaryCubeInstances) {
+            btTransform t;
+            t.setIdentity();
+            t.setOrigin(btVector3(cube.posShift.x, cube.posShift.y, cube.posShift.z));
+            btDefaultMotionState* motionState = new btDefaultMotionState(t);
+            btRigidBody::btRigidBodyConstructionInfo rbInfo(0.0f, motionState, cubeShape, btVector3(0, 0, 0));
+            btRigidBody* body = new btRigidBody(rbInfo);
+            body->setRestitution(0.95f);
+            body->setFriction(0.8f);
+            m_btDynamicsWorld->addRigidBody(body);
+            m_btBoundaryBodies.push_back(body);
+        }
+    }
+
+    syncProjectileVisualFromPhysics();
+}
+
+void VulkanRenderer::syncProjectileVisualFromPhysics() {
+    if (m_projectileModelIndex >= m_models.size()) {
+        return;
+    }
+
+    auto& projectileInstances = m_models[m_projectileModelIndex]->instances();
+    if (projectileInstances.empty()) {
+        return;
+    }
+
+    if (!m_btProjectileBody) {
+        // Keep projectile hidden underground when body is absent/uninitialized.
+        projectileInstances[0].posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
+        return;
+    }
+
+    const btTransform& t = m_btProjectileBody->getWorldTransform();
+    const btVector3& p = t.getOrigin();
+    projectileInstances[0].posShift = glm::vec3(p.x(), p.y(), p.z());
+
+    /// NOTE: not needed right now
+    ///const btVector3 v = m_btProjectileBody->getLinearVelocity();
+    ///const float speed2 = v.length2();
+    ///// Auto-deactivate when projectile lost meaningful motion or escaped playable range.
+    ///if (speed2 < 0.5f) {
+    ///}
+}
+
+void VulkanRenderer::tryFireProjectile() {
+    if (!m_btProjectileBody || m_projectileModelIndex >= m_models.size()) {
+        return;
+    }
+
+    if (std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) {
+        // Single active projectile policy: ignore click until current one finishes.
+        return;
+    }
+
+    const glm::vec3 tankPos = mCamera.targetPos();
+    // Shot direction follows the barrel's own forward (includes independent Q/E yaw offset),
+    // not just the tank hull's forward.
+    const glm::vec3 forward = glm::normalize(glm::vec3(mCamera.barrelModelMat() * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+    const glm::vec3 spawnPos = tankPos + forward * (m_models[0]->radius() * 0.7f + PROJECTILE_RADIUS + 6.0f) +
+                               glm::vec3(0.0f, 18.0f, 0.0f);
+
+    btTransform t;
+    t.setIdentity();
+    t.setOrigin(btVector3(spawnPos.x, spawnPos.y, spawnPos.z));
+    if (m_btProjectileBody->getMotionState()) {
+        m_btProjectileBody->getMotionState()->setWorldTransform(t);
+    }
+    m_btProjectileBody->setWorldTransform(t);
+    m_btProjectileBody->setInterpolationWorldTransform(t);
+    // Re-seed body state at muzzle and launch with configured speed.
+    m_btProjectileBody->setLinearVelocity(btVector3(forward.x * PROJECTILE_SPEED, forward.y * PROJECTILE_SPEED,
+                                                    forward.z * PROJECTILE_SPEED));
+    m_btProjectileBody->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+    m_btProjectileBody->clearForces();
+    m_btProjectileBody->activate(true);
+
+    m_projectileTimeoutDeadline = std::chrono::steady_clock::now() + PROJECTILE_TIMEOUT;
+    syncProjectileVisualFromPhysics();
+}
+
+// Note: we need it since the tank is kinetic model
+bool VulkanRenderer::intersectsBoundary(const glm::vec3& position, float radius) const {
+    // Cheap AABB-vs-point(radius-expanded) check against each perimeter cube center.
+    // This is enough for gameplay blocking of tank movement at scene borders.
+    const float threshold = BOUNDARY_CUBE_HALF_EXTENT + radius;
+    for (const auto& cube : m_boundaryCubeInstances) {
+        const float dx = std::abs(position.x - cube.posShift.x);
+        const float dz = std::abs(position.z - cube.posShift.z);
+        if (dx <= threshold && dz <= threshold) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool VulkanRenderer::renderScene() {
@@ -1787,22 +1982,65 @@ bool VulkanRenderer::renderScene() {
         return ret_status;
     }
 
+    const float tankCollisionRadius = m_models[0]->radius() * 0.4f;
+    const glm::vec3 upAxis(0.0f, 1.0f, 0.0f);
+    const glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, 1.0f);
+
+    auto canMoveTank = [&](Camera::EDirection dir) {
+        const glm::vec3 currentPos = mCamera.targetPos();
+        const glm::quat currentRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
+
+        glm::vec3 forward = currentRot * baseForward;
+        if (dir == Camera::EDirection::Left) {
+            const glm::quat rotLeft = glm::angleAxis(glm::radians(Camera::ANGLE_GAIN), upAxis);
+            forward = (rotLeft * currentRot) * baseForward;
+        } else if (dir == Camera::EDirection::Right) {
+            const glm::quat rotRight = glm::angleAxis(glm::radians(-Camera::ANGLE_GAIN), upAxis);
+            forward = (rotRight * currentRot) * baseForward;
+        }
+
+        const float sign = (dir == Camera::EDirection::Back) ? -1.0f : 1.0f;
+        const glm::vec3 tentativePos = currentPos + Camera::GAIN_MOVEMENT * sign * forward;
+        return !intersectsBoundary(tentativePos, tankCollisionRadius);
+    };
+
     // USER INPUT handling
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP) {
         _footPrintRedrawingK = 0.7f;
-        mCamera.move(Camera::EDirection::Forward);
+        if (canMoveTank(Camera::EDirection::Forward)) {
+            mCamera.move(Camera::EDirection::Forward);
+        }
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT) {
         _footPrintRedrawingK = 0.03f;
-        mCamera.move(Camera::EDirection::Left);
+        if (canMoveTank(Camera::EDirection::Left)) {
+            mCamera.move(Camera::EDirection::Left);
+        }
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT) {
         _footPrintRedrawingK = 0.03f;
-        mCamera.move(Camera::EDirection::Right);
+        if (canMoveTank(Camera::EDirection::Right)) {
+            mCamera.move(Camera::EDirection::Right);
+        }
     }
     if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW) {
         _footPrintRedrawingK = 0.7f;
-        mCamera.move(Camera::EDirection::Back);
+        if (canMoveTank(Camera::EDirection::Back)) {
+            mCamera.move(Camera::EDirection::Back);
+        }
+    }
+
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_LEFT) {
+        // Q/E affects only the CameraPanzer view/barrel yaw, not tank movement vector.
+        mCamera.adjustViewYaw(-0.35f);
+    }
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_RIGHT) {
+        mCamera.adjustViewYaw(0.35f);
+    }
+
+    if (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::FIRE) {
+        // FIRE is edge-triggered in input layer, so one click -> one projectile spawn.
+        tryFireProjectile();
     }
 
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
@@ -1861,12 +2099,20 @@ bool VulkanRenderer::renderScene() {
     if (m_btDynamicsWorld && deltaTime > 0.0f) {
         // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
         const glm::vec3 tankPos = mCamera.targetPos();
+        glm::vec3 projectilePos(0.0f);
+        if (m_btProjectileBody) {
+            const btTransform& projectileTransform = m_btProjectileBody->getWorldTransform();
+            const btVector3& projectileOrigin = projectileTransform.getOrigin();
+            projectilePos = glm::vec3(projectileOrigin.x(), projectileOrigin.y(), projectileOrigin.z());
+        }
         const float tankRadius  = m_models[0]->radius() / 2.0f;
         constexpr float kTreeRadius   = 2.0f;                        // matches btCylinderShape radius
         constexpr float kMaxAngle     = 80.0f * SIMD_PI / 180.0f;   // limit to 80° — trunk won't clip into ground
         constexpr float kFallDuration = 1.5f;                        // seconds for full fall
         const float     dtSec         = deltaTime * 0.001f;
         const float     triggerDist   = tankRadius + kTreeRadius;
+        // Projectile can knock trees down with its own trigger radius, same animation pipeline.
+        const float     projectileTriggerDist = PROJECTILE_RADIUS + kTreeRadius;
 
         for (size_t i = 0; i < m_btTreeBodies.size(); ++i) {
             TreeFallState& s = m_btTreeFallStates[i];
@@ -1874,12 +2120,20 @@ bool VulkanRenderer::renderScene() {
             if (!s.falling) {
                 const float dx = tankPos.x - s.baseX;
                 const float dz = tankPos.z - s.baseZ;
-                if (dx * dx + dz * dz < triggerDist * triggerDist) {
+                const float dxProj = projectilePos.x - s.baseX;
+                const float dzProj = projectilePos.z - s.baseZ;
+                const bool tankHit = (dx * dx + dz * dz < triggerDist * triggerDist);
+                const bool projectileHit = (std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) &&
+                                           (dxProj * dxProj + dzProj * dzProj < projectileTriggerDist * projectileTriggerDist);
+                if (tankHit || projectileHit) {
                     s.falling = true;
                     // Fall direction = away from tank (i.e. in the direction the tank is pushing).
-                    float len = std::sqrt(dx * dx + dz * dz);
-                    float fdx = (len > 1e-4f) ? -dx / len : 1.0f;   // tree_base - tank_pos
-                    float fdz = (len > 1e-4f) ? -dz / len : 0.0f;
+                    // Use impact source (tank or projectile) to compute realistic fall direction.
+                    const float srcDx = projectileHit ? dxProj : dx;
+                    const float srcDz = projectileHit ? dzProj : dz;
+                    float len = std::sqrt(srcDx * srcDx + srcDz * srcDz);
+                    float fdx = (len > 1e-4f) ? -srcDx / len : 1.0f;   // tree_base - hit_source_pos
+                    float fdz = (len > 1e-4f) ? -srcDz / len : 0.0f;
                     // Rotation axis = cross((0,1,0), (fdx,0,fdz)) = (fdz, 0, -fdx).
                     // This makes the tree top tip toward (fdx, 0, fdz) — away from tank.
                     s.axisX =  fdz;
@@ -1897,7 +2151,7 @@ bool VulkanRenderer::renderScene() {
                 btTransform t;
                 t.setIdentity();
                 t.setRotation(rot);
-                const btVector3 comOffset = t * btVector3(0.0f, m_btTreeHalfHeight, 0.0f);
+                const btVector3 comOffset = t * btVector3(0.0f, TREE_HALF_HEIGHT, 0.0f);
                 t.setOrigin(btVector3(s.baseX, 0.0f, s.baseZ) + comOffset);
 
                 m_btTreeBodies[i]->getMotionState()->setWorldTransform(t);
@@ -1907,6 +2161,8 @@ bool VulkanRenderer::renderScene() {
 
         const float deltaSec = deltaTime * 0.001f;
         m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
+        // After Bullet step, propagate projectile body transform into render instance data.
+        syncProjectileVisualFromPhysics();
     }
 
     // -- GET NEXT IMAGE --

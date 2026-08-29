@@ -3,8 +3,15 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include "VulkanState.h"
+
+// Transparent hasher so lookups by std::string_view/const char* don't allocate a temporary std::string.
+struct StringHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+};
 
 class TextureFactory {
 public:
@@ -27,8 +34,9 @@ public:
                                              bool is_flippingVertically = true);
     std::weak_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true,
                                            bool is_flippingVertically = true);
+    // forceArrayView: request VK_IMAGE_VIEW_TYPE_2D_ARRAY even for a single file, for shaders using sampler2DArray (e.g. GPASS).
     std::weak_ptr<Texture> create2DArrayTexture(std::vector<std::string>&& textureFileNames, bool is_miplevelsEnabling = true,
-                                                bool is_flippingVertically = true);
+                                                bool is_flippingVertically = true, bool forceArrayView = false);
     VkSampler getTextureSampler(uint32_t mipLevels);
 
 private:
@@ -40,7 +48,7 @@ private:
 
 private:
     const VulkanState& m_vkState;
-    std::unordered_map<std::string, std::shared_ptr<Texture>> m_textures{};
+    std::unordered_map<std::string, std::shared_ptr<Texture>, StringHash, std::equal_to<>> m_textures{};
     std::unordered_map<uint32_t, VkSampler> m_samplers{};
     VkPhysicalDeviceProperties m_properties{};
     std::function<void(TextureFactory::Texture* p)> mTextureDeleter{nullptr};

@@ -9,14 +9,25 @@
 #endif
 
 #include <array>
+#include <chrono>
 #include <vector>
 
-#include "Camera.h"
+#include "CameraPanzer.h"
 #include "Particle.h"
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
-#define TREES_COUNT 250
+inline constexpr uint32_t TREES_COUNT = 250;
+// Half extent of one perimeter boundary cube instance.
+inline constexpr float BOUNDARY_CUBE_HALF_EXTENT = 18.0f;
+// Projectile sphere radius used by both visual mesh and hit checks.
+inline constexpr float PROJECTILE_RADIUS = 6.0f;
+// Initial projectile speed in world units per second.
+inline constexpr float PROJECTILE_SPEED = 130.0f;
+// How long a fired projectile stays "active" before being force-deactivated.
+inline constexpr std::chrono::seconds PROJECTILE_TIMEOUT{8};
+// Half-height of a tree's cylinder collider (also used to derive its visual base position).
+inline constexpr float TREE_HALF_HEIGHT = 60.0f;
 
 class btDefaultCollisionConfiguration;
 class btCollisionDispatcher;
@@ -90,6 +101,12 @@ private:
     void recreateDescriptorSets();
     void createFSRContext(VkSwapchainCreateInfoKHR swapchainCreateInfo);
     void calculateAdditionalMat();
+    /// Sync projectile render instance with Bullet body transform and auto-hide/deactivate when needed.
+    void syncProjectileVisualFromPhysics();
+    /// Spawn/launch projectile from tank muzzle if no active projectile exists.
+    void tryFireProjectile();
+    /// Check if a sphere at position/radius intersects any static boundary cube.
+    bool intersectsBoundary(const glm::vec3& position, float radius) const;
 #if defined(USE_DLSS) && USE_DLSS
     void setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken);
     void setDLSSConstants(const sl::FrameToken& frameToken);
@@ -118,9 +135,22 @@ private:
     std::vector<btCollisionShape*> m_btCollisionShapes{};
     btRigidBody* m_btGroundBody{nullptr};
     btRigidBody* m_btTankBody{nullptr};
+    // Dynamic rigid body of the fired sphere; reused between shots.
+    btRigidBody* m_btProjectileBody{nullptr};
+    // Static rigid bodies matching visual perimeter cubes.
+    std::vector<btRigidBody*> m_btBoundaryBodies{};
     std::vector<btRigidBody*> m_btTreeBodies{};
     std::vector<TreeFallState>  m_btTreeFallStates{};
-    float m_btTreeHalfHeight{60.0f};
+
+    // Gameplay props
+    // Cached transforms for perimeter cube rendering and simple collision checks.
+    std::vector<Instance> m_boundaryCubeInstances{};
+    // Indices in m_models for quick access to newly added gameplay models.
+    uint32_t m_barrelModelIndex{0u};
+    uint32_t m_projectileModelIndex{0u};
+    uint32_t m_boundaryModelIndex{0u};
+    // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
+    std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
 
     std::vector<VkSemaphore> m_presentCompleteSem{};
     std::vector<VkSemaphore> m_renderCompleteSem{};
@@ -178,7 +208,7 @@ private:
     /// smart ptr for taking over responsibility for lazy init and early removal
     std::unique_ptr<TextureFactory> mTextureFactory{nullptr};
 
-    Camera mCamera;
+    CameraPanzer mCamera;
     ViewProj mViewProj{};
     bool m_resetViewProjHistory{true};
     bool m_isDlssEnabled{false};

@@ -37,9 +37,12 @@ void TextureFactory::init() {
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames,
                                                                          bool is_flippingVertically) {
-    auto id = std::string{textureFileNames[0]};
+    // Prefix the cache key so the same filename requested as a different view type never aliases.
+    auto id = std::string{"CUBE:"} + std::string{textureFileNames[0]};
 
-    if (m_textures.find(id) == m_textures.end()) {
+    if (auto it = m_textures.find(id); it != m_textures.end()) {
+        return it->second;
+    } else {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
         std::vector<std::string> texturePaths{Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[0]),
@@ -64,18 +67,21 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
         m_textures.try_emplace(id, texture);
 
         return texture;
-    } else {
-        return m_textures[id];
     }
 }
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std::vector<std::string>&& textureFileNames,
                                                                             bool is_miplevelsEnabling,
-                                                                            bool is_flippingVertically) {
+                                                                            bool is_flippingVertically,
+                                                                            bool forceArrayView) {
     std::vector<std::string> filePaths = std::move(textureFileNames);
-    auto id = std::string{filePaths[0]};
+    const bool isArrayView = (filePaths.size() > 1) || forceArrayView;
+    // Tag the cache key with the resolved view type so 2D vs 2D-array requests for the same filename never alias.
+    auto id = std::string{isArrayView ? "ARR:" : "2D:"} + filePaths[0];
 
-    if (m_textures.find(id) == m_textures.end()) {
+    if (auto it = m_textures.find(id); it != m_textures.end()) {
+        return it->second;
+    } else {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
         for (auto& filePath : filePaths) {
@@ -86,7 +92,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
                        m_vkState._cmdBufPool, is_miplevelsEnabling, is_flippingVertically) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
-        VkImageViewType viewType = (filePaths.size() > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+        VkImageViewType viewType = isArrayView ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
                                          VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, texture->mipLevels,
                                          viewType, filePaths.size()) != VK_SUCCESS) {
@@ -98,14 +104,16 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
         m_textures.try_emplace(id, texture);
 
         return texture;
-    } else {
-        return m_textures[id];
     }
 }
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName,
                                                                        bool is_miplevelsEnabling, bool is_flippingVertically) {
-    if (m_textures.find(pTextureFileName.data()) == m_textures.end()) {
+    // Prefix the cache key so the same filename requested as a different view type never aliases.
+    std::string id = std::string{"2D:"} + std::string{pTextureFileName};
+    if (auto it = m_textures.find(id); it != m_textures.end()) {
+        return it->second;
+    } else {
         std::shared_ptr<TextureFactory::Texture> texture(new TextureFactory::Texture(), mTextureDeleter);
 
         std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
@@ -122,11 +130,9 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 
         /// Note: creation of sampler in advance
         getTextureSampler(texture->mipLevels);
-        m_textures.try_emplace(std::string{pTextureFileName}, texture);
+        m_textures.try_emplace(id, texture);
 
         return texture;
-    } else {
-        return m_textures[std::string{pTextureFileName}];
     }
 }
 

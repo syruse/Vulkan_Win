@@ -20,9 +20,9 @@ public:
              TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
              float animationSpeedMultiplier = 1.0f, bool isSwapYZNeeded = true,
-             const std::vector<Instance>& instances = {}) noexcept(true)
+             const std::vector<Instance>& instances = {}, bool normalizeVertices = true) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier,
-                   instances),
+                 instances, nullptr, normalizeVertices),
           m_md5ModelFileName(md5ModelFileName),
           m_md5AnimFileName(md5AnimFileName),
           m_animationSpeedMultiplier(animationSpeedMultiplier),

@@ -9,13 +9,14 @@
 I3DModel::I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory,
                    PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint,
                    float vertexMagnitudeMultiplier, const std::vector<Instance>& instances,
-                   std::unique_ptr<I3DModel> lowPolyMesh) noexcept(true)
+                   std::unique_ptr<I3DModel> lowPolyMesh, bool normalizeVertices) noexcept(true)
     : m_vkState(vulkanState),
       m_textureFactory(textureFactory),
       m_lowPolyMesh(std::move(lowPolyMesh)),
       m_pipelineCreatorTextured(pipelineCreatorTextured),
       m_pipelineCreatorFootprint(pipelineCreatorFootprint),
       m_vertexMagnitudeMultiplier(vertexMagnitudeMultiplier),
+    m_normalizeVertices(normalizeVertices),
       m_instances(instances) {
     assert(m_vertexMagnitudeMultiplier > 0.01f);
     // Note: we must have at least one instance to draw

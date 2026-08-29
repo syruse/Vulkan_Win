@@ -23,13 +23,17 @@ void ObjModel::init() {
     m_activeInstances.assign(m_instances.begin(), m_instances.end());
 
     load(vertices, indices);
-    // normilizing the vertices
-    for (auto& vert : vertices) {
-        vert.pos = (vert.pos / m_radius) * m_vertexMagnitudeMultiplier;
+    if (m_normalizeVertices) {
+        for (auto& vert : vertices) {
+            vert.pos = (vert.pos / m_radius) * m_vertexMagnitudeMultiplier;
+        }
+        m_radius = m_vertexMagnitudeMultiplier;
+    } else {
+        for (auto& vert : vertices) {
+            vert.pos *= m_vertexMagnitudeMultiplier;
+        }
+        m_radius *= m_vertexMagnitudeMultiplier;
     }
-
-    // modify our radius according to multiplier
-    m_radius = m_vertexMagnitudeMultiplier;
 
     Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
@@ -131,7 +135,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
             auto texture = m_textureFactory.create2DArrayTexture(
                 isBumpMappingValid
                     ? std::vector<std::string>{materials[materialId].diffuse_texname, materials[materialId].bump_texname}
-                    : std::vector<std::string>{materials[materialId].diffuse_texname});
+                    : std::vector<std::string>{materials[materialId].diffuse_texname},
+                true, true, m_pipelineCreatorTextured->expectsArrayTexture());
             if (!texture.expired()) {
                 realMaterialId = m_pipelineCreatorTextured->createDescriptor(
                     texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));

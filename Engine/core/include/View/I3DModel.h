@@ -169,13 +169,14 @@ public:
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              PipelineCreatorFootprint* pipelineCreatorFootprint, float vertexMagnitudeMultiplier = 1.0f,
-             const std::vector<Instance>& instances = {}, std::unique_ptr<I3DModel> lowPolyMesh = nullptr) noexcept(true);
+             const std::vector<Instance>& instances = {}, std::unique_ptr<I3DModel> lowPolyMesh = nullptr,
+             bool normalizeVertices = true) noexcept(true);
 
     I3DModel(const VulkanState& vulkanState, TextureFactory& textureFactory, PipelineCreatorTextured* pipelineCreatorTextured,
              float vertexMagnitudeMultiplier = 1.0f, const std::vector<Instance>& instances = {},
-             std::unique_ptr<I3DModel> lowPolyMesh = nullptr) noexcept(true)
+             std::unique_ptr<I3DModel> lowPolyMesh = nullptr, bool normalizeVertices = true) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, vertexMagnitudeMultiplier, instances,
-                   std::move(lowPolyMesh)) {
+                 std::move(lowPolyMesh), normalizeVertices) {
     }
 
     virtual ~I3DModel() {
@@ -236,6 +237,7 @@ protected:
     std::unique_ptr<I3DModel> m_lowPolyMesh{};
     float m_radius{0.0f};
     float m_vertexMagnitudeMultiplier{1.0f};
+    bool m_normalizeVertices{true};
     PipelineCreatorTextured* m_pipelineCreatorTextured{nullptr};
     PipelineCreatorFootprint* m_pipelineCreatorFootprint{nullptr};
     VulkanState::Model m_modelMtrx{glm::mat4(1.0f)};

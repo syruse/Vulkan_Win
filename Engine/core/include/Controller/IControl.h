@@ -9,7 +9,13 @@ class IControl {
 public:
     struct WindowQueueMSG {
         enum Button { 
-            LEFT = 1, RIGHT = 2, UP = 4, DONW = 8
+            LEFT = 1,        // Tank turn/move-left action.
+            RIGHT = 2,       // Tank turn/move-right action.
+            UP = 4,          // Tank forward action.
+            DONW = 8,        // Tank backward action (kept existing naming).
+            LOOK_LEFT = 16,  // Camera/barrel look left (Q).
+            LOOK_RIGHT = 32, // Camera/barrel look right (E).
+            FIRE = 64        // Fire projectile on mouse press edge.
         };
         bool isQuited = false;
         bool isResized = false;

@@ -7,10 +7,10 @@ public:
     ObjModel(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view path,
              PipelineCreatorTextured* pipelineCreatorTextured, PipelineCreatorFootprint* pipelineCreatorFootprint,
              float vertexMagnitudeMultiplier = 1.0f, const std::vector<Instance>& instances = {},
-             std::unique_ptr<I3DModel> lowPolyMesh = nullptr) noexcept(true)
+             std::unique_ptr<I3DModel> lowPolyMesh = nullptr, bool normalizeVertices = true) noexcept(true)
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, pipelineCreatorFootprint, vertexMagnitudeMultiplier,
-                   instances, std::move(lowPolyMesh)),
-          m_path(path) {
+                 instances, std::move(lowPolyMesh), normalizeVertices),
+             m_path(path) {
     }
 
     void init() override;

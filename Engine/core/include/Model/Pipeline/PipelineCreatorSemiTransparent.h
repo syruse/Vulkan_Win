@@ -8,7 +8,8 @@ public:
     PipelineCreatorSemiTransparent(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                                    std::string_view fragShader, uint32_t subpass = 0u,
                                    VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
+        // frag_semi_transparent.frag binds a plain sampler2D, not an array.
+        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange, false) {
     }
 
     uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture>, VkSampler) override;

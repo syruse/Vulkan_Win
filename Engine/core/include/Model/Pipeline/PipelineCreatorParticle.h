@@ -18,7 +18,8 @@ public:
     PipelineCreatorParticle(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                             std::string_view fragShader, uint32_t subpass = 0u,
                             VkPushConstantRange pushConstantRange = {0u, 0u, 0u})
-        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange) {
+        // particle.frag binds plain sampler2D textures, not an array.
+        : PipelineCreatorTextured(vkState, renderPass, vertShader, fragShader, subpass, pushConstantRange, false) {
     }
 
     uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture, VkSampler particleSampler,

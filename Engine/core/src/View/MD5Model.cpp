@@ -751,7 +751,9 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
                         diffuse_texname.erase(0, 1);
                         diffuse_texname.erase(diffuse_texname.size() - 1, 1);
 
-                        auto texture = m_textureFactory.create2DArrayTexture(std::vector<std::string>{diffuse_texname});
+                        auto texture = m_textureFactory.create2DArrayTexture(
+                            std::vector<std::string>{diffuse_texname}, true, true,
+                            m_pipelineCreatorTextured->expectsArrayTexture());
                         if (!texture.expired()) {
                             subset.realMaterialId = m_pipelineCreatorTextured->createDescriptor(
                                 texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
@@ -959,14 +961,20 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
         commonVertsAmount += subset.gpuVertices.size();
         commonIndicesAmount += subset.indices.size();
 
-        // normilize the vertices
         for (auto& gpuVert : subset.gpuVertices) {
-            gpuVert.pos = gpuVert.pos / m_radius;
+            if (m_normalizeVertices) {
+                gpuVert.pos = (gpuVert.pos / m_radius) * m_vertexMagnitudeMultiplier;
+            } else {
+                gpuVert.pos *= m_vertexMagnitudeMultiplier;
+            }
         }
     }
 
-    // modify our radius according to multiplier
-    m_radius = m_vertexMagnitudeMultiplier;
+    if (m_normalizeVertices) {
+        m_radius = m_vertexMagnitudeMultiplier;
+    } else {
+        m_radius *= m_vertexMagnitudeMultiplier;
+    }
 
     vertices.resize(commonVertsAmount);
     indices.resize(commonIndicesAmount);

@@ -23,11 +23,11 @@ public:
     };
 
     Camera(const Perstective& perstective, const glm::vec3& eye, const glm::vec3& target = glm::vec3(0.0f, 0.0f, 0.0f));
-    void resetPerspective(const Perstective& perstective);
+    virtual void resetPerspective(const Perstective& perstective);
 
     const Perstective& getPerspective() const { return m_Perstpective; }
 
-    const ViewProj& viewProjMat() {
+    virtual const ViewProj& viewProjMat() {
         return mViewProj;
     }
 
@@ -39,7 +39,7 @@ public:
         return mTarget;
     }
 
-    glm::vec3 cameraPosition() {
+    virtual glm::vec3 cameraPosition() {
         return mTarget + mCurrentFromTargetToEye;
     }
 
@@ -47,8 +47,8 @@ public:
         return mInterpolationK == 1.0f;
     }
 
-    void update(float deltaTime, bool withSmoothTransition = true);
-    void move(EDirection dir);
+    virtual void update(float deltaTime, bool withSmoothTransition = true);
+    virtual void move(EDirection dir);
 
 private:
     Perstective m_Perstpective;

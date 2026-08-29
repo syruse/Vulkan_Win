@@ -136,6 +136,7 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     tracker.Update(kb);
 
     static bool escPressed = false;
+    static bool wasLmbPressed = false;
 
     _windowQueueMsg.buttonFlag = 0;
     if (tracker.pressed.Escape) {
@@ -153,9 +154,24 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     if (kb.D || kb.Right) {
         _windowQueueMsg.buttonFlag |= WindowQueueMSG::RIGHT;
     }
+    if (kb.Q) {
+        // Hold-to-rotate camera/turret placeholder left.
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::LOOK_LEFT;
+    }
+    if (kb.E) {
+        // Hold-to-rotate camera/turret placeholder right.
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::LOOK_RIGHT;
+    }
 
-    _windowQueueMsg.mouseX = mMouse->GetState().x;
-    _windowQueueMsg.mouseY = mMouse->GetState().y;
+    const auto mouseState = mMouse->GetState();
+    if (mouseState.leftButton && !wasLmbPressed) {
+        // Fire only on press edge (single shot per click), not every frame while held.
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::FIRE;
+    }
+    wasLmbPressed = mouseState.leftButton;
+
+    _windowQueueMsg.mouseX = mouseState.x;
+    _windowQueueMsg.mouseY = mouseState.y;
 
     // if menu invoked
     _windowQueueMsg.hmiRenderData = escPressed;
