@@ -29,7 +29,7 @@ void CameraPanzer::resetPerspective(const Perstective& perstective) {
 
 void CameraPanzer::adjustViewYaw(float deltaDeg) {
     mViewYawDeg += deltaDeg;
-    mViewYawDeg = std::clamp(mViewYawDeg, -85.0f, 85.0f);
+    //mViewYawDeg = std::clamp(mViewYawDeg, -85.0f, 85.0f);
     rebuildViewWithYaw();
 }
 

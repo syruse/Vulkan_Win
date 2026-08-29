@@ -216,25 +216,25 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                          true, semiTransparentInstances));
     }
 
-    m_particles[0] = std::make_unique<Particle>(*this, *mTextureFactory, "bush4.png",
-                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 5000u,
-                                                0.85 * Z_FAR, glm::vec3(10.0f, 19.0f, 10.0f));
-    m_particles[1] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 20000u,
-                                                0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
-    m_particles[2] = std::make_unique<Particle>(*this, *mTextureFactory, "bush3.png",
-                                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 2000u,
-                                                0.85 * Z_FAR, glm::vec3(7.0f, 10.0f, 7.0f));
+    m_particles[0] = std::make_unique<StaticParticle>(*this, *mTextureFactory, "bush4.png",
+                                                        static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()),
+                                                        5000u, 0.85 * Z_FAR, glm::vec3(10.0f, 19.0f, 10.0f));
+    m_particles[1] = std::make_unique<StaticParticle>(*this, *mTextureFactory, "bush3.png",
+                                                        static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()),
+                                                        20000u, 0.85 * Z_FAR, glm::vec3(2.0f, 5.0f, 2.0f));
+    m_particles[2] = std::make_unique<StaticParticle>(*this, *mTextureFactory, "bush3.png",
+                                                        static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()),
+                                                        2000u, 0.85 * Z_FAR, glm::vec3(7.0f, 10.0f, 7.0f));
     m_particles[3] =
-        std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 350u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(1.0f), glm::vec3(5.0f), 
-                                   3000.0f, 9000.0f);
+        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f), 
+                                   300.0f, 800.0f);
     m_particles[4] =
-        std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 350u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(1.0f), glm::vec3(5.0f),
-                                   3000.0f, 9000.0f);
+        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f),
+                                   300.0f, 800.0f);
 
     // Initialize Bullet physics world used to drive transforms each frame.
     m_btCollisionConfig = new btDefaultCollisionConfiguration();
@@ -736,15 +736,14 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         const btVector3& velocity = m_btTankBody->getLinearVelocity();
         tankVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
     }
-    const glm::vec4 exhaustVelocity =
-        mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f) - glm::vec4(tankVelocity * 0.06f, 0.0f);
+    const glm::vec4 exhaustVelocity = mCamera.targetModelMat() * -0.06f * glm::vec4(tankVelocity, 0.0f);
     glm::vec4 exhaustPipePos1 =
         mCamera.targetModelMat() *
-        glm::vec4(-4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
+        glm::vec4(-4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
     m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, exhaustVelocity);
     glm::vec4 exhaustPipePos2 =
         mCamera.targetModelMat() *
-        glm::vec4(4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
+        glm::vec4(4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
     m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
 
     const auto objectsAmount = m_models.size();

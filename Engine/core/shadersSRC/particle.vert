@@ -13,7 +13,7 @@ layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
 layout(set = 0, binding = 3) uniform UBOParticleObject {
     vec4 dynamicPos;
     vec4 velocity;
-    int mode; // '0' regular particles effect(parallel to user face) and '1' spreading along z-plane(which perpendicular to z-plane)
+    int mode; // 0: static particles, 1: anchored particles, 2: ghost particles with per-instance spawn state
 } uboParticle;
 
 // Instance attributes
@@ -23,9 +23,11 @@ layout (location = 1) in vec3 scaleMin;
 layout (location = 2) in vec3 scaleMax;
 
 layout (location = 3) in vec3 inPos;
-layout (location = 4) in vec3 acceleration;
-layout (location = 5) in float lifeDuration;
-layout (location = 6) in float alphaK;
+layout (location = 4) in vec3 inVelocity;
+layout (location = 5) in vec3 acceleration;
+layout (location = 6) in float lifeDuration;
+layout (location = 7) in float alphaK;
+layout (location = 8) in float birthTimeMs;
 
 // Array for triangle that represents the quad
 vec2 quadPos[4] = vec2[](
@@ -60,10 +62,10 @@ vec3 particleVariation(float particleId)
                 hash(particleId + 43.0) * 2.0 - 1.0);
 }
 
-vec3 calculateParticlePosition(float elapsedTimeMS, out float calculatedFading)
+vec3 calculateAnchoredParticlePosition(float elapsedTimeMS, out float calculatedFading)
 {
     const float fadingMultiplier = 5.0;
-    calculatedFading = fract(elapsedTimeMS / lifeDuration); // [0.0 - 1.0]
+    calculatedFading = fract(elapsedTimeMS / lifeDuration);
     float time = fadingMultiplier * calculatedFading;
     vec3 variation = particleVariation(float(gl_InstanceIndex));
     vec3 spawnOffset = variation * vec3(0.7, 0.2, 0.7);
@@ -74,15 +76,37 @@ vec3 calculateParticlePosition(float elapsedTimeMS, out float calculatedFading)
            time * time * acceleration + vec3(sway, 0.0, -sway);
 }
 
+vec3 calculateGhostParticlePosition(float elapsedTimeMS, out float calculatedFading)
+{
+    const float fadingMultiplier = 5.0;
+    calculatedFading = clamp((elapsedTimeMS - birthTimeMs) / lifeDuration, 0.0, 1.0);
+    float time = fadingMultiplier * calculatedFading;
+    vec3 variation = particleVariation(float(gl_InstanceIndex));
+    vec3 spawnOffset = variation * vec3(0.7, 0.2, 0.7);
+    vec3 drift = variation * vec3(0.22, 0.1, 0.22) * time;
+    float sway = sin(time * 2.3 + variation.x * 6.2831853) * 0.15;
+
+    return inPos + inPosOrigin + spawnOffset + time * (inVelocity + drift) +
+           time * time * acceleration + vec3(sway, 0.0, -sway);
+}
+
 void main()
 {
     vec3 posOrigin = inPos;
     vec3 scale = scaleMax;
-    if (uboParticle.mode == 0) {
-        posOrigin = calculateParticlePosition(pushConstant.windDirElapsedTimeMS.w, kFading);
+    // Mode 1: all particles follow the current emitter position and velocity.
+    if (uboParticle.mode == 1) {
+        posOrigin = calculateAnchoredParticlePosition(pushConstant.windDirElapsedTimeMS.w, kFading);
         scale = alphaK * mix(scaleMin, scaleMax, kFading);
         alpha = alphaK;
         isGradientEnabled = 1;
+    // Mode 2: each particle continues from its own world-space spawn state.
+    } else if (uboParticle.mode == 2) {
+        posOrigin = calculateGhostParticlePosition(pushConstant.windDirElapsedTimeMS.w, kFading);
+        scale = alphaK * mix(scaleMin, scaleMax, kFading);
+        alpha = alphaK;
+        isGradientEnabled = 1;
+    // Mode 0: static particles use their original instance position.
     } else {
         posOrigin = inPos;
         scale = scaleMax;
@@ -118,9 +142,13 @@ void main()
     fragDepth = ndc_z; // depth value for 2.5D (billboard) is the same for all vertices
 
     vec3 prevPosOrigin = posOrigin;
-    if (uboParticle.mode == 0) {
+    // Use the same particle mode for the previous-frame position used by motion vectors.
+    if (uboParticle.mode == 1) {
         float kFadingPrev;
-        prevPosOrigin = calculateParticlePosition(pushConstant.lightPos.w, kFadingPrev);
+        prevPosOrigin = calculateAnchoredParticlePosition(pushConstant.lightPos.w, kFadingPrev);
+    } else if (uboParticle.mode == 2) {
+        float kFadingPrev;
+        prevPosOrigin = calculateGhostParticlePosition(pushConstant.lightPos.w, kFadingPrev);
     }
 
     vec4 prevClip = uboViewProjection.prevViewProj * vec4(prevPosOrigin, 1.0f);
