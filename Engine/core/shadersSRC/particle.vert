@@ -25,8 +25,7 @@ layout (location = 2) in vec3 scaleMax;
 layout (location = 3) in vec3 inPos;
 layout (location = 4) in vec3 acceleration;
 layout (location = 5) in float lifeDuration;
-layout (location = 6) in float speedK;
-layout (location = 7) in float alphaK;
+layout (location = 6) in float alphaK;
 
 // Array for triangle that represents the quad
 vec2 quadPos[4] = vec2[](
@@ -50,14 +49,29 @@ layout(location = 3) flat out int isGradientEnabled;
 layout(location = 4) out float alpha;
 layout(location = 5) out vec2 outMotionVector;
 
+float hash(float value)
+{
+    return fract(sin(value * 91.173) * 43758.5453);
+}
+
+vec3 particleVariation(float particleId)
+{
+    return vec3(hash(particleId) * 2.0 - 1.0, hash(particleId + 17.0) * 2.0 - 1.0,
+                hash(particleId + 43.0) * 2.0 - 1.0);
+}
 
 vec3 calculateParticlePosition(float elapsedTimeMS, out float calculatedFading)
 {
     const float fadingMultiplier = 5.0;
-    calculatedFading = fract((speedK * elapsedTimeMS) / lifeDuration); // [0.0 - 1.0]
+    calculatedFading = fract(elapsedTimeMS / lifeDuration); // [0.0 - 1.0]
     float time = fadingMultiplier * calculatedFading;
-    
-    return uboParticle.dynamicPos.xyz + inPosOrigin + (time * uboParticle.velocity.xyz) + (time * time * acceleration);
+    vec3 variation = particleVariation(float(gl_InstanceIndex));
+    vec3 spawnOffset = variation * vec3(0.7, 0.2, 0.7);
+    vec3 drift = variation * vec3(0.22, 0.1, 0.22) * time;
+    float sway = sin(time * 2.3 + variation.x * 6.2831853) * 0.15;
+
+    return uboParticle.dynamicPos.xyz + inPosOrigin + spawnOffset + time * (uboParticle.velocity.xyz + drift) +
+           time * time * acceleration + vec3(sway, 0.0, -sway);
 }
 
 void main()

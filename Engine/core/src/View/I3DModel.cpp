@@ -151,7 +151,7 @@ void I3DModel::filterInstances(std::size_t indexFrom, std::size_t indexTo, float
             glm::vec3 diff = instance.posShift - camPos;
             float distSq = glm::dot(diff, diff);
             // instead of sqrt we can compare squared distances since sqrt is heavy operation
-            if (distSq < lodThresholdSq) {
+            if (!m_lowPolyMesh || distSq < lodThresholdSq) {
                 activeInstances.push_back(instance);
             } else if (m_lowPolyMesh) {
                 activeInstancesLowPoly.push_back(instance);

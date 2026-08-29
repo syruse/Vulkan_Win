@@ -71,13 +71,15 @@ void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t c
 void ObjModel::updateBuffers(uint32_t currentImage) {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
-    const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
-    const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
+    if (!m_activeInstances.empty()) {
+        const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
+        const VkDeviceSize bufferSize = m_instancesBufferOffset + instancesSize;
 
-    void* data;
-    vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
-    memcpy((char*)data + m_instancesBufferOffset, m_activeInstances.data(), instancesSize);
-    vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
+        void* data;
+        vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, bufferSize, 0, &data);
+        memcpy((char*)data + m_instancesBufferOffset, m_activeInstances.data(), instancesSize);
+        vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
+    }
 
     if (m_lowPolyMesh) {
         static_cast<ObjModel*>(m_lowPolyMesh.get())->updateBuffers(currentImage);

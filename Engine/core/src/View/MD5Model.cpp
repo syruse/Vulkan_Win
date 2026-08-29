@@ -410,13 +410,15 @@ void MD5Model::updateAnimationOnGPU(float deltaTimeMS, std::size_t animationID, 
             sortInstances(currentImage, viewProj,  camPos, z_far);
 
             const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
+            mActiveInstancesAmount = m_activeInstances.size();
+            if (instancesSize == 0u) {
+                return;
+            }
 
             void* data;
             vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, instancesSize, 0, &data);
             memcpy((char*)data, m_activeInstances.data(), instancesSize);
             vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
-
-            mActiveInstancesAmount = m_activeInstances.size();
         }
     } else {
         Utils::printLog(ERROR_PARAM, "MD5Model::updateAnimationOnGPU is not implemented without CUDA support");
@@ -530,12 +532,15 @@ void MD5Model::updateAnimationOnCPU(float deltaTimeMS, std::size_t animationID, 
 
         const VkDeviceSize instancesSize = sizeof(m_activeInstances[0]) * m_activeInstances.size();
 
+        mActiveInstancesAmount = m_activeInstances.size();
+        if (instancesSize == 0u) {
+            return;
+        }
+
         void* data;
         vkMapMemory(p_device, m_instancesBufferMemory[currentImage], 0, instancesSize, 0, &data);
         memcpy((char*)data, m_activeInstances.data(), instancesSize);
         vkUnmapMemory(p_device, m_instancesBufferMemory[currentImage]);
-
-        mActiveInstancesAmount = m_activeInstances.size();
     }
 }
 

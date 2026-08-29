@@ -57,7 +57,8 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
 Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view particleTextureFileName,
                    std::string_view particleGradientTextureFileName, PipelineCreatorParticle* pipelineCreatorTextured,
                    uint32_t instancesAmount, const glm::vec3& positionOrigin, const glm::vec3& velocity,
-                   const glm::vec3& minScale, const glm::vec3& maxScale) noexcept(true)
+                   const glm::vec3& minScale, const glm::vec3& maxScale, float lifeDurationMinMs,
+                   float lifeDurationMaxMs) noexcept(true)
     : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured),
       m_textureFileName(particleTextureFileName),
       m_textureGradientFileName(particleGradientTextureFileName),
@@ -67,9 +68,10 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
       m_minScale{minScale},
       m_mode{ParticleMode::DEFAULT} {
     pipelineCreatorTextured->increaseUsageCounter();
+        assert(lifeDurationMinMs > 0.0f && lifeDurationMinMs <= lifeDurationMaxMs);
     m_instances.resize(m_instanceCount, Particle::Instance{});
     m_uboParticle.params.velocity = glm::vec4(velocity, 1.0f);
-    m_verticesPreparedFuture = std::async(std::launch::async, [this, positionOrigin, vel = glm::normalize(velocity)] {
+        m_verticesPreparedFuture = std::async(std::launch::async, [this, positionOrigin, lifeDurationMinMs, lifeDurationMaxMs] {
         for (auto& vertex : m_vertices) {
             vertex.scaleMax = m_maxScale;
             vertex.scaleMin = m_minScale;
@@ -87,8 +89,7 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
             // glm::mat3 rotMat1 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(0.0f, 0.0f, 1.0f)));
             // glm::mat3 rotMat2 = glm::mat3(glm::rotate(glm::radians(5.0f * random), glm::vec3(1.0f, 0.0f, 0.0f)));
             instance.acceleration = up;                       // *rotMat1* rotMat2;
-            instance.lifeDuration = distr(gen) * 3000000.0f;  // max is 3s
-            instance.speedK = glm::mix(60, 100, distr(gen));
+            instance.lifeDuration = glm::mix(lifeDurationMinMs, lifeDurationMaxMs, random);
             instance.alphaK = distr(gen);
         }
         return true;
@@ -163,8 +164,15 @@ void Particle::init() {
 void Particle::update(uint32_t currentImage, float deltaMS, const glm::vec4& offsetPosition, const glm::vec4& velocity) {
     static VkDeviceSize uboBufSize = sizeof(UBOParticle::Params);
     void* data;
+    if (m_isFirstSmoothedEmitterUpdate) {
+        m_smoothedEmitterVelocity = velocity;
+        m_isFirstSmoothedEmitterUpdate = false;
+    } else {
+        const float smoothing = 1.0f - std::exp(-deltaMS / 180.0f);
+        m_smoothedEmitterVelocity = glm::mix(m_smoothedEmitterVelocity, velocity, smoothing);
+    }
     m_uboParticle.params.dynamicPos = offsetPosition;
-    m_uboParticle.params.velocity = velocity;
+    m_uboParticle.params.velocity = m_smoothedEmitterVelocity;
     vkMapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[currentImage], 0, uboBufSize, 0, &data);
     memcpy(data, &m_uboParticle.params, uboBufSize);
     vkUnmapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[currentImage]);

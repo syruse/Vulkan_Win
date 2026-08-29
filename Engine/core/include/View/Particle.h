@@ -24,7 +24,6 @@ public:
         glm::vec3 pos{0.0f};
         glm::vec3 acceleration{0.0f};
         float lifeDuration{1.0f};  // ms allocated for life of particle
-        float speedK{1.0f};
         float alphaK{1.0f};
     };
 
@@ -50,8 +49,8 @@ public:
         return bindingDescriptions;
     }
 
-    static const std::array<VkVertexInputAttributeDescription, 8u>& getAttributeDescription() {
-        static std::array<VkVertexInputAttributeDescription, 8u> attributeDescriptions{};
+    static const std::array<VkVertexInputAttributeDescription, 7u>& getAttributeDescription() {
+        static std::array<VkVertexInputAttributeDescription, 7u> attributeDescriptions{};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -80,11 +79,7 @@ public:
         attributeDescriptions[6].binding = 1;
         attributeDescriptions[6].location = 6;
         attributeDescriptions[6].format = VK_FORMAT_R32_SFLOAT;
-        attributeDescriptions[6].offset = offsetof(Instance, speedK);
-        attributeDescriptions[7].binding = 1;
-        attributeDescriptions[7].location = 7;
-        attributeDescriptions[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attributeDescriptions[7].offset = offsetof(Instance, alphaK);
+        attributeDescriptions[6].offset = offsetof(Instance, alphaK);
         return attributeDescriptions;
     }
 
@@ -99,7 +94,8 @@ public:
     Particle(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view particleTextureFileName,
              std::string_view particleGradientTextureFileName, PipelineCreatorParticle* pipelineCreator, uint32_t instancesAmount,
              const glm::vec3& positionOrigin = glm::vec3(0.0f), const glm::vec3& velocity = glm::vec3(0.0f),
-             const glm::vec3& minScale = glm::vec3(1.0f), const glm::vec3& maxScale = glm::vec3(1.0f)) noexcept(true);
+             const glm::vec3& minScale = glm::vec3(1.0f), const glm::vec3& maxScale = glm::vec3(1.0f),
+             float lifeDurationMinMs = 2000.0f, float lifeDurationMaxMs = 3000.0f) noexcept(true);
 
     void update(uint32_t currentImage, float deltaMS = 0.0f, const glm::vec4& offsetPosition = glm::vec4(0.0f),
                 const glm::vec4& velocity = glm::vec4(0.0f));
@@ -120,4 +116,6 @@ private:
     std::future<bool> m_verticesPreparedFuture{};
     ParticleMode m_mode{ParticleMode::DEFAULT};
     UBOParticle m_uboParticle{};
+    glm::vec4 m_smoothedEmitterVelocity{0.0f};
+    bool m_isFirstSmoothedEmitterUpdate{true};
 };

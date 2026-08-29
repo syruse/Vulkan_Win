@@ -37,6 +37,8 @@
 
 static constexpr float Z_NEAR = 0.1f;
 static constexpr float Z_FAR = 1000.0f;
+// to avoid clipping issues with distant objects like boundery cubes
+static constexpr float CAMERA_Z_FAR = 1500.0f;
 static constexpr float FOV = 65.0f;
 
 #if defined(USE_DLSS) && USE_DLSS
@@ -82,7 +84,7 @@ std::vector<Instance> makeBoundaryCubeInstances(float halfExtent, float sceneHal
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
     : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
-      mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, Z_FAR}, {0.0f, 55.0f, -130.0f}) {
+    mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, CAMERA_Z_FAR}, {0.0f, 55.0f, -130.0f}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
@@ -158,7 +160,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                           PROJECTILE_RADIUS));
 
     // Perimeter cubes around the map: visible wall + static Bullet colliders.
-    m_boundaryCubeInstances = makeBoundaryCubeInstances(BOUNDARY_CUBE_HALF_EXTENT, 0.92f * Z_FAR, 2.5f * BOUNDARY_CUBE_HALF_EXTENT);
+    m_boundaryCubeInstances = makeBoundaryCubeInstances(BOUNDARY_CUBE_HALF_EXTENT, 0.9f * Z_FAR, 2.5f * BOUNDARY_CUBE_HALF_EXTENT);
     m_boundaryModelIndex = static_cast<uint32_t>(m_models.size());
     m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg",
                                         static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
@@ -225,12 +227,14 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                                 0.85 * Z_FAR, glm::vec3(7.0f, 10.0f, 7.0f));
     m_particles[3] =
         std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 350u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(1.0f), glm::vec3(5.0f), 
+                                   3000.0f, 9000.0f);
     m_particles[4] =
         std::make_unique<Particle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 250u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.1f), glm::vec3(3.0f));
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 350u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(1.0f), glm::vec3(5.0f),
+                                   3000.0f, 9000.0f);
 
     // Initialize Bullet physics world used to drive transforms each frame.
     m_btCollisionConfig = new btDefaultCollisionConfiguration();
@@ -557,7 +561,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
         // Keep projection stable for offscreen-only changes; update it only when the window aspect changes.
         if (windowSizeChanged) {
             mCamera.resetPerspective(
-                {FOV, static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight), Z_NEAR, Z_FAR});
+                {FOV, static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight), Z_NEAR, CAMERA_Z_FAR});
         }
         m_resetViewProjHistory = true;
         m_currentFrame = 0u;
@@ -727,15 +731,21 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     static const glm::mat4 identityMatrix = glm::mat4(1.0f);
 
-    glm::vec4 velocity = mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+    glm::vec3 tankVelocity(0.0f);
+    if (m_btTankBody) {
+        const btVector3& velocity = m_btTankBody->getLinearVelocity();
+        tankVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
+    }
+    const glm::vec4 exhaustVelocity =
+        mCamera.targetModelMat() * 4.0f * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f) - glm::vec4(tankVelocity * 0.06f, 0.0f);
     glm::vec4 exhaustPipePos1 =
         mCamera.targetModelMat() *
         glm::vec4(-4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
-    m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, velocity);
+    m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, exhaustVelocity);
     glm::vec4 exhaustPipePos2 =
         mCamera.targetModelMat() *
         glm::vec4(4.0f, 19.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
-    m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, velocity);
+    m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
 
     const auto objectsAmount = m_models.size();
 
@@ -1842,8 +1852,8 @@ void VulkanRenderer::syncProjectileVisualFromPhysics() {
         return;
     }
 
-    if (!m_btProjectileBody) {
-        // Keep projectile hidden underground when body is absent/uninitialized.
+    if (!m_btProjectileBody || std::chrono::steady_clock::now() >= m_projectileTimeoutDeadline) {
+        // Keep projectile hidden until a shot is active.
         projectileInstances[0].posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
         return;
     }
