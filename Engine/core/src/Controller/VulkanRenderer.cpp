@@ -40,6 +40,7 @@ static constexpr float Z_FAR = 1000.0f;
 // to avoid clipping issues with distant objects like boundery cubes
 static constexpr float CAMERA_Z_FAR = 1500.0f;
 static constexpr float FOV = 65.0f;
+static constexpr float XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA = 0.00001f;
 
 #if defined(USE_DLSS) && USE_DLSS
 namespace {
@@ -759,6 +760,20 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& model = mCamera.targetModelMat();
 
     const glm::mat4 currentViewProj = cameraViewProj.proj * cameraViewProj.view;
+#if defined(USE_XESS) && USE_XESS
+    // Reject stale XeSS history while the camera moves to prevent terrain-detail smearing.
+    if (m_isXessEnabled && !m_resetViewProjHistory) {
+        float viewProjectionDelta = 0.0f;
+        for (uint32_t column = 0u; column < 4u; ++column) {
+            for (uint32_t row = 0u; row < 4u; ++row) {
+                viewProjectionDelta += std::abs(currentViewProj[column][row] - mViewProj.viewProj[column][row]);
+            }
+        }
+        if (viewProjectionDelta > XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA) {
+            m_xessResetHistory = true;
+        }
+    }
+#endif
     mViewProj.prevViewProj = m_resetViewProjHistory ? currentViewProj : mViewProj.viewProj;
     mViewProj.viewProj = currentViewProj;
     m_resetViewProjHistory = false;
