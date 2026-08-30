@@ -8,7 +8,7 @@ layout(location = 4) out vec3 outRotateRow0;
 layout(location = 5) out vec3 outRotateRow1;
 layout(location = 6) out vec3 outRotateRow2;
 
-layout(set = 0, binding = 0) uniform UBOViewProjectionObject {
+layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
     mat4 viewProj;
     mat4 viewProjInverse;
     mat4 lightViewProj;
@@ -66,26 +66,29 @@ void main() {
     outRotateRow1 = rotM[1];
     outRotateRow2 = rotM[2];
 	
-	// --- MOTION VECTORS CALCULATION (FOR PREVIOUS FRAME: CAMERA + WIND) ---
-    float T_prev = pushConstant.lightPos.w * MS_TO_SEC_MULTIPLIER * TIME_MULTIPLIER;
-    float deltaWindAngle = (T_current - T_prev) * WIND_SPEED_K;
-    
-    // Pass T_current to the fragment shader for cloud noise sampling
-    outTCurrent = T_current;
-	
-    // The cloud sampling vector rotates forward, meaning pixels physically move forward on screen.
-    // To find the previous pixel position, we rewind the vertex BACKWARDS against the wind (-deltaWindAngle).
-    vec3 prevVert = rotateY(-deltaWindAngle) * vert;
-    vec4 prevPos = vec4(prevVert, 1.0);
-
-    // 3. Calculate position in the previous frame using the SAME deformed vertex
-    mat4 skyPrevViewProj = uboViewProjection.prevViewProj * dynamicUBO.prevModel;
-    skyPrevViewProj[3] = vec4(0.0, 0.0, 0.0, skyPrevViewProj[3].w); // Clear previous camera translation
-    vec4 prevPosInClipSpace = skyPrevViewProj * prevPos;
-    
-    // 4. Calculate Motion Vector (Using the working geometry standard: current - prev)
-    vec2 currentNDCPos = gl_Position.xy / max(gl_Position.w, 0.0001);
-    vec2 prevNDCPos = prevPosInClipSpace.xy / max(prevPosInClipSpace.w, 0.0001);
-    
-    outMotionVector = currentNDCPos - prevNDCPos;
+	// it's approximate computations and it may cause the degradation since it is not real position
+	// we should use reactive mask or something like this for morphing clouds
+	outMotionVector = vec2(0.0);
+	//// --- MOTION VECTORS CALCULATION (FOR PREVIOUS FRAME: CAMERA + WIND) ---
+    //float T_prev = pushConstant.lightPos.w * MS_TO_SEC_MULTIPLIER * TIME_MULTIPLIER;
+    //float deltaWindAngle = (T_current - T_prev) * WIND_SPEED_K;
+    //
+    //// Pass T_current to the fragment shader for cloud noise sampling
+    //outTCurrent = T_current;
+	//
+    //// The cloud sampling vector rotates forward, meaning pixels physically move forward on screen.
+    //// To find the previous pixel position, we rewind the vertex BACKWARDS against the wind (-deltaWindAngle).
+    //vec3 prevVert = rotateY(-deltaWindAngle) * vert;
+    //vec4 prevPos = vec4(prevVert, 1.0);
+	//
+    //// 3. Calculate position in the previous frame using the SAME deformed vertex
+    //mat4 skyPrevViewProj = uboViewProjection.prevViewProj * dynamicUBO.prevModel;
+    //skyPrevViewProj[3] = vec4(0.0, 0.0, 0.0, skyPrevViewProj[3].w); // Clear previous camera translation
+    //vec4 prevPosInClipSpace = skyPrevViewProj * prevPos;
+    //
+    //// 4. Calculate Motion Vector (Using the working geometry standard: current - prev)
+    //vec2 currentNDCPos = gl_Position.xy / max(gl_Position.w, 0.0001);
+    //vec2 prevNDCPos = prevPosInClipSpace.xy / max(prevPosInClipSpace.w, 0.0001);
+    //
+    //outMotionVector = currentNDCPos - prevNDCPos;
 }

@@ -3884,17 +3884,6 @@ void VulkanRenderer::applyXessOptions() {
         return;
     }
 
-    // Project shaders use the DLSS convention (current NDC - previous NDC).
-    // XeSS expects motion from the current pixel back to the previous pixel.
-    // I disabled use of motion vector
-    const xess_result_t velocityScaleResult =
-        xessSetVelocityScale(_core.getXessContext(), 0.0f, 0.0f);
-    if (velocityScaleResult != XESS_RESULT_SUCCESS) {
-        m_isXessEnabled = false;
-        Utils::printLog(INFO_PARAM, "xessSetVelocityScale failed, xess_result_t=%d", velocityScaleResult);
-        return;
-    }
-
     m_xessResetHistory = true;
 }
 

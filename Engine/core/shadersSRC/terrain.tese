@@ -11,7 +11,6 @@ layout (location = 2) in vec2 inTexCoordNormalized[];
 layout(location = 0) out vec3 outNormal;
 layout(location = 1) out vec2 outTexCoord;
 layout(location = 2) out vec2 outTexCoordNormalized;
-layout(location = 3) out vec2 outMotionVector;
 
 layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
     mat4 viewProj;
@@ -20,7 +19,6 @@ layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
     mat4 proj;
     mat4 view;
 	mat4 footPrintViewProj;
-	mat4 prevViewProj;
 } uboViewProjection;
 
 // bump the terrain geometry by vehicle wheels
@@ -40,9 +38,4 @@ void main()
 	position.y += FOOTPRINT_DISPLACEMENT * footPrintFactor;
 	
     gl_Position = uboViewProjection.viewProj * position;
-    // NOTE: DLSS works well without it but for consistency we need it
-    vec4 previousClipPosition = uboViewProjection.prevViewProj * position;
-    vec2 currentNdcPosition = gl_Position.xy / gl_Position.w;
-    vec2 previousNdcPosition = previousClipPosition.xy / previousClipPosition.w;
-    outMotionVector = currentNdcPosition - previousNdcPosition;
 }

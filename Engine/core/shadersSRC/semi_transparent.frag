@@ -18,6 +18,9 @@ layout(push_constant) uniform PushConstant {
 
 void main() {
     vec4 diffColor = texture(inputTexture, fragTexCoord);
+    if (diffColor.a <= 0.01) {
+        discard;
+    }
     // if gradient enabled then we multiply the color by gradient color
     out_Color = diffColor;
     out_motionVectors = inMotionVector;

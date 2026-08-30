@@ -23,7 +23,12 @@ layout(push_constant) uniform PushConstant {
 void main() {
     vec4 diffColor = texture(inputTexture, fragTexCoord);
     // if gradient enabled then we multiply the color by gradient color
-    out_Color = mix(diffColor, diffColor * vec4(texture(inputGradient, fragTexCoord).rgb, alpha*(1.0 - kFading)), isGradientEnabled);
+    vec4 particleColor =
+        mix(diffColor, diffColor * vec4(texture(inputGradient, fragTexCoord).rgb, alpha * (1.0 - kFading)), isGradientEnabled);
+    if (particleColor.a <= 0.01) {
+        discard;
+    }
+    out_Color = particleColor;
     out_motionVectors = inMotionVector;
 	gl_FragDepth = fragDepth;
 }
