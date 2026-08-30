@@ -58,6 +58,13 @@ VulkanCore::~VulkanCore() {
     }
 #endif
 
+#if defined(USE_XESS) && USE_XESS
+    if (m_xessContext) {
+        xessDestroyContext(m_xessContext);
+        m_xessContext = nullptr;
+    }
+#endif
+
     vkDestroyDevice(m_device, nullptr);
     vkDestroySurfaceKHR(m_inst, m_surface, nullptr);
     vkDestroyInstance(m_inst, nullptr);
@@ -133,6 +140,35 @@ VkSurfaceKHR VulkanCore::createSurface(VkInstance& inst) {
     assert(m_winController);
     return m_winController->createSurface(inst);
 }
+
+#if defined(USE_XESS) && USE_XESS
+xess_result_t VulkanCore::getXessOptimalInputResolution(uint32_t outputWidth, uint32_t outputHeight,
+                                                         xess_quality_settings_t quality,
+                                                         xess_2d_t& inputResolution) const {
+    if (!m_isXessSupported || !m_xessContext) {
+        return XESS_RESULT_ERROR_UNINITIALIZED;
+    }
+
+    const xess_2d_t outputResolution{outputWidth, outputHeight};
+    xess_2d_t minInputResolution{};
+    xess_2d_t maxInputResolution{};
+    return xessGetOptimalInputResolution(m_xessContext, &outputResolution, quality, &inputResolution,
+                                         &minInputResolution, &maxInputResolution);
+}
+
+xess_result_t VulkanCore::initializeXess(uint32_t outputWidth, uint32_t outputHeight,
+                                         xess_quality_settings_t quality) const {
+    if (!m_isXessSupported || !m_xessContext) {
+        return XESS_RESULT_ERROR_UNINITIALIZED;
+    }
+
+    xess_vk_init_params_t parameters{};
+    parameters.outputResolution = {outputWidth, outputHeight};
+    parameters.qualitySetting = quality;
+    parameters.initFlags = XESS_INIT_FLAG_LDR_INPUT_COLOR | XESS_INIT_FLAG_USE_NDC_VELOCITY;
+    return xessVKInit(m_xessContext, &parameters);
+}
+#endif
 
 VulkanCore::VendorId VulkanCore::getVendorId() const {
     assert(m_gfxDevIndex >= 0);
@@ -490,6 +526,29 @@ void VulkanCore::createInstance() {
 #endif
     finalInstanceExtensions.push_back(m_winController->getVulkanWindowSurfaceExtension().data());
 
+#if defined(USE_XESS) && USE_XESS
+    uint32_t xessExtensionCount = 0u;
+    const char* const* xessExtensions = nullptr;
+    uint32_t xessMinApiVersion = VK_API_VERSION_1_1;
+    const xess_result_t xessResult =
+        xessVKGetRequiredInstanceExtensions(&xessExtensionCount, &xessExtensions, &xessMinApiVersion);
+    if (xessResult == XESS_RESULT_SUCCESS) {
+        appInfo.apiVersion = std::max(appInfo.apiVersion, xessMinApiVersion);
+        for (uint32_t index = 0u; index < xessExtensionCount; ++index) {
+            const char* extensionName = xessExtensions[index];
+            const auto extensionIt = std::find_if(finalInstanceExtensions.begin(), finalInstanceExtensions.end(),
+                                                  [extensionName](const char* extension) {
+                                                      return std::strcmp(extension, extensionName) == 0;
+                                                  });
+            if (extensionIt == finalInstanceExtensions.end()) {
+                finalInstanceExtensions.push_back(extensionName);
+            }
+        }
+    } else {
+        Utils::printLog(INFO_PARAM, "XeSS instance requirements unavailable, xess_result_t=%d", xessResult);
+    }
+#endif
+
 #if defined(USE_DLSS) && USE_DLSS
     // Inject Instance Extensions required by Streamline DLSS
     if (m_slGetFeatureRequirementsFn) {
@@ -649,16 +708,46 @@ void VulkanCore::createLogicalDevice() {
     }
 #endif
 
+#if defined(USE_XESS) && USE_XESS
+    uint32_t xessExtensionCount = 0u;
+    const char* const* xessExtensions = nullptr;
+    const xess_result_t xessResult =
+        xessVKGetRequiredDeviceExtensions(m_inst, getPhysDevice(), &xessExtensionCount, &xessExtensions);
+    if (xessResult == XESS_RESULT_SUCCESS) {
+        for (uint32_t index = 0u; index < xessExtensionCount; ++index) {
+            const char* extensionName = xessExtensions[index];
+            const auto extensionIt = std::find_if(finalExtensions.begin(), finalExtensions.end(),
+                                                  [extensionName](const char* extension) {
+                                                      return std::strcmp(extension, extensionName) == 0;
+                                                  });
+            if (extensionIt == finalExtensions.end()) {
+                finalExtensions.push_back(extensionName);
+            }
+        }
+    } else {
+        Utils::printLog(INFO_PARAM, "XeSS device requirements unavailable, xess_result_t=%d", xessResult);
+    }
+#endif
+
     // Build the pNext chain for device creation
     deviceFeatures13.pNext = &deviceFeatures12;
-    devInfo.pNext = &deviceFeatures13;
+    VkPhysicalDeviceFeatures2 deviceFeatures{};
+    deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures.pNext = &deviceFeatures13;
+    deviceFeatures.features.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.features.tessellationShader = VK_TRUE;
+    deviceFeatures.features.depthClamp = VK_TRUE;        // for pRasterizationState->depthClampEnable
+    deviceFeatures.features.dualSrcBlend = VK_TRUE;      // for VK_BLEND_FACTOR_SRC1_ALPHA
+    deviceFeatures.features.independentBlend = VK_TRUE;  // allow different blend state for motion-vector attachment
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-    deviceFeatures.tessellationShader = VK_TRUE;
-    deviceFeatures.depthClamp = VK_TRUE;        // for pRasterizationState->depthClampEnable
-    deviceFeatures.dualSrcBlend = VK_TRUE;      // for VK_BLEND_FACTOR_SRC1_ALPHA
-    deviceFeatures.independentBlend = VK_TRUE;  // allow different blend state for motion-vector attachment
+#if defined(USE_XESS) && USE_XESS
+    void* xessFeatureChain = &deviceFeatures;
+    const xess_result_t xessFeaturesResult =
+        xessVKGetRequiredDeviceFeatures(m_inst, getPhysDevice(), &xessFeatureChain);
+    if (xessFeaturesResult != XESS_RESULT_SUCCESS) {
+        Utils::printLog(INFO_PARAM, "XeSS device features unavailable, xess_result_t=%d", xessFeaturesResult);
+    }
+#endif
 
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
@@ -667,7 +756,12 @@ void VulkanCore::createLogicalDevice() {
 
     devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     devInfo.pQueueCreateInfos = queueCreateInfos.data();
-    devInfo.pEnabledFeatures = &deviceFeatures;
+    devInfo.pEnabledFeatures = nullptr;
+#if defined(USE_XESS) && USE_XESS
+    devInfo.pNext = xessFeatureChain;
+#else
+    devInfo.pNext = &deviceFeatures;
+#endif
 
     VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, nullptr, &m_device);
 
@@ -675,6 +769,15 @@ void VulkanCore::createLogicalDevice() {
 
     // Load device-level function pointers for extension/device commands.
     volkLoadDevice(m_device);
+
+#if defined(USE_XESS) && USE_XESS
+    const xess_result_t xessContextResult = xessVKCreateContext(m_inst, getPhysDevice(), m_device, &m_xessContext);
+    if (xessContextResult == XESS_RESULT_SUCCESS) {
+        m_isXessSupported = true;
+    } else {
+        Utils::printLog(INFO_PARAM, "XeSS is not supported on this device, xess_result_t=%d", xessContextResult);
+    }
+#endif
 
     Utils::printLog(INFO_PARAM, "Device created");
 

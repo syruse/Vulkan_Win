@@ -6,6 +6,7 @@ option(USE_PROFILING "compiled for profiling" ON)
 option(USE_CUDA "Use CUDA" ON)
 option(USE_FSR "Use FSR" OFF)
 option(USE_DLSS "Use DLSS" ON)
+option(USE_XESS "Use XeSS" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -176,6 +177,22 @@ else(WIN32)
 				COMMENT "Copying Streamline Production DLL: ${dll}"
 			)
 		endforeach()
+	endif()
+
+	if(USE_XESS)
+		# Intel XeSS
+		set(XESS_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xess")
+		target_include_directories(${APP_NAME} PRIVATE "${XESS_SDK_DIR}/inc")
+		target_compile_definitions(${APP_NAME} PRIVATE USE_XESS=1)
+		target_link_libraries(${APP_NAME} "${XESS_SDK_DIR}/lib/libxess.lib")
+
+		add_custom_command(
+			TARGET ${APP_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${XESS_SDK_DIR}/bin/libxess.dll"
+				"${CMAKE_BINARY_DIR}/Bin/libxess.dll"
+			COMMENT "Copying XeSS Super Resolution Vulkan DLL: libxess.dll"
+		)
 	endif()
 	
     target_link_libraries(${APP_NAME} DirectXTK12) # no need "vulkan-1.lib" anymore (now volk is used)

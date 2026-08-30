@@ -4,3 +4,6 @@
 [submodule "Engine/BulletPhysics"]
 	path = Engine/BulletPhysics
 	url = https://github.com/bulletphysics/bullet3.git
+[submodule "Engine/xess"]
+	path = Engine/xess
+	url = https://github.com/intel/xess.git

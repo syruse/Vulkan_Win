@@ -564,6 +564,9 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
                 {FOV, static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight), Z_NEAR, CAMERA_Z_FAR});
         }
         m_resetViewProjHistory = true;
+    #if defined(USE_XESS) && USE_XESS
+        m_xessResetHistory = true;
+    #endif
         m_currentFrame = 0u;
         _oneOffClearingFootPrint = true;
         _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
@@ -588,6 +591,10 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
 #if defined(USE_DLSS) && USE_DLSS
         if (m_isDlssEnabled)
             applyDLSSOptions();
+#endif
+#if defined(USE_XESS) && USE_XESS
+    if (m_isXessEnabled)
+        applyXessOptions();
 #endif
 
         createFSRContext(swapchainCreateInfo);
@@ -1467,7 +1474,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         _cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage], _colorBuffer.colorFormat,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
     // After writing motion vectors in the semi-transparent pass, transition back to shader-read layout
     // so subsequent post-process stages (TAA/FSR/DLAA) can safely sample this texture.
@@ -1475,7 +1483,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         _cmdBufs[currentImage], _motionVectorsBuffer.colorBufferImage[currentImage], _motionVectorsBuffer.colorFormat,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
         1U, 1U, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
     bool isDlssFrameTokenValid = true;
 #if defined(USE_DLSS) && USE_DLSS
@@ -1522,7 +1531,27 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 #endif
 
-    if (!m_isDlssEnabled || !_core.isDlssSupported() || !isDlssFrameTokenValid) {
+#if defined(USE_XESS) && USE_XESS
+    if (m_isXessEnabled) {
+        evaluateXessPass(currentImage);
+        if (hmiRenderData && m_isXessEnabled) {
+            VkRenderPassBeginInfo renderPassUIInfo{};
+            renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassUIInfo.renderPass = m_renderPassUIOverlay;
+            renderPassUIInfo.renderArea.extent = {_windowWidth, _windowHeight};
+            renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
+            vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+            vkCmdEndRenderPass(_cmdBufs[currentImage]);
+        }
+    }
+#endif
+
+    if ((!m_isDlssEnabled || !_core.isDlssSupported() || !isDlssFrameTokenValid)
+#if defined(USE_XESS) && USE_XESS
+        && !m_isXessEnabled
+#endif
+    ) {
         //---------------------------------------------------------------------------------------------//
         /// FXAA render pass (FINAL PASS) render with native resolution!
 
@@ -1958,6 +1987,20 @@ bool VulkanRenderer::renderScene() {
         uint16_t offH = m_uiDisplayHeight;
         float scale = 1.0f;
         Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+#if defined(USE_XESS) && USE_XESS
+        if (m_isXessEnabled) {
+            xess_2d_t inputResolution{};
+            const xess_result_t xessResult = _core.getXessOptimalInputResolution(
+                m_uiDisplayWidth, m_uiDisplayHeight, m_xessQuality, inputResolution);
+            if (xessResult == XESS_RESULT_SUCCESS) {
+                offW = static_cast<uint16_t>(inputResolution.x);
+                offH = static_cast<uint16_t>(inputResolution.y);
+            } else {
+                m_isXessEnabled = false;
+                Utils::printLog(INFO_PARAM, "XeSS input resolution query failed, xess_result_t=%d", xessResult);
+            }
+        }
+#endif
 
         recreateSwapChain(_windowWidth, _windowHeight, offW, offH);
         return ret_status;
@@ -1968,6 +2011,24 @@ bool VulkanRenderer::renderScene() {
         hmiStates->upscalerChanged = false;
 
         const bool wantDlss = (hmiStates->upscalerType == UpscalerType::DLSS);
+    #if defined(USE_XESS) && USE_XESS
+        const bool wantXess = (hmiStates->upscalerType == UpscalerType::XESS);
+        const bool wasXessEnabled = m_isXessEnabled;
+        m_isXessEnabled = wantXess && _core.isXessSupported();
+        if (wantXess) {
+            switch (hmiStates->upscalerPreset) {
+            case UpscalerPreset::NativeAA:         m_xessQuality = XESS_QUALITY_SETTING_AA; break;
+            case UpscalerPreset::UltraQuality:     m_xessQuality = XESS_QUALITY_SETTING_ULTRA_QUALITY; break;
+            case UpscalerPreset::Quality:          m_xessQuality = XESS_QUALITY_SETTING_QUALITY; break;
+            case UpscalerPreset::Balanced:         m_xessQuality = XESS_QUALITY_SETTING_BALANCED; break;
+            case UpscalerPreset::Performance:      m_xessQuality = XESS_QUALITY_SETTING_PERFORMANCE; break;
+            case UpscalerPreset::UltraPerformance: m_xessQuality = XESS_QUALITY_SETTING_ULTRA_PERFORMANCE; break;
+            }
+        }
+        if (wasXessEnabled || m_isXessEnabled) {
+            m_resetViewProjHistory = true;
+        }
+    #endif
 #if defined(USE_DLSS) && USE_DLSS
         // Set DLSS state before swapchain recreation so recreateSwapChain() can apply options.
         m_isDlssEnabled = wantDlss;
@@ -1980,6 +2041,20 @@ bool VulkanRenderer::renderScene() {
         uint16_t offH = m_uiDisplayHeight;
         float scale = 1.0f;
         Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+#if defined(USE_XESS) && USE_XESS
+        if (m_isXessEnabled) {
+            xess_2d_t inputResolution{};
+            const xess_result_t xessResult = _core.getXessOptimalInputResolution(
+                m_uiDisplayWidth, m_uiDisplayHeight, m_xessQuality, inputResolution);
+            if (xessResult == XESS_RESULT_SUCCESS) {
+                offW = static_cast<uint16_t>(inputResolution.x);
+                offH = static_cast<uint16_t>(inputResolution.y);
+            } else {
+                m_isXessEnabled = false;
+                Utils::printLog(INFO_PARAM, "XeSS input resolution query failed, xess_result_t=%d", xessResult);
+            }
+        }
+#endif
 
         // If geometry size stays the same, recreateSwapChain() will be a no-op.
         // In that case we still must push fresh DLSS options for the new preset/mode.
@@ -1994,6 +2069,11 @@ bool VulkanRenderer::renderScene() {
         if (wantDlss && !isSwapchainRecreateNeeded) {
             applyDLSSOptions();
         }
+#endif
+#if defined(USE_XESS) && USE_XESS
+    if (m_isXessEnabled && !isSwapchainRecreateNeeded) {
+        applyXessOptions();
+    }
 #endif
         return ret_status;
     }
@@ -3785,6 +3865,97 @@ void VulkanRenderer::evaluateDLSSPass(uint32_t currentImage, const sl::FrameToke
                                     _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                     VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_TRANSFER_READ_BIT,
                                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+}
+#endif
+
+#if defined(USE_XESS) && USE_XESS
+void VulkanRenderer::applyXessOptions() {
+    if (!_core.isXessSupported()) {
+        m_isXessEnabled = false;
+        return;
+    }
+
+    vkDeviceWaitIdle(_core.getDevice());
+    const xess_result_t xessResult = _core.initializeXess(m_uiDisplayWidth, m_uiDisplayHeight, m_xessQuality);
+    if (xessResult != XESS_RESULT_SUCCESS) {
+        m_isXessEnabled = false;
+        Utils::printLog(INFO_PARAM, "xessVKInit failed, xess_result_t=%d", xessResult);
+        return;
+    }
+
+    // Project shaders use the DLSS convention (current NDC - previous NDC).
+    // XeSS expects motion from the current pixel back to the previous pixel.
+    // I disabled use of motion vector
+    const xess_result_t velocityScaleResult =
+        xessSetVelocityScale(_core.getXessContext(), 0.0f, 0.0f);
+    if (velocityScaleResult != XESS_RESULT_SUCCESS) {
+        m_isXessEnabled = false;
+        Utils::printLog(INFO_PARAM, "xessSetVelocityScale failed, xess_result_t=%d", velocityScaleResult);
+        return;
+    }
+
+    m_xessResetHistory = true;
+}
+
+void VulkanRenderer::evaluateXessPass(uint32_t currentImage) {
+    xess_vk_execute_params_t parameters{};
+    const VkImageSubresourceRange colorRange{VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u};
+    const VkImageSubresourceRange depthRange{VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 1u, 0u, 1u};
+    parameters.colorTexture = {_colorBuffer.colorBufferImageView[currentImage], _colorBuffer.colorBufferImage[currentImage],
+                               colorRange, _colorBuffer.colorFormat, _offscreenWidth, _offscreenHeight};
+    parameters.velocityTexture = {_motionVectorsBuffer.colorBufferImageView[currentImage],
+                                  _motionVectorsBuffer.colorBufferImage[currentImage], colorRange,
+                                  _motionVectorsBuffer.colorFormat, _offscreenWidth, _offscreenHeight};
+    parameters.depthTexture = {_depthBuffer.depthImageView, _depthBuffer.depthImage, depthRange, _depthBuffer.depthFormat,
+                               _offscreenWidth, _offscreenHeight};
+    parameters.outputTexture = {_dlssOutputBuffer.colorBufferImageView[currentImage],
+                                _dlssOutputBuffer.colorBufferImage[currentImage], colorRange,
+                                _dlssOutputBuffer.colorFormat, m_uiDisplayWidth, m_uiDisplayHeight};
+    parameters.exposureScale = 1.0f;
+    parameters.jitterOffsetX = 0.0f;
+    parameters.jitterOffsetY = 0.0f;
+    parameters.resetHistory = m_xessResetHistory ? 1u : 0u;
+    parameters.inputWidth = _offscreenWidth;
+    parameters.inputHeight = _offscreenHeight;
+
+    const xess_result_t xessResult = xessVKExecute(_core.getXessContext(), _cmdBufs[currentImage], &parameters);
+    if (xessResult != XESS_RESULT_SUCCESS) {
+        m_isXessEnabled = false;
+        Utils::printLog(INFO_PARAM, "xessVKExecute failed, xess_result_t=%d", xessResult);
+        return;
+    }
+    m_xessResetHistory = false;
+
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
+                                    _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1u, 1u,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    const VkImageLayout swapchainOldLayout = m_swapchainImageNeedsGeneralTransition[currentImage]
+        ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+                                    swapchainOldLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+                                    1u, 1u, 0u, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkImageBlit blit{};
+    blit.srcOffsets[1] = {m_uiDisplayWidth, m_uiDisplayHeight, 1};
+    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    blit.dstOffsets[1] = {_windowWidth, _windowHeight, 1};
+    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    vkCmdBlitImage(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _swapChain.images[currentImage],
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &blit, VK_FILTER_LINEAR);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _swapChain.images[currentImage], _core.getSurfaceFormat().format,
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, 1u, 1u, VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    m_swapchainImageNeedsGeneralTransition[currentImage] = true;
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _dlssOutputBuffer.colorBufferImage[currentImage],
+                                    _dlssOutputBuffer.colorFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1u, 1u,
+                                    VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 #endif

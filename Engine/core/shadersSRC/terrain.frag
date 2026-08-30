@@ -7,9 +7,11 @@ layout(binding = 3) uniform sampler2D footPrintDepth;
 layout(location = 0) in vec3 outNormal;
 layout(location = 1) in vec2 outTexCoord;
 layout(location = 2) in vec2 outTexCoordNormalized;
+layout(location = 3) in vec2 inMotionVector;
 
 layout(location = 0) out vec4 out_Color; // not used in g-pass
 layout(location = 1) out vec4 out_GPass[2];
+layout(location = 3) out vec2 outMotionVector;
 
 void main() {
   // Trails factor (fading of the result color)
@@ -28,4 +30,5 @@ void main() {
   out_GPass[1] = mix(color1, color2, noiseFactor);
   out_GPass[1].rgb = trailsFactor * out_GPass[1].rgb; // fading of the result color where there are trails
   out_GPass[1].a = 1.0;
+  outMotionVector = inMotionVector;
 }

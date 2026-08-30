@@ -8,6 +8,10 @@
 #include <ffx_api/vk/ffx_api_vk.hpp>
 #endif
 
+#if defined(USE_XESS) && USE_XESS
+#include <xess/xess.h>
+#endif
+
 #include <array>
 #include <chrono>
 #include <vector>
@@ -113,6 +117,10 @@ private:
     void evaluateDLSSPass(uint32_t currentImage, const sl::FrameToken& frameToken);
     void applyDLSSOptions();
 #endif
+#if defined(USE_XESS) && USE_XESS
+    void applyXessOptions();
+    void evaluateXessPass(uint32_t currentImage);
+#endif
 
 private:
     uint16_t m_currentFrame = 0u;
@@ -212,6 +220,11 @@ private:
     ViewProj mViewProj{};
     bool m_resetViewProjHistory{true};
     bool m_isDlssEnabled{false};
+#if defined(USE_XESS) && USE_XESS
+    bool m_isXessEnabled{false};
+    bool m_xessResetHistory{true};
+    xess_quality_settings_t m_xessQuality{XESS_QUALITY_SETTING_QUALITY};
+#endif
     /// Display resolution chosen by the user in the UI combo (independent of upscaler).
     /// Render targets are _offscreenWidth/_offscreenHeight multiplying by UpscalerPreset scale(if enabled);
     /// the upscaler outputs into this resolution; it then gets blitted to the native window resolution.

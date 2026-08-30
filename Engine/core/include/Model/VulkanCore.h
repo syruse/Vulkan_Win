@@ -30,6 +30,10 @@ typedef sl::Result (*PfnSlIsFeatureSupported)(sl::Feature feature, const sl::Ada
 typedef sl::Result (*PfnSlSetFeatureLoaded)(sl::Feature feature, bool value);
 #endif 
 
+#if defined(USE_XESS) && USE_XESS
+#include <xess/xess_vk.h>
+#endif
+
 class IControl;
 
 class VulkanCore {
@@ -115,6 +119,20 @@ public:
         return m_isDlssSupported;
     }
 
+#if defined(USE_XESS) && USE_XESS
+    bool isXessSupported() const {
+        return m_isXessSupported;
+    }
+
+    xess_context_handle_t getXessContext() const {
+        return m_xessContext;
+    }
+
+    xess_result_t getXessOptimalInputResolution(uint32_t outputWidth, uint32_t outputHeight,
+                                                 xess_quality_settings_t quality, xess_2d_t& inputResolution) const;
+    xess_result_t initializeXess(uint32_t outputWidth, uint32_t outputHeight, xess_quality_settings_t quality) const;
+#endif
+
 private:
     void createInstance();
 #if defined(USE_DLSS) && USE_DLSS
@@ -133,6 +151,10 @@ private:
     Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
     bool m_isDlssSupported = false;
+#if defined(USE_XESS) && USE_XESS
+    xess_context_handle_t m_xessContext = nullptr;
+    bool m_isXessSupported = false;
+#endif
 #if defined(_DEBUG)
     VkDebugReportCallbackEXT m_callback = nullptr;
 #endif
