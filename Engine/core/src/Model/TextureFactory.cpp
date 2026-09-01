@@ -2,8 +2,8 @@
 #include "Constants.h"
 #include "Utils.h"
 
+#include <algorithm>
 #include <assert.h>
-#include <optional>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -93,7 +93,8 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
             filePath = Utils::formPath(Constants::TEXTURES_DIR, filePath);
         }
 
-        // Mip generation needs vkCmdBlitImage; on a pure DMA queue that's deferred to finalizePendingMipmaps().
+        // On the graphics queue mips are blitted on the GPU as before; on the transfer queue
+        // loadImages() falls back to a CPU-generated mip chain (see below).
         const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
         const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
         if (loadImages(*texture, filePaths, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), queue,
@@ -128,7 +129,8 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 
         std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
 
-        // Mip generation needs vkCmdBlitImage; on a pure DMA queue that's deferred to finalizePendingMipmaps().
+        // On the graphics queue mips are blitted on the GPU as before; on the transfer queue
+        // loadImages() falls back to a CPU-generated mip chain (see below).
         const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
         const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
         if (loadImages(*texture, {texturePath}, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), queue,
@@ -183,6 +185,32 @@ VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels) {
     }
 }
 
+namespace {
+// Averages a 2x2 block of the previous RGBA8 level to produce the next mip level (box filter).
+// Pure CPU work so the resulting mip chain can be uploaded with plain buffer->image copies —
+// no vkCmdBlitImage needed, so it works even on a queue with only VK_QUEUE_TRANSFER_BIT.
+std::vector<uint8_t> generateNextMipLevel(const uint8_t* src, int srcWidth, int srcHeight, int& dstWidth, int& dstHeight) {
+    dstWidth = std::max(1, srcWidth / 2);
+    dstHeight = std::max(1, srcHeight / 2);
+    std::vector<uint8_t> dst(static_cast<size_t>(dstWidth) * dstHeight * 4u);
+
+    for (int y = 0; y < dstHeight; ++y) {
+        const int srcY0 = std::min(2 * y, srcHeight - 1);
+        const int srcY1 = std::min(2 * y + 1, srcHeight - 1);
+        for (int x = 0; x < dstWidth; ++x) {
+            const int srcX0 = std::min(2 * x, srcWidth - 1);
+            const int srcX1 = std::min(2 * x + 1, srcWidth - 1);
+            for (int c = 0; c < 4; ++c) {
+                const int sum = src[(srcY0 * srcWidth + srcX0) * 4 + c] + src[(srcY0 * srcWidth + srcX1) * 4 + c] +
+                                src[(srcY1 * srcWidth + srcX0) * 4 + c] + src[(srcY1 * srcWidth + srcX1) * 4 + c];
+                dst[(y * dstWidth + x) * 4 + c] = static_cast<uint8_t>(sum / 4);
+            }
+        }
+    }
+    return dst;
+}
+}  // namespace
+
 VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const std::vector<std::string>& textureFileNames,
                                     VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
                                     bool is_miplevelsEnabling, bool is_flippingVertically, bool useTransferQueue) {
@@ -193,7 +221,6 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
     stbi_set_flip_vertically_on_load(is_flippingVertically);
 
     int texWidth, texHeight, texChannels;
-    VkDeviceSize imageSizeTotal = 0u;
     using datat_ptr = std::unique_ptr<stbi_uc, decltype(&stbi_image_free)>;
     std::vector<datat_ptr> textureData;
     textureData.reserve(texturesAmount);
@@ -204,7 +231,6 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
         stbi_uc* pixels = stbi_load(pStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         assert(pixels);
         textureData.emplace_back(pixels, stbi_image_free);
-        imageSizeTotal += static_cast<VkDeviceSize>(texWidth * texHeight * 4LL);
     }
 
     outTexture.width = texWidth;
@@ -217,21 +243,6 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
         is_miplevelsEnabling ? static_cast<uint32_t>(std::floor(std::log2(MAX(texWidth, texHeight))) + 1.0) : 1U;
     outTexture.mipLevels = mipLevels;
 
-    const VkDeviceSize layerSize = imageSizeTotal / texturesAmount;  // This is just the size of each layer.
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
-                       stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
-    for (std::size_t i = 0; i < texturesAmount; ++i) {
-        memcpy((char*)data + (layerSize * i), textureData[i].get(), static_cast<size_t>(layerSize));
-    }
-    vkUnmapMemory(device, stagingBufferMemory);
-
     res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, IMAGE_FORMAT, VK_IMAGE_TILING_OPTIMAL,
                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outTexture.m_textureImage, outTexture.m_textureImageMemory,
@@ -239,64 +250,129 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
 
     VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, VK_IMAGE_LAYOUT_UNDEFINED,
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
-    VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, outTexture.m_textureImage, static_cast<uint32_t>(texWidth),
-                            static_cast<uint32_t>(texHeight), texturesAmount);
 
-    // Check if image format supports linear blitting
-    static std::optional<VkFormatProperties> formatProperties;
-    if (!formatProperties) {
-        formatProperties = VkFormatProperties{};
-        vkGetPhysicalDeviceFormatProperties(physicalDevice, IMAGE_FORMAT, &formatProperties.value());
-    }
+    if (!useTransferQueue) {
+        // Graphics-capable queue (main thread, synchronous load): upload the base level only and let
+        // the GPU generate the rest of the chain via vkCmdBlitImage, same as before.
+        const VkDeviceSize layerSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4u;
+        const VkDeviceSize imageSizeTotal = layerSize * texturesAmount;
 
-    if (!(formatProperties.value().optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
-    }
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
+                           stagingBufferMemory);
 
-    // A pure DMA (transfer-only) queue can't run vkCmdBlitImage, so leave the image in
-    // TRANSFER_DST_OPTIMAL and defer the mip chain / final layout transition to finalizePendingMipmaps(),
-    // which runs on the main thread's graphics queue.
-    if (useTransferQueue && !m_vkState._core.transferQueueSupportsBlit()) {
-        std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        m_pendingFinalize.push_back(PendingMipFinalize{outTexture.m_textureImage, static_cast<uint32_t>(texWidth),
-                                                        static_cast<uint32_t>(texHeight), mipLevels, texturesAmount});
-        m_pendingFinalizeCount.fetch_add(1, std::memory_order_relaxed);
-    } else if (!is_miplevelsEnabling) {
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
+        for (std::size_t i = 0; i < texturesAmount; ++i) {
+            memcpy(static_cast<char*>(data) + layerSize * i, textureData[i].get(), static_cast<size_t>(layerSize));
+        }
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, outTexture.m_textureImage,
+                                static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), texturesAmount);
+
+        if (!is_miplevelsEnabling) {
+            VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
+                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                        VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
+        } else {
+            // Check if the format supports linear blitting before asking the GPU to do it.
+            VkFormatProperties formatProperties{};
+            vkGetPhysicalDeviceFormatProperties(physicalDevice, IMAGE_FORMAT, &formatProperties);
+            if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+                Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
+            }
+
+            VulkanGenerateMipmaps(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, texWidth, texHeight,
+                                 mipLevels, texturesAmount);
+        }
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        return res;
+    } else {
+        // Pure DMA / transfer queue: vkCmdBlitImage isn't available there, so the whole mip chain is
+        // generated on the CPU (box filter) instead and uploaded as plain per-level copies.
+        // Unlike the Blit path (which only stages mip0 and lets the GPU derive the rest), we must
+        // allocate the staging buffer for ALL mip levels up front since nothing generates them on GPU.
+        std::vector<int> mipWidths(mipLevels), mipHeights(mipLevels);
+        mipWidths[0] = texWidth;
+        mipHeights[0] = texHeight;
+        for (uint32_t level = 1u; level < mipLevels; ++level) {
+            mipWidths[level] = std::max(1, mipWidths[level - 1] / 2);
+            mipHeights[level] = std::max(1, mipHeights[level - 1] / 2);
+        }
+
+        // generatedMips[layer][level - 1] holds levels 1..mipLevels-1 (level 0 stays in textureData).
+        std::vector<std::vector<std::vector<uint8_t>>> generatedMips(texturesAmount);
+        for (std::size_t layer = 0u; layer < texturesAmount; ++layer) {
+            generatedMips[layer].reserve(mipLevels - 1u);
+            const uint8_t* prevLevel = textureData[layer].get();
+            int prevWidth = texWidth;
+            int prevHeight = texHeight;
+            for (uint32_t level = 1u; level < mipLevels; ++level) {
+                int dstWidth = 0;
+                int dstHeight = 0;
+                generatedMips[layer].push_back(generateNextMipLevel(prevLevel, prevWidth, prevHeight, dstWidth, dstHeight));
+                prevLevel = generatedMips[layer].back().data();
+                prevWidth = dstWidth;
+                prevHeight = dstHeight;
+            }
+        }
+
+        std::vector<VkDeviceSize> levelOffset(mipLevels);
+        VkDeviceSize imageSizeTotal = 0u;
+        for (uint32_t level = 0u; level < mipLevels; ++level) {
+            levelOffset[level] = imageSizeTotal;
+            const VkDeviceSize levelLayerSize = static_cast<VkDeviceSize>(mipWidths[level]) * mipHeights[level] * 4u;
+            imageSizeTotal += levelLayerSize * texturesAmount;
+        }
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
+                           stagingBufferMemory);
+
+        std::vector<VkBufferImageCopy> regions(mipLevels);
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
+        for (uint32_t level = 0u; level < mipLevels; ++level) {
+            const VkDeviceSize levelLayerSize = static_cast<VkDeviceSize>(mipWidths[level]) * mipHeights[level] * 4u;
+            for (std::size_t layer = 0u; layer < texturesAmount; ++layer) {
+                const uint8_t* src = (level == 0u) ? textureData[layer].get() : generatedMips[layer][level - 1u].data();
+                memcpy(static_cast<char*>(data) + levelOffset[level] + levelLayerSize * layer, src,
+                      static_cast<size_t>(levelLayerSize));
+            }
+
+            VkBufferImageCopy& region = regions[level];
+            region.bufferOffset = levelOffset[level];
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = level;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = static_cast<uint32_t>(texturesAmount);
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = {static_cast<uint32_t>(mipWidths[level]), static_cast<uint32_t>(mipHeights[level]), 1u};
+        }
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        // One command buffer, one region per mip level — plain copies only, no blit, works on any
+        // queue with VK_QUEUE_TRANSFER_BIT (including a pure DMA queue).
+        VulkanCopyBufferToImageMipChain(device, queue, cmdBufPool, stagingBuffer, outTexture.m_textureImage, regions);
+        // FRAGMENT_SHADER stage isn't valid on a transfer-only queue, unlike the graphics-queue path above.
         VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
-    } else {
-        VulkanGenerateMipmaps(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, texWidth, texHeight, mipLevels,
-                              texturesAmount);
-    }
+                                    VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount,
+                                    /*queueSupportsFragmentShaderStage=*/false);
 
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-    return res;
-}
-
-void TextureFactory::finalizePendingMipmaps() {
-    std::vector<PendingMipFinalize> batch;
-    {
-        std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        if (m_pendingFinalize.empty()) {
-            return;
-        }
-        batch.swap(m_pendingFinalize);
-    }
-
-    for (const auto& pending : batch) {
-        if (pending.mipLevels > 1u) {
-            Utils::VulkanGenerateMipmaps(m_vkState._core.getDevice(), m_vkState._queue, m_vkState._cmdBufPool, pending.image,
-                                         IMAGE_FORMAT, static_cast<int16_t>(pending.width), static_cast<int16_t>(pending.height),
-                                         static_cast<uint8_t>(pending.mipLevels), static_cast<uint8_t>(pending.layerCount));
-        } else {
-            Utils::VulkanTransitionImageLayout(m_vkState._core.getDevice(), m_vkState._queue, m_vkState._cmdBufPool,
-                                               pending.image, IMAGE_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
-                                               pending.mipLevels, static_cast<uint32_t>(pending.layerCount));
-        }
-        m_pendingFinalizeCount.fetch_sub(1, std::memory_order_relaxed);
+        return res;
     }
 }

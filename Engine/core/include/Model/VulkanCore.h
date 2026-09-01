@@ -98,12 +98,6 @@ public:
                m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
     }
 
-    // False for a "pure" transfer-only family (no GRAPHICS/COMPUTE bit): such queues cannot execute
-    // vkCmdBlitImage, so mip-chain generation for textures uploaded through it must be skipped.
-    bool transferQueueSupportsBlit() const {
-        return m_transferQueueSupportsBlit;
-    }
-
     VkInstance getInstance() const {
         return m_inst;
     }
@@ -189,8 +183,7 @@ private:
                                            {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}},
 #endif    
     };
-    // Whether the family picked for TRANSFER_QUEUE_FAMILY can run vkCmdBlitImage (mip generation).
-    bool m_transferQueueSupportsBlit = true;
+
 #if defined(USE_DLSS) && USE_DLSS
     HMODULE m_slModule = nullptr;
     PfnSlInit m_slInitFn = nullptr;

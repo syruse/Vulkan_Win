@@ -171,11 +171,7 @@ void MD5Model::init(bool useTransferQueue) {
             m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
         }
 #endif
-        // Transfer-queue loads may leave a texture's mip chain pending finalizePendingMipmaps() on
-        // the main thread; the caller (background loader) publishes readiness once that has drained.
-        if (!useTransferQueue) {
-            m_isReady.store(true, std::memory_order_release);
-        }
+        m_isReady.store(true, std::memory_order_release);
     } else {
         Utils::printLog(ERROR_PARAM, "Couldn't load md5 model:", m_md5ModelFileName);
     }

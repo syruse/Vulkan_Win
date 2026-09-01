@@ -539,7 +539,7 @@ void VulkanImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImage image, VkFo
 
 void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
                                  VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectMask,
-                                 uint32_t mipLevels, uint32_t layersCount) {
+                                 uint32_t mipLevels, uint32_t layersCount, bool queueSupportsFragmentShaderStage) {
     VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
 
     VkImageMemoryBarrier barrier{};
@@ -594,7 +594,11 @@ void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool c
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        // FRAGMENT_SHADER stage doesn't exist on a transfer-only queue (e.g. a pure DMA queue);
+        // ALL_COMMANDS is valid on any queue and still fine since synchronization with the actual
+        // sampling happens on the graphics queue via the caller's own means (fence/CPU wait).
+        destinationStage = queueSupportsFragmentShaderStage ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                                                            : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -652,6 +656,16 @@ void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBu
     region.imageExtent = {width, height, 1};
 
     vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
+}
+
+void VulkanCopyBufferToImageMipChain(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
+                                     const std::vector<VkBufferImageCopy>& regions) {
+    VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
+
+    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           static_cast<uint32_t>(regions.size()), regions.data());
 
     VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
 }

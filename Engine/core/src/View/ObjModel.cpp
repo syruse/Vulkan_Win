@@ -64,11 +64,7 @@ void ObjModel::init(bool useTransferQueue) {
         m_lowPolyMesh->init(useTransferQueue);
     }
 
-    // Transfer-queue loads may leave a texture's mip chain pending finalizePendingMipmaps() on the
-    // main thread; the caller (background loader) publishes readiness once that has drained.
-    if (!useTransferQueue) {
-        m_isReady.store(true, std::memory_order_release);
-    }
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void ObjModel::update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage, const glm::mat4& viewProj,

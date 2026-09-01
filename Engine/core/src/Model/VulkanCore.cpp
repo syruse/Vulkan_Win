@@ -274,7 +274,6 @@ void VulkanCore::selectPhysicalDevice() {
         if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_COMPUTE_BIT) &&
             QFamilyProp.queueCount > 0) {
             m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex = static_cast<int>(j);
-            m_transferQueueSupportsBlit = false;  // pure DMA queue can't run vkCmdBlitImage (mip generation)
             --QFamilyProp.queueCount;
             INFO_FORMAT("Dedicated Transfer(DMA) queue found: family %d\n", static_cast<int>(j));
             break;

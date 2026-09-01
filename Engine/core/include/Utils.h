@@ -85,6 +85,12 @@ void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, 
 void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
                              uint32_t width, uint32_t height, uint32_t layersCount = 1U);
 
+// Uploads a pre-built mip chain (CPU-generated) in one command buffer via plain copies, one region
+// per mip level. Unlike blit-based mip generation this only needs VK_QUEUE_TRANSFER_BIT, so it can
+// run on a pure DMA queue that has no GRAPHICS/COMPUTE capability.
+void VulkanCopyBufferToImageMipChain(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
+                                     const std::vector<VkBufferImageCopy>& regions);
+
 VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileName);
 
 VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
@@ -102,7 +108,7 @@ void VulkanImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImage image, VkFo
 void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
                                  VkImageLayout oldLayout, VkImageLayout newLayout,
                                  VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U,
-                                 uint32_t layersCount = 1U);
+                                 uint32_t layersCount = 1U, bool queueSupportsFragmentShaderStage = true);
 
 VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask,
                                VkImageView& imageView, uint32_t mipLevels = 1U, VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D,

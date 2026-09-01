@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -34,7 +33,8 @@ public:
     ~TextureFactory();
 
     // useTransferQueue: upload via the transfer (DMA) queue/pool so this can be called from a
-    // background loader thread; mip-chain generation is automatically skipped if that queue can't blit.
+    // background loader thread; mip levels are generated on the CPU (box filter) and uploaded as
+    // plain copies, so a pure DMA queue (no blit capability) works fine.
     std::weak_ptr<Texture> createCubeTexture(const std::array<std::string_view, 6>& textureFileNames,
                                              bool is_flippingVertically = true, bool useTransferQueue = false);
     std::weak_ptr<Texture> create2DTexture(std::string_view pTextureFileName, bool is_miplevelsEnabling = true,
@@ -45,34 +45,16 @@ public:
                                                 bool useTransferQueue = false);
     VkSampler getTextureSampler(uint32_t mipLevels);
 
-    // A background-loaded texture on a pure DMA queue only gets its pixel data copied (no blit
-    // capability there); its mip chain / final layout transition is left pending here to be
-    // finished on the main thread's graphics queue. Call once per frame.
-    void finalizePendingMipmaps();
-    // True while any texture is still waiting for finalizePendingMipmaps(); models loaded via the
-    // transfer queue must not be marked ready until this is false again (image isn't in its final
-    // shader-readable layout until then).
-    bool hasPendingMipFinalize() const {
-        return m_pendingFinalizeCount.load(std::memory_order_relaxed) > 0;
-    }
-
 private:
     /// <param name="is_flippingVertically"> keep it in 'true' by default since texture applies from top to bottom in
     /// Vulkan</param>
+    // useTransferQueue selects the upload path: false -> GPU blit (vkCmdBlitImage) as before; true ->
+    // CPU-generated mip chain (box filter) since a pure DMA queue can't run blit commands.
     VkResult loadImages(TextureFactory::Texture& outTexture, const std::vector<std::string>& textureFileNames, VkDevice device,
                         VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
                         bool is_miplevelsEnabling = true, bool is_flippingVertically = true, bool useTransferQueue = false);
 
 private:
-    // Image ready for its mip chain / final layout transition, deferred from a background transfer-queue upload.
-    struct PendingMipFinalize {
-        VkImage image{nullptr};
-        uint32_t width{0u};
-        uint32_t height{0u};
-        uint32_t mipLevels{1u};
-        size_t layerCount{1u};
-    };
-
     const VulkanState& m_vkState;
     // Guards m_textures/m_samplers: Terrain/Skybox load on the main thread while other models may
     // load concurrently on a background loader thread using the transfer queue.
@@ -82,6 +64,4 @@ private:
     std::unordered_map<uint32_t, VkSampler> m_samplers{};
     VkPhysicalDeviceProperties m_properties{};
     std::function<void(TextureFactory::Texture* p)> mTextureDeleter{nullptr};
-    std::vector<PendingMipFinalize> m_pendingFinalize{};
-    std::atomic<int> m_pendingFinalizeCount{0};
 };

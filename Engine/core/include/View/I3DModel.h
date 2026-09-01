@@ -212,12 +212,6 @@ public:
         return m_isReady.load(std::memory_order_acquire);
     }
 
-    // Explicitly publish readiness; used when init(useTransferQueue=true) intentionally left the
-    // flag unset because a texture's mip chain is still pending finalizePendingMipmaps().
-    void markReady() {
-        m_isReady.store(true, std::memory_order_release);
-    }
-
     virtual std::vector<Instance>& instances() {
         return m_instances;
     }

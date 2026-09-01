@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <limits>
 #include <random>
 #include <cmath>
@@ -891,6 +892,15 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->model = firstTreeModelMat;
         pModel->MVP = mViewProj.viewProj;
     }
+    } else {
+        // Trees not loaded yet: keep their slots as a valid (identity) transform instead of leaving
+        // whatever was last written there (zeroed on first alloc, see allocateDynamicBufferTransferSpace()).
+        for (size_t i = objectsAmount; i < (objectsAmount + m_semiTransparentModels.size()); i++) {
+            Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
+            pModel->prevModel = identityMatrix;
+            pModel->model = identityMatrix;
+            pModel->MVP = mViewProj.viewProj;
+        }
     }
 
     // smoothly move the light source towards the desired position along Z axis,
@@ -941,8 +951,13 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace() {
     _modelUniformAlignment = (sizeof(Model) + minUniformBufferOffset - 1) & ~(minUniformBufferOffset - 1);
 
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds m_models.size()
-    mp_modelTransferSpace = (Model*)_aligned_malloc(_modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size()),
-                                                    _modelUniformAlignment);
+    const size_t bufferSize = _modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size());
+    mp_modelTransferSpace = (Model*)_aligned_malloc(bufferSize, _modelUniformAlignment);
+    // Trees load asynchronously and their slots aren't written until isReady(); _aligned_malloc leaves
+    // them uninitialized, so zero them out to avoid uploading garbage matrices to the GPU meanwhile.
+    if (mp_modelTransferSpace) {
+        memset(mp_modelTransferSpace, 0, bufferSize);
+    }
 }
 
 void VulkanRenderer::releaseDynamicBufferTransferSpace() {
@@ -1823,19 +1838,12 @@ void VulkanRenderer::loadModels() {
 
     // Trees are the heaviest/most numerous asset (TREES_COUNT instances + big texture + MD5 mesh) and
     // their Bullet colliders use fixed constants (not model->radius()), so they're safe to stream in
-    // the background via the transfer queue while terrain/sky/tank are already rendering.
+    // the background via the transfer queue while terrain/sky/tank are already rendering. Mip levels
+    // are generated on the CPU (box filter) and uploaded as plain copies, so no vkCmdBlitImage /
+    // main-thread graphics-queue involvement is needed even on a pure DMA transfer queue.
     m_treeLoadThread = std::thread([this]() {
         for (auto& model : m_semiTransparentModels) {
             model->init(/*useTransferQueue=*/true);
-        }
-        // A pure DMA transfer queue can't blit mip chains; finalizePendingMipmaps() runs those on
-        // the main thread's graphics queue once per frame. Wait for it before publishing readiness,
-        // since the texture image isn't in its final shader-readable layout until then.
-        while (mTextureFactory->hasPendingMipFinalize()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-        for (auto& model : m_semiTransparentModels) {
-            model->markReady();
         }
     });
 
@@ -2217,10 +2225,6 @@ bool VulkanRenderer::renderScene() {
 
         m_audioManager->update(deltaTime);
     }
-
-    // Finish any mip-chain blits deferred by background transfer-queue texture uploads (cheap no-op
-    // once nothing is pending).
-    mTextureFactory->finalizePendingMipmaps();
 
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
