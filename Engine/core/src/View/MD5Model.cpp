@@ -13,7 +13,7 @@
 
 using namespace md5_animation;
 
-void MD5Model::init() {
+void MD5Model::init(bool useTransferQueue) {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
     assert(!m_instances.empty());
@@ -24,7 +24,7 @@ void MD5Model::init() {
     m_activeInstances = m_instances;
     mActiveInstancesAmount = static_cast<uint32_t>(m_activeInstances.size());
 
-    if (loadMD5Model(vertices, indices) && loadMD5Anim()) {
+    if (loadMD5Model(vertices, indices, useTransferQueue) && loadMD5Anim()) {
         /// uploading verts & indices into CPU\GPU shared memory
         const VkDeviceSize indicesSize = sizeof(indices[0]) * indices.size();
         m_verticesBufferOffset = indicesSize;
@@ -171,6 +171,11 @@ void MD5Model::init() {
             m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
         }
 #endif
+        // Transfer-queue loads may leave a texture's mip chain pending finalizePendingMipmaps() on
+        // the main thread; the caller (background loader) publishes readiness once that has drained.
+        if (!useTransferQueue) {
+            m_isReady.store(true, std::memory_order_release);
+        }
     } else {
         Utils::printLog(ERROR_PARAM, "Couldn't load md5 model:", m_md5ModelFileName);
     }
@@ -640,7 +645,7 @@ inline void MD5Model::swapYandZ(glm::vec3& vertexData) {
     vertexData.z *= -1.0f;
 }
 
-bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices) {
+bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices, bool useTransferQueue) {
     assert(m_pipelineCreatorTextured);
     assert(!m_md5ModelFileName.empty());
 
@@ -758,7 +763,7 @@ bool MD5Model::loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint3
 
                         auto texture = m_textureFactory.create2DArrayTexture(
                             std::vector<std::string>{diffuse_texname}, true, true,
-                            m_pipelineCreatorTextured->expectsArrayTexture());
+                            m_pipelineCreatorTextured->expectsArrayTexture(), useTransferQueue);
                         if (!texture.expired()) {
                             subset.realMaterialId = m_pipelineCreatorTextured->createDescriptor(
                                 texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));

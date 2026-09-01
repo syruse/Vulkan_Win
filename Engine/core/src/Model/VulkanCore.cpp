@@ -265,6 +265,34 @@ void VulkanCore::selectPhysicalDevice() {
         --(*pQueueFamilyCount);  // reduce queue count by one since we will use one queue for main thread
     }
 
+    // Look for a dedicated DMA/transfer-only queue family (no GRAPHICS/COMPUTE bit) so model
+    // uploads can run on real DMA hardware in parallel with the graphics queue.
+    for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
+        VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
+        VkQueueFlags flags = QFamilyProp.queueFlags;
+
+        if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_COMPUTE_BIT) &&
+            QFamilyProp.queueCount > 0) {
+            m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex = static_cast<int>(j);
+            m_transferQueueSupportsBlit = false;  // pure DMA queue can't run vkCmdBlitImage (mip generation)
+            --QFamilyProp.queueCount;
+            INFO_FORMAT("Dedicated Transfer(DMA) queue found: family %d\n", static_cast<int>(j));
+            break;
+        }
+    }
+    if (m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex == -1) {
+        // No dedicated DMA engine exposed: try a spare queue in the graphics family instead so
+        // uploads still run through an independent VkQueue (blit is fine, it's a graphics family).
+        const int gfxFamilyIndex = m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
+        VkQueueFamilyProperties& gfxProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][gfxFamilyIndex];
+        if (gfxProp.queueCount > 0) {
+            m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex = gfxFamilyIndex;
+            --gfxProp.queueCount;
+            INFO_FORMAT("No dedicated Transfer queue: using a spare queue in the graphics family %d\n", gfxFamilyIndex);
+        }
+        // else: leave at -1; createLogicalDevice() falls back to sharing the graphics VkQueue.
+    }
+
 #if defined(USE_DLSS) && USE_DLSS
     // Now we can check whether it's NVIDIA GPU
     // if not, we can skip Streamline abstracted functions and avoid calling them
@@ -802,4 +830,13 @@ void VulkanCore::createLogicalDevice() {
         }
     }
 
+    // No spare queue slot was available for TRANSFER_QUEUE_FAMILY: share the graphics VkQueue/family
+    // instead (uploads still work, just without real DMA-engine parallelism).
+    Queue& transferQueue = m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY);
+    if (transferQueue.familyIndex == -1) {
+        const Queue& gfxQueue = m_queues.at(Queue_family::GFX_QUEUE_FAMILY);
+        transferQueue.familyIndex = gfxQueue.familyIndex;
+        transferQueue.queueIndex = gfxQueue.queueIndex;
+        transferQueue.queue = gfxQueue.queue;
+    }
 }

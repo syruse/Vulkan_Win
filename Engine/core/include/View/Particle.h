@@ -114,7 +114,7 @@ protected:
              float lifeDurationMaxMs = 3000.0f) noexcept(true);
 
 public:
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset = 0u) const override;
 
 protected:

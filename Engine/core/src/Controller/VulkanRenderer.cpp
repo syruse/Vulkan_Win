@@ -296,6 +296,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
 }
 
 VulkanRenderer::~VulkanRenderer() {
+    // Must finish before touching m_semiTransparentModels/Vulkan device teardown below.
+    if (m_treeLoadThread.joinable()) {
+        m_treeLoadThread.join();
+    }
+
     Pipeliner::getInstance().saveCache();
 
     if (m_btDynamicsWorld) {
@@ -371,6 +376,7 @@ VulkanRenderer::~VulkanRenderer() {
     destroyPerFrameResources();
 
     vkDestroyCommandPool(_core.getDevice(), _cmdBufPool, nullptr);
+    vkDestroyCommandPool(_core.getDevice(), _transferCmdBufPool, nullptr);
 }
 
 void VulkanRenderer::destroyPerFrameResources() {
@@ -822,6 +828,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // Trees consist of two models (trunk + crown) with identical instance transforms.
     // Pull per-frame transforms from Bullet rigid bodies.
+    // Skip while still streaming in on the background loader thread: instances() vectors are being
+    // written by that thread's init() until isReady() flips, so touching them here would race.
+    if (m_semiTransparentModels.size() >= 2 && m_semiTransparentModels[0]->isReady() && m_semiTransparentModels[1]->isReady()) {
     auto& treeTrunkInstances = m_semiTransparentModels[0]->instances();
     auto& treeCrownInstances = m_semiTransparentModels[1]->instances();
     const size_t treesToUpdate = std::min(std::min(treeTrunkInstances.size(), treeCrownInstances.size()), m_btTreeBodies.size());
@@ -881,6 +890,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->prevModel = pModel->model;
         pModel->model = firstTreeModelMat;
         pModel->MVP = mViewProj.viewProj;
+    }
     }
 
     // smoothly move the light source towards the desired position along Z axis,
@@ -1122,6 +1132,13 @@ void VulkanRenderer::createCommandPool() {
     CHECK_VULKAN_ERROR("vkCreateCommandPool error %d\n", res);
 
     Utils::printLog(INFO_PARAM, "Command buffer pool created");
+
+    // Separate pool for the transfer queue used by background model loading (own pool required:
+    // command pools aren't thread-safe and mustn't be shared across queue families/threads).
+    VkCommandPoolCreateInfo transferPoolCreateInfo = cmdPoolCreateInfo;
+    transferPoolCreateInfo.queueFamilyIndex = _core.getTransferQueueFamily();
+    res = vkCreateCommandPool(_core.getDevice(), &transferPoolCreateInfo, nullptr, &_transferCmdBufPool);
+    CHECK_VULKAN_ERROR("vkCreateCommandPool (transfer) error %d\n", res);
 }
 
 void VulkanRenderer::createCommandBuffer() {
@@ -1206,6 +1223,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 
     for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
+        if (!m_semiTransparentModels[meshIndex]->isReady()) {
+            continue;  // still streaming in on the background loader thread
+        }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
         m_semiTransparentModels[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage],
                                                                    currentImage, dynamicOffset);
@@ -1468,6 +1488,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 
     for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
+        if (!m_semiTransparentModels[meshIndex]->isReady()) {
+            continue;  // still streaming in on the background loader thread
+        }
         // TODO
         const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
@@ -1798,9 +1821,23 @@ void VulkanRenderer::loadModels() {
         model->init();
     }
 
-    for (auto& model : m_semiTransparentModels) {
-        model->init();
-    }
+    // Trees are the heaviest/most numerous asset (TREES_COUNT instances + big texture + MD5 mesh) and
+    // their Bullet colliders use fixed constants (not model->radius()), so they're safe to stream in
+    // the background via the transfer queue while terrain/sky/tank are already rendering.
+    m_treeLoadThread = std::thread([this]() {
+        for (auto& model : m_semiTransparentModels) {
+            model->init(/*useTransferQueue=*/true);
+        }
+        // A pure DMA transfer queue can't blit mip chains; finalizePendingMipmaps() runs those on
+        // the main thread's graphics queue once per frame. Wait for it before publishing readiness,
+        // since the texture image isn't in its final shader-readable layout until then.
+        while (mTextureFactory->hasPendingMipFinalize()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        for (auto& model : m_semiTransparentModels) {
+            model->markReady();
+        }
+    });
 
     for (auto& particle : m_particles) {
         particle->init();
@@ -2181,6 +2218,10 @@ bool VulkanRenderer::renderScene() {
         m_audioManager->update(deltaTime);
     }
 
+    // Finish any mip-chain blits deferred by background transfer-queue texture uploads (cheap no-op
+    // once nothing is pending).
+    mTextureFactory->finalizePendingMipmaps();
+
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
     _pushConstant.windDirElapsedTimeMS.w += sceneDeltaTime;
@@ -2370,6 +2411,9 @@ bool VulkanRenderer::renderScene() {
     }
 
     for (auto& model : m_semiTransparentModels) {
+        if (!model->isReady()) {
+            continue;  // GPU buffers not created yet on the background loader thread
+        }
         model->update(sceneDeltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR,
                   mCamera.cameraPosition());
     }
@@ -4002,6 +4046,12 @@ void VulkanRenderer::init() {
     _queue = _core.getAllQueues().at(VulkanCore::Queue_family::GFX_QUEUE_FAMILY).queue;
     if (!_queue) {
         Utils::printLog(ERROR_PARAM, "failed to get graphics queue!");
+        return;
+    }
+
+    _transferQueue = _core.getAllQueues().at(VulkanCore::Queue_family::TRANSFER_QUEUE_FAMILY).queue;
+    if (!_transferQueue) {
+        Utils::printLog(ERROR_PARAM, "failed to get transfer queue!");
         return;
     }
 

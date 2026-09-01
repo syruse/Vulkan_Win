@@ -106,7 +106,7 @@ Particle::Particle(const VulkanState& vulkanState, TextureFactory& textureFactor
     });
 }
 
-void Particle::init() {
+void Particle::init(bool useTransferQueue) {
     auto p_devide = m_vkState._core.getDevice();
     assert(p_devide);
     assert(m_pipelineCreatorTextured);
@@ -182,6 +182,8 @@ void Particle::init() {
             vkUnmapMemory(p_devide, m_instanceBuffersMemory[i]);
         }
     }
+
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void Particle::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset) const {

@@ -32,7 +32,7 @@ const std::vector<uint32_t> _indices = {
 	// top
 	6, 3, 2, 6, 7, 3};
 
-void Skybox::init() {
+void Skybox::init(bool useTransferQueue) {
 	auto p_devide = m_vkState._core.getDevice();
 	assert(p_devide);
 	assert(m_pipelineCreatorTextured);
@@ -48,6 +48,8 @@ void Skybox::init() {
 	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
+
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {

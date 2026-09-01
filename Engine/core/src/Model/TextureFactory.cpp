@@ -36,10 +36,11 @@ void TextureFactory::init() {
 }
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const std::array<std::string_view, 6>& textureFileNames,
-                                                                         bool is_flippingVertically) {
+                                                                         bool is_flippingVertically, bool useTransferQueue) {
     // Prefix the cache key so the same filename requested as a different view type never aliases.
     auto id = std::string{"CUBE:"} + std::string{textureFileNames[0]};
 
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (auto it = m_textures.find(id); it != m_textures.end()) {
         return it->second;
     } else {
@@ -52,8 +53,10 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
                                               Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[4]),
                                               Utils::formPath(Constants::TEXTURES_DIR, textureFileNames[5])};
 
-        if (loadImages(*texture, texturePaths, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), m_vkState._queue,
-                       m_vkState._cmdBufPool, false, is_flippingVertically) != VK_SUCCESS) {
+        const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+        const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+        if (loadImages(*texture, texturePaths, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), queue,
+                       cmdBufPool, false, is_flippingVertically, useTransferQueue) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
@@ -73,12 +76,14 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
 std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std::vector<std::string>&& textureFileNames,
                                                                             bool is_miplevelsEnabling,
                                                                             bool is_flippingVertically,
-                                                                            bool forceArrayView) {
+                                                                            bool forceArrayView,
+                                                                            bool useTransferQueue) {
     std::vector<std::string> filePaths = std::move(textureFileNames);
     const bool isArrayView = (filePaths.size() > 1) || forceArrayView;
     // Tag the cache key with the resolved view type so 2D vs 2D-array requests for the same filename never alias.
     auto id = std::string{isArrayView ? "ARR:" : "2D:"} + filePaths[0];
 
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (auto it = m_textures.find(id); it != m_textures.end()) {
         return it->second;
     } else {
@@ -88,8 +93,11 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
             filePath = Utils::formPath(Constants::TEXTURES_DIR, filePath);
         }
 
-        if (loadImages(*texture, filePaths, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), m_vkState._queue,
-                       m_vkState._cmdBufPool, is_miplevelsEnabling, is_flippingVertically) != VK_SUCCESS) {
+        // Mip generation needs vkCmdBlitImage; on a pure DMA queue that's deferred to finalizePendingMipmaps().
+        const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+        const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+        if (loadImages(*texture, filePaths, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), queue,
+                       cmdBufPool, is_miplevelsEnabling, is_flippingVertically, useTransferQueue) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture image ");
         }
         VkImageViewType viewType = isArrayView ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
@@ -108,9 +116,11 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
 }
 
 std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::string_view pTextureFileName,
-                                                                       bool is_miplevelsEnabling, bool is_flippingVertically) {
+                                                                       bool is_miplevelsEnabling, bool is_flippingVertically,
+                                                                       bool useTransferQueue) {
     // Prefix the cache key so the same filename requested as a different view type never aliases.
     std::string id = std::string{"2D:"} + std::string{pTextureFileName};
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (auto it = m_textures.find(id); it != m_textures.end()) {
         return it->second;
     } else {
@@ -118,8 +128,11 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 
         std::string texturePath = Utils::formPath(Constants::TEXTURES_DIR, pTextureFileName);
 
-        if (loadImages(*texture, {texturePath}, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), m_vkState._queue,
-                       m_vkState._cmdBufPool, is_miplevelsEnabling, is_flippingVertically) != VK_SUCCESS) {
+        // Mip generation needs vkCmdBlitImage; on a pure DMA queue that's deferred to finalizePendingMipmaps().
+        const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+        const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+        if (loadImages(*texture, {texturePath}, m_vkState._core.getDevice(), m_vkState._core.getPhysDevice(), queue,
+                       cmdBufPool, is_miplevelsEnabling, is_flippingVertically, useTransferQueue) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create texture image ");
         }
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
@@ -137,6 +150,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
 }
 
 VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_samplers.find(mipLevels) == m_samplers.end()) {
         VkSampler sampler = nullptr;
         VkSamplerCreateInfo samplerInfo{};
@@ -171,7 +185,7 @@ VkSampler TextureFactory::getTextureSampler(uint32_t mipLevels) {
 
 VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const std::vector<std::string>& textureFileNames,
                                     VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
-                                    bool is_miplevelsEnabling, bool is_flippingVertically) {
+                                    bool is_miplevelsEnabling, bool is_flippingVertically, bool useTransferQueue) {
     using namespace Utils;
     const auto texturesAmount = textureFileNames.size();
     VkResult res;
@@ -239,7 +253,15 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
         Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
     }
 
-    if (!is_miplevelsEnabling) {
+    // A pure DMA (transfer-only) queue can't run vkCmdBlitImage, so leave the image in
+    // TRANSFER_DST_OPTIMAL and defer the mip chain / final layout transition to finalizePendingMipmaps(),
+    // which runs on the main thread's graphics queue.
+    if (useTransferQueue && !m_vkState._core.transferQueueSupportsBlit()) {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        m_pendingFinalize.push_back(PendingMipFinalize{outTexture.m_textureImage, static_cast<uint32_t>(texWidth),
+                                                        static_cast<uint32_t>(texHeight), mipLevels, texturesAmount});
+        m_pendingFinalizeCount.fetch_add(1, std::memory_order_relaxed);
+    } else if (!is_miplevelsEnabling) {
         VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                     VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
@@ -252,4 +274,29 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 
     return res;
+}
+
+void TextureFactory::finalizePendingMipmaps() {
+    std::vector<PendingMipFinalize> batch;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (m_pendingFinalize.empty()) {
+            return;
+        }
+        batch.swap(m_pendingFinalize);
+    }
+
+    for (const auto& pending : batch) {
+        if (pending.mipLevels > 1u) {
+            Utils::VulkanGenerateMipmaps(m_vkState._core.getDevice(), m_vkState._queue, m_vkState._cmdBufPool, pending.image,
+                                         IMAGE_FORMAT, static_cast<int16_t>(pending.width), static_cast<int16_t>(pending.height),
+                                         static_cast<uint8_t>(pending.mipLevels), static_cast<uint8_t>(pending.layerCount));
+        } else {
+            Utils::VulkanTransitionImageLayout(m_vkState._core.getDevice(), m_vkState._queue, m_vkState._cmdBufPool,
+                                               pending.image, IMAGE_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+                                               pending.mipLevels, static_cast<uint32_t>(pending.layerCount));
+        }
+        m_pendingFinalizeCount.fetch_sub(1, std::memory_order_relaxed);
+    }
 }

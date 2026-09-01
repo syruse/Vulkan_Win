@@ -49,7 +49,7 @@ public:
         : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured), m_textureFileNames(textureFileNames) {
     }
 
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
 
 private:

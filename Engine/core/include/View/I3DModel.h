@@ -5,6 +5,7 @@
 #include "VertexData.h"
 
 #include <array>
+#include <atomic>
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -195,12 +196,26 @@ public:
         }
     }
 
-    virtual void init() = 0;
+    // useTransferQueue: upload geometry/textures via the transfer (DMA) queue/pool instead of the
+    // graphics one, so this can be called from a background thread while the graphics queue renders.
+    virtual void init(bool useTransferQueue = false) = 0;
     virtual void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const = 0;
     virtual void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf,
                                         uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
     }
     virtual void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const {
+    }
+
+    // False until init() has finished uploading GPU resources; draw calls must skip not-ready models
+    // (relevant for models loaded asynchronously on a background thread).
+    bool isReady() const {
+        return m_isReady.load(std::memory_order_acquire);
+    }
+
+    // Explicitly publish readiness; used when init(useTransferQueue=true) intentionally left the
+    // flag unset because a texture's mip chain is still pending finalizePendingMipmaps().
+    void markReady() {
+        m_isReady.store(true, std::memory_order_release);
     }
 
     virtual std::vector<Instance>& instances() {
@@ -235,6 +250,7 @@ protected:
     const VulkanState& m_vkState;
     TextureFactory& m_textureFactory;
     std::unique_ptr<I3DModel> m_lowPolyMesh{};
+    std::atomic<bool> m_isReady{false};
     float m_radius{0.0f};
     float m_vertexMagnitudeMultiplier{1.0f};
     bool m_normalizeVertices{true};

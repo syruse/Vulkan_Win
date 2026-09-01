@@ -11,10 +11,13 @@
 #include <unordered_map>
 #include <cstdint>
 
-void ObjModel::init() {
+void ObjModel::init(bool useTransferQueue) {
     auto p_device = m_vkState._core.getDevice();
     assert(p_device);
     assert(!m_instances.empty());
+
+    const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+    const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
 
     std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
@@ -22,7 +25,7 @@ void ObjModel::init() {
     m_activeInstances.reserve(m_instances.size());
     m_activeInstances.assign(m_instances.begin(), m_instances.end());
 
-    load(vertices, indices);
+    load(vertices, indices, useTransferQueue);
     if (m_normalizeVertices) {
         for (auto& vert : vertices) {
             vert.pos = (vert.pos / m_radius) * m_vertexMagnitudeMultiplier;
@@ -35,7 +38,7 @@ void ObjModel::init() {
         m_radius *= m_vertexMagnitudeMultiplier;
     }
 
-    Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
+    Utils::createGeneralBuffer(p_device, m_vkState._core.getPhysDevice(), cmdBufPool, queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
     {
         assert(m_vkState._swapchainImageCount > 0u);
@@ -58,7 +61,13 @@ void ObjModel::init() {
     }
 
     if (m_lowPolyMesh) {
-        m_lowPolyMesh->init();
+        m_lowPolyMesh->init(useTransferQueue);
+    }
+
+    // Transfer-queue loads may leave a texture's mip chain pending finalizePendingMipmaps() on the
+    // main thread; the caller (background loader) publishes readiness once that has drained.
+    if (!useTransferQueue) {
+        m_isReady.store(true, std::memory_order_release);
     }
 }
 
@@ -86,7 +95,7 @@ void ObjModel::updateBuffers(uint32_t currentImage) {
     }
 }
 
-void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, bool useTransferQueue) {
     assert(m_pipelineCreatorTextured);
     assert(!m_path.empty());
     vertices.clear();
@@ -138,7 +147,7 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
                 isBumpMappingValid
                     ? std::vector<std::string>{materials[materialId].diffuse_texname, materials[materialId].bump_texname}
                     : std::vector<std::string>{materials[materialId].diffuse_texname},
-                true, true, m_pipelineCreatorTextured->expectsArrayTexture());
+                true, true, m_pipelineCreatorTextured->expectsArrayTexture(), useTransferQueue);
             if (!texture.expired()) {
                 realMaterialId = m_pipelineCreatorTextured->createDescriptor(
                     texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
@@ -217,7 +226,8 @@ void ObjModel::load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indice
             if (m_Tracks.empty()) {
                 auto texture = m_textureFactory.create2DTexture(!materials[materialId].alpha_texname.empty()
                                                                     ? materials[materialId].alpha_texname
-                                                                    : materials[materialId].diffuse_texname);
+                                                                    : materials[materialId].diffuse_texname,
+                                                                true, true, useTransferQueue);
                 if (!texture.expired()) {
                     subObject.realMaterialFootprintId = m_pipelineCreatorFootprint->createDescriptor(
                         texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));

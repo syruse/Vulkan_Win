@@ -16,7 +16,7 @@ public:
           m_noiseTextureFileName(noiseTextureFileName) {
     }
 
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
     void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
                                 uint32_t dynamicOffset) const override;

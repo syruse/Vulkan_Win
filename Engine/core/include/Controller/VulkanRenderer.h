@@ -14,6 +14,7 @@
 
 #include <array>
 #include <chrono>
+#include <thread>
 #include <vector>
 
 #include "CameraPanzer.h"
@@ -160,6 +161,10 @@ private:
     uint32_t m_boundaryModelIndex{0u};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
+
+    // Trees (m_semiTransparentModels) upload via the transfer queue on this thread while
+    // terrain/skybox/tank render immediately; joined in the destructor before teardown.
+    std::thread m_treeLoadThread;
 
     std::unique_ptr<AudioManager> m_audioManager;
 

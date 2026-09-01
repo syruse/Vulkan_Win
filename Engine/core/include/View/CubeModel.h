@@ -15,7 +15,7 @@ public:
     }
 
     // Create GPU resources and generate textured cube mesh.
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     // Update visible instances (culling/sorting) and upload instance data for current frame.
     void update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage = 0u,
                 const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f,

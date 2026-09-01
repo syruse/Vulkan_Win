@@ -47,6 +47,9 @@ public:
 
     enum Queue_family {
         GFX_QUEUE_FAMILY = 0,
+        // Dedicated (or best-effort) queue used to upload model geometry/textures in parallel
+        // with rendering, so background loading doesn't stall the graphics queue.
+        TRANSFER_QUEUE_FAMILY,
 #if defined(USE_FSR) && USE_FSR
         FSR_PRESENT_QUEUE_FAMILY,
         FSR_IMAGE_ACQUIRE_QUEUE_FAMILY,
@@ -82,6 +85,23 @@ public:
 
     int getQueueFamily() const {
         return m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
+    }
+
+    int getTransferQueueFamily() const {
+        return m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex;
+    }
+
+    // True if uploads run on a queue family distinct from the graphics one (real parallel DMA engine
+    // or a spare queue in another family), false if uploads fall back to sharing the graphics queue.
+    bool hasDedicatedTransferQueue() const {
+        return m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex !=
+               m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
+    }
+
+    // False for a "pure" transfer-only family (no GRAPHICS/COMPUTE bit): such queues cannot execute
+    // vkCmdBlitImage, so mip-chain generation for textures uploaded through it must be skipped.
+    bool transferQueueSupportsBlit() const {
+        return m_transferQueueSupportsBlit;
     }
 
     VkInstance getInstance() const {
@@ -162,12 +182,15 @@ private:
     int m_gfxDevIndex = -1;
 
     std::map<Queue_family, Queue> m_queues{{GFX_QUEUE_FAMILY, {-1, 0, nullptr}},
+                                           {TRANSFER_QUEUE_FAMILY, {-1, 0, nullptr}},
 #if defined(USE_FSR) && USE_FSR
                                            {FSR_PRESENT_QUEUE_FAMILY, {-1, 0, nullptr}},
                                            {FSR_IMAGE_ACQUIRE_QUEUE_FAMILY, {-1, 0, nullptr}},
                                            {FSR_ASYNC_COMPUTE_QUEUE_FAMILY, {-1, 0, nullptr}},
 #endif    
     };
+    // Whether the family picked for TRANSFER_QUEUE_FAMILY can run vkCmdBlitImage (mip generation).
+    bool m_transferQueueSupportsBlit = true;
 #if defined(USE_DLSS) && USE_DLSS
     HMODULE m_slModule = nullptr;
     PfnSlInit m_slInitFn = nullptr;

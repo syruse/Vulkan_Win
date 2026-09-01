@@ -16,7 +16,7 @@ constexpr uint32_t TERRAIN_TILES = 16u;  /// Note: How many tiles being used for
 //
 //const std::vector<uint32_t> _indices = {0, 1, 2, 2, 3, 0};
 
-void Terrain::init() {
+void Terrain::init(bool useTransferQueue) {
     auto p_devide = m_vkState._core.getDevice();
     assert(p_devide);
     assert(m_pipelineCreatorTextured);
@@ -73,6 +73,8 @@ void Terrain::init() {
     Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, m_indices,
                                    m_vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
+
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void Terrain::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {

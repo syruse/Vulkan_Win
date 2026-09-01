@@ -65,7 +65,7 @@ void CubeModel::buildMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& 
     }
 }
 
-void CubeModel::init() {
+void CubeModel::init(bool useTransferQueue) {
     auto pDevice = m_vkState._core.getDevice();
     assert(pDevice);
     assert(m_pipelineCreatorTextured);
@@ -106,6 +106,8 @@ void CubeModel::init() {
         memcpy(data, m_instances.data(), instancesSize);
         vkUnmapMemory(pDevice, m_instancesBufferMemory[i]);
     }
+
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void CubeModel::update(float, int, bool, uint32_t currentImage, const glm::mat4& viewProj, float z_far,

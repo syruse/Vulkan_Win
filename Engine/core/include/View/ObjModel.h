@@ -13,7 +13,7 @@ public:
              m_path(path) {
     }
 
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     void update(float deltaTimeMS, int animationID, bool onGPU, uint32_t currentImage = 0u,
                 const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f, const glm::vec3& camPos = glm::vec3(0.0f)) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
@@ -22,7 +22,7 @@ public:
     void drawFootprints(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex = 0U, uint32_t dynamicOffset = 0U) const override;
 
 private:
-    void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+    void load(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, bool useTransferQueue);
     void filterInstances(std::size_t indexFrom, std::size_t indexTo, float biasValue, const glm::mat4& viewProj,
                          std::vector<Instance>& activeInstances);
     void updateBuffers(uint32_t currentImage);

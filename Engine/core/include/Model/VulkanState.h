@@ -118,6 +118,10 @@ struct VulkanState {
     VkQueue _queue{nullptr};
     VkCommandPool _cmdBufPool{nullptr};
     std::vector<VkCommandBuffer> _cmdBufs{};
+    // Separate queue/pool for background model uploads (DMA transfer queue when available),
+    // so loading doesn't contend with per-frame command buffers on the graphics queue/pool.
+    VkQueue _transferQueue{nullptr};
+    VkCommandPool _transferCmdBufPool{nullptr};
     UBO _ubo{};
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};

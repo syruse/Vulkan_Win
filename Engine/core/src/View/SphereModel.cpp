@@ -62,7 +62,7 @@ void SphereModel::buildMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>
     }
 }
 
-void SphereModel::init() {
+void SphereModel::init(bool useTransferQueue) {
     auto pDevice = m_vkState._core.getDevice();
     assert(pDevice);
     assert(m_pipelineCreatorTextured);
@@ -104,6 +104,8 @@ void SphereModel::init() {
         memcpy(data, m_instances.data(), instancesSize);
         vkUnmapMemory(pDevice, m_instancesBufferMemory[i]);
     }
+
+    m_isReady.store(true, std::memory_order_release);
 }
 
 void SphereModel::update(float, int, bool, uint32_t currentImage, const glm::mat4& viewProj, float z_far,

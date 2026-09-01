@@ -53,7 +53,7 @@ public:
             mVkCudaSyncObject = VK_NULL_HANDLE;
         }
     }
-    void init() override;
+    void init(bool useTransferQueue = false) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const override;
     void drawWithCustomPipeline(PipelineCreatorBase* pipelineCreator, VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex,
                                 uint32_t dynamicOffset) const override;
@@ -64,7 +64,7 @@ public:
 
 private:
     bool loadMD5Anim();
-    bool loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices);
+    bool loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices, bool useTransferQueue);
     inline void swapYandZ(glm::vec3& vertexData);
     void updateAnimationChunk(std::size_t subsetId, std::size_t indexFrom, std::size_t indexTo);
     void calculateInterpolatedSkeleton(std::size_t animationID, std::size_t frame0, std::size_t frame1, float interpolation,
