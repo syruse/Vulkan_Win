@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "AudioManager.h"
 #include "UI.h"
 #include "MD5Model.h"
 #include "ObjModel.h"
@@ -1947,6 +1948,10 @@ void VulkanRenderer::tryFireProjectile() {
 
     m_projectileTimeoutDeadline = std::chrono::steady_clock::now() + PROJECTILE_TIMEOUT;
     syncProjectileVisualFromPhysics();
+
+    if (m_audioManager) {
+        m_audioManager->playOneShot(AudioManager::Sound::TankFire);
+    }
 }
 
 // Note: we need it since the tank is kinetic model
@@ -2154,6 +2159,28 @@ bool VulkanRenderer::renderScene() {
         tryFireProjectile();
     }
 
+    if (m_audioManager) {
+        const bool isTankMoving = !isGamePaused && (windowQueueMSG.buttonFlag & (IControl::WindowQueueMSG::UP |
+                                                                                 IControl::WindowQueueMSG::LEFT |
+                                                                                 IControl::WindowQueueMSG::RIGHT |
+                                                                                 IControl::WindowQueueMSG::DONW));
+        if (isTankMoving) {
+            m_audioManager->playLoop(AudioManager::Sound::TankMove, 0.2f);
+        } else {
+            m_audioManager->stopLoop(AudioManager::Sound::TankMove);
+        }
+
+        const bool isTurretRotating = !isGamePaused && (windowQueueMSG.buttonFlag & (IControl::WindowQueueMSG::LOOK_LEFT |
+                                                                                     IControl::WindowQueueMSG::LOOK_RIGHT));
+        if (isTurretRotating) {
+            m_audioManager->playLoop(AudioManager::Sound::TurretRotate);
+        } else {
+            m_audioManager->stopLoop(AudioManager::Sound::TurretRotate);
+        }
+
+        m_audioManager->update(deltaTime);
+    }
+
     _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
     _pushConstant.windDirElapsedTimeMS.w += sceneDeltaTime;
@@ -2238,6 +2265,9 @@ bool VulkanRenderer::renderScene() {
                                            (dxProj * dxProj + dzProj * dzProj < projectileTriggerDist * projectileTriggerDist);
                 if (tankHit || projectileHit) {
                     s.falling = true;
+                    if (m_audioManager) {
+                        m_audioManager->playOneShot(AudioManager::Sound::TreeBreak);
+                    }
                     // Fall direction = away from tank (i.e. in the direction the tank is pushing).
                     // Use impact source (tank or projectile) to compute realistic fall direction.
                     const float srcDx = projectileHit ? dxProj : dx;
@@ -3997,4 +4027,10 @@ void VulkanRenderer::init() {
     createDescriptorPoolForImGui();
 
     createFSRContext(swapchainCreateInfo);
+
+    m_audioManager = std::make_unique<AudioManager>();
+    m_audioManager->init();
+    // Two constant background loops: forest ambience and tank engine idle.
+    m_audioManager->playLoop(AudioManager::Sound::ForestAmbient, 0.5f);
+    m_audioManager->playLoop(AudioManager::Sound::TankEngine, 0.25f);
 }

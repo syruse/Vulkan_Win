@@ -127,6 +127,7 @@ message("copying textures, shaders, models from ${CMAKE_CURRENT_SOURCE_DIR}/ to 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/sounds DESTINATION ${CMAKE_BINARY_DIR}/)
 
 if(LINUX)
 	target_link_libraries(${APP_NAME} SDL2::SDL2) # no need "libvulkan.so.1" anymore
@@ -240,5 +241,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/textures" "${CMAKE_BINARY_DIR}/Bin/textures"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/models" "${CMAKE_BINARY_DIR}/Bin/models"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders" "${CMAKE_BINARY_DIR}/Bin/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/sounds" "${CMAKE_BINARY_DIR}/Bin/sounds"
     COMMENT "Copying assets to target directory"
 )

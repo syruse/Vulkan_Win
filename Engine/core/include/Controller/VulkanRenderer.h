@@ -40,6 +40,7 @@ class btSequentialImpulseConstraintSolver;
 class btDiscreteDynamicsWorld;
 class btCollisionShape;
 class btRigidBody;
+class AudioManager;
 
 struct TreeFallState {
     float baseX = 0.0f;       // world X of the tree base (y=0)
@@ -159,6 +160,8 @@ private:
     uint32_t m_boundaryModelIndex{0u};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
+
+    std::unique_ptr<AudioManager> m_audioManager;
 
     std::vector<VkSemaphore> m_presentCompleteSem{};
     std::vector<VkSemaphore> m_renderCompleteSem{};
