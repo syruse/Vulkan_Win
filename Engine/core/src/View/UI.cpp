@@ -83,9 +83,13 @@ const UI::States& UI::updateAndDraw() {
         bool changed = false;
         if (ImGui::RadioButton("Native", &idx, 0)) changed = true;
         ImGui::SameLine();
+        if (!mDlssSupported) ImGui::BeginDisabled();
         if (ImGui::RadioButton("DLSS", &idx, 1)) changed = true;
+        if (!mDlssSupported) ImGui::EndDisabled();
         ImGui::SameLine();
+        if (!mXessSupported) ImGui::BeginDisabled();
         if (ImGui::RadioButton("XeSS", &idx, 2)) changed = true;
+        if (!mXessSupported) ImGui::EndDisabled();
         if (changed) {
             mStates.upscalerType   = static_cast<UpscalerType>(idx);
             mStates.upscalerChanged = true;
@@ -110,7 +114,10 @@ const UI::States& UI::updateAndDraw() {
     }
 
     ImGui::Separator();
-    ImGui::TextDisabled("VULKAN GAME");
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y - ImGui::GetFrameHeight());
+    if (ImGui::Button("Exit", ImVec2(-1.0f, 0.0f))) {
+        mStates.exitRequested = true;
+    }
     ImGui::End();
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar(4);

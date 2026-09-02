@@ -1120,6 +1120,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     // the settings Menu window itself stays gated on the pause-menu toggle (hmiRenderData).
     _core.getWinController()->setLoading(!allModelsReady());
     _core.getWinController()->setShowMenu(hmiRenderData);
+    _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
 
     static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
@@ -1575,9 +1576,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 #endif
 
     if ((!m_isDlssEnabled || !_core.isDlssSupported() || !isDlssFrameTokenValid)
-#if defined(USE_XESS) && USE_XESS
-        && !m_isXessEnabled
-#endif
+        && (!m_isXessEnabled || !_core.isXessSupported())
     ) {
         //---------------------------------------------------------------------------------------------//
         /// FXAA render pass (FINAL PASS) render with native resolution!
@@ -2062,6 +2061,9 @@ bool VulkanRenderer::renderScene() {
 
     auto windowQueueMSG = winController->processWindowQueueMSGs();  /// falls into NRVO
     ret_status = !windowQueueMSG.isQuited;
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->exitRequested) {
+        return false;
+    }
 
 #if defined(_DEBUG)
     const bool isGamePaused = false;
@@ -2071,6 +2073,10 @@ bool VulkanRenderer::renderScene() {
     const float sceneDeltaTime = isGamePaused ? 0.0f : deltaTime;
 
     mCamera.update(sceneDeltaTime, false);
+
+    if (isGamePaused) {
+        windowQueueMSG.buttonFlag = 0u;
+    }
 
     if (windowQueueMSG.isResized && windowQueueMSG.width > 0 && windowQueueMSG.height > 0) {
         recreateSwapChain(windowQueueMSG.width, windowQueueMSG.height);
@@ -2087,9 +2093,10 @@ bool VulkanRenderer::renderScene() {
         uint16_t offW = m_uiDisplayWidth;
         uint16_t offH = m_uiDisplayHeight;
         float scale = 1.0f;
-        Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+        if (m_isDlssEnabled) {
+            Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+        } else if (m_isXessEnabled) {
 #if defined(USE_XESS) && USE_XESS
-        if (m_isXessEnabled) {
             xess_2d_t inputResolution{};
             const xess_result_t xessResult = _core.getXessOptimalInputResolution(
                 m_uiDisplayWidth, m_uiDisplayHeight, m_xessQuality, inputResolution);
@@ -2100,8 +2107,8 @@ bool VulkanRenderer::renderScene() {
                 m_isXessEnabled = false;
                 Utils::printLog(INFO_PARAM, "XeSS input resolution query failed, xess_result_t=%d", xessResult);
             }
-        }
 #endif
+        }
 
         recreateSwapChain(_windowWidth, _windowHeight, offW, offH);
         return ret_status;
@@ -2117,14 +2124,7 @@ bool VulkanRenderer::renderScene() {
         const bool wasXessEnabled = m_isXessEnabled;
         m_isXessEnabled = wantXess && _core.isXessSupported();
         if (wantXess) {
-            switch (hmiStates->upscalerPreset) {
-            case UpscalerPreset::NativeAA:         m_xessQuality = XESS_QUALITY_SETTING_AA; break;
-            case UpscalerPreset::UltraQuality:     m_xessQuality = XESS_QUALITY_SETTING_ULTRA_QUALITY; break;
-            case UpscalerPreset::Quality:          m_xessQuality = XESS_QUALITY_SETTING_QUALITY; break;
-            case UpscalerPreset::Balanced:         m_xessQuality = XESS_QUALITY_SETTING_BALANCED; break;
-            case UpscalerPreset::Performance:      m_xessQuality = XESS_QUALITY_SETTING_PERFORMANCE; break;
-            case UpscalerPreset::UltraPerformance: m_xessQuality = XESS_QUALITY_SETTING_ULTRA_PERFORMANCE; break;
-            }
+            m_xessQuality = Utils::upscalerPresetToXessQuality(hmiStates->upscalerPreset);
         }
         if (wasXessEnabled || m_isXessEnabled) {
             m_resetViewProjHistory = true;
@@ -2141,7 +2141,11 @@ bool VulkanRenderer::renderScene() {
         uint16_t offW = m_uiDisplayWidth;
         uint16_t offH = m_uiDisplayHeight;
         float scale = 1.0f;
-        Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+    #if defined(USE_DLSS) && USE_DLSS
+        if (wantDlss) {
+            Utils::calculateUpscaledOffscreenResolution(*hmiStates, m_uiDisplayWidth, m_uiDisplayHeight, offW, offH, scale);
+        }
+    #endif
 #if defined(USE_XESS) && USE_XESS
         if (m_isXessEnabled) {
             xess_2d_t inputResolution{};

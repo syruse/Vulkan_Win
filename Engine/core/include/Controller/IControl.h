@@ -75,6 +75,10 @@ public:
         mUi.setShowMenu(showMenu);
     }
 
+    void setUpscalerSupport(bool dlssSupported, bool xessSupported) {
+        mUi.setUpscalerSupport(dlssSupported, xessSupported);
+    }
+
 protected:
     std::string_view m_appName;
     uint32_t m_width;

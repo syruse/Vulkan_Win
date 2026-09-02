@@ -133,11 +133,11 @@ public:
         return m_isDlssSupported;
     }
 
-#if defined(USE_XESS) && USE_XESS
     bool isXessSupported() const {
         return m_isXessSupported;
     }
 
+#if defined(USE_XESS) && USE_XESS
     xess_context_handle_t getXessContext() const {
         return m_xessContext;
     }
@@ -165,9 +165,9 @@ private:
     Utils::VulkanPhysicalDevices m_physDevices{};
     VkDevice m_device = nullptr;
     bool m_isDlssSupported = false;
+    bool m_isXessSupported = false;
 #if defined(USE_XESS) && USE_XESS
     xess_context_handle_t m_xessContext = nullptr;
-    bool m_isXessSupported = false;
 #endif
 #if defined(_DEBUG)
     VkDebugReportCallbackEXT m_callback = nullptr;

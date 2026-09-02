@@ -237,11 +237,7 @@ private:
     ViewProj mViewProj{};
     bool m_resetViewProjHistory{true};
     bool m_isDlssEnabled{false};
-#if defined(USE_XESS) && USE_XESS
     bool m_isXessEnabled{false};
-    bool m_xessResetHistory{true};
-    xess_quality_settings_t m_xessQuality{XESS_QUALITY_SETTING_QUALITY};
-#endif
     /// Display resolution chosen by the user in the UI combo (independent of upscaler).
     /// Render targets are _offscreenWidth/_offscreenHeight multiplying by UpscalerPreset scale(if enabled);
     /// the upscaler outputs into this resolution; it then gets blitted to the native window resolution.
@@ -253,6 +249,10 @@ private:
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};
     std::vector<bool> m_swapchainImageNeedsGeneralTransition{};
+#endif
+#if defined(USE_XESS) && USE_XESS
+    bool m_xessResetHistory{true};
+    xess_quality_settings_t m_xessQuality{XESS_QUALITY_SETTING_QUALITY};
 #endif
 #if defined(USE_FSR) && USE_FSR
     ffx::Context mFSRSwapChainContext{nullptr};

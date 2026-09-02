@@ -21,6 +21,10 @@ enum class DLSSMode : unsigned int;
 }
 #endif
 
+#if defined(USE_XESS) && USE_XESS
+#include <xess/xess.h>
+#endif
+
 namespace Utils {
 
 struct VulkanPhysicalDevices {
@@ -61,6 +65,10 @@ void calculateUpscaledOffscreenResolution(const UI::States& hmiStates, uint16_t 
 
 #if defined(USE_DLSS) && USE_DLSS
 sl::DLSSMode upscalerPresetToDLSSMode(UpscalerPreset preset);
+#endif
+
+#if defined(USE_XESS) && USE_XESS
+xess_quality_settings_t upscalerPresetToXessQuality(UpscalerPreset preset);
 #endif
 
 std::string formPath(std::string_view dir, std::string_view fileName);

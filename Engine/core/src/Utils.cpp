@@ -147,6 +147,20 @@ sl::DLSSMode upscalerPresetToDLSSMode(UpscalerPreset preset) {
 }
 #endif
 
+#if defined(USE_XESS) && USE_XESS
+xess_quality_settings_t upscalerPresetToXessQuality(UpscalerPreset preset) {
+    switch (preset) {
+        case UpscalerPreset::NativeAA:         return XESS_QUALITY_SETTING_AA;
+        case UpscalerPreset::UltraQuality:     return XESS_QUALITY_SETTING_ULTRA_QUALITY;
+        case UpscalerPreset::Quality:          return XESS_QUALITY_SETTING_QUALITY;
+        case UpscalerPreset::Balanced:         return XESS_QUALITY_SETTING_BALANCED;
+        case UpscalerPreset::Performance:      return XESS_QUALITY_SETTING_PERFORMANCE;
+        case UpscalerPreset::UltraPerformance: return XESS_QUALITY_SETTING_ULTRA_PERFORMANCE;
+    }
+    return XESS_QUALITY_SETTING_QUALITY;
+}
+#endif
+
 void VulkanEnumExtProps(std::vector<VkExtensionProperties>& ExtProps) {
     uint32_t NumExt = 0;
     VkResult res = vkEnumerateInstanceExtensionProperties(nullptr, &NumExt, nullptr);

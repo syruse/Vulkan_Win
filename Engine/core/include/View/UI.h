@@ -38,6 +38,7 @@ public:
         UpscalerType   upscalerType    = UpscalerType::None;
         UpscalerPreset upscalerPreset = UpscalerPreset::UltraQuality;
         bool           upscalerChanged = false;
+        bool           exitRequested = false;
     };
 
     constexpr UI() : m_resolutions(kResolutions) {}
@@ -55,10 +56,17 @@ public:
         mShowMenu = showMenu;
     }
 
+    void setUpscalerSupport(bool dlssSupported, bool xessSupported) {
+        mDlssSupported = dlssSupported;
+        mXessSupported = xessSupported;
+    }
+
 private:
     States mStates;
     std::array<ResolutionEntry, 4> m_resolutions;
     int m_selectedIdx = kDefaultResolutionIdx;
     bool mIsLoading = false;
     bool mShowMenu = true;
+    bool mDlssSupported = false;
+    bool mXessSupported = false;
 };
