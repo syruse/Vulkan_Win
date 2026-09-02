@@ -44,8 +44,21 @@ public:
 
     const States& updateAndDraw();
 
+    // Toggles the centered "Loading..." overlay drawn on top of the menu while models stream in.
+    void setLoading(bool isLoading) {
+        mIsLoading = isLoading;
+    }
+
+    // Toggles the settings Menu window; independent of the Loading overlay so loading can be shown
+    // even while the pause menu is closed.
+    void setShowMenu(bool showMenu) {
+        mShowMenu = showMenu;
+    }
+
 private:
     States mStates;
     std::array<ResolutionEntry, 4> m_resolutions;
     int m_selectedIdx = kDefaultResolutionIdx;
+    bool mIsLoading = false;
+    bool mShowMenu = true;
 };

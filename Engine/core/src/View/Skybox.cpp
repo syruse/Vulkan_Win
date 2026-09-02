@@ -39,13 +39,16 @@ void Skybox::init(bool useTransferQueue) {
 	assert(!m_textureFileNames.empty());
     assert(!m_instances.empty());
 
-	auto texture = m_textureFactory.createCubeTexture(m_textureFileNames);
+    const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+    const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+
+	auto texture = m_textureFactory.createCubeTexture(m_textureFileNames, true, useTransferQueue);
 	if (!texture.expired()) {
 		m_realMaterialId =
             m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
 	}
 
-	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, _indices,
+	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), cmdBufPool, queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
 

@@ -70,6 +70,9 @@ void CubeModel::init(bool useTransferQueue) {
     assert(pDevice);
     assert(m_pipelineCreatorTextured);
 
+    const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+    const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     buildMesh(vertices, indices);
@@ -79,7 +82,8 @@ void CubeModel::init(bool useTransferQueue) {
     m_indicesCount = static_cast<uint32_t>(indices.size());
 
     // View type must match the bound pipeline's shader (sampler2DArray vs sampler2D).
-    auto texture = m_textureFactory.create2DArrayTexture({m_textureName}, true, true, m_pipelineCreatorTextured->expectsArrayTexture());
+    auto texture = m_textureFactory.create2DArrayTexture({m_textureName}, true, true,
+                                                         m_pipelineCreatorTextured->expectsArrayTexture(), useTransferQueue);
     if (texture.expired()) {
         Utils::printLog(ERROR_PARAM, "CubeModel: failed to create texture %s", m_textureName.c_str());
     } else {
@@ -87,7 +91,7 @@ void CubeModel::init(bool useTransferQueue) {
             texture, m_textureFactory.getTextureSampler(texture.lock()->mipLevels));
     }
 
-    Utils::createGeneralBuffer(pDevice, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, indices,
+    Utils::createGeneralBuffer(pDevice, m_vkState._core.getPhysDevice(), cmdBufPool, queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
 
     // Per-swapchain-image instance buffers are used the same way as in ObjModel/SphereModel.

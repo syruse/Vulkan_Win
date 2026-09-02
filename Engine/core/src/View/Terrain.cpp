@@ -23,8 +23,13 @@ void Terrain::init(bool useTransferQueue) {
     assert(!m_textureFileName1.empty() && !m_textureFileName2.empty() && !m_noiseTextureFileName.empty());
     assert(!m_instances.empty());
 
-    auto texture = m_textureFactory.create2DArrayTexture({m_noiseTextureFileName.data(), m_textureFileName1.data(), 
-                                                          m_textureFileName2.data()}).lock();
+    const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+    const VkCommandPool cmdBufPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+
+    auto texture = m_textureFactory
+                       .create2DArrayTexture({m_noiseTextureFileName.data(), m_textureFileName1.data(), m_textureFileName2.data()},
+                                            true, true, false, useTransferQueue)
+                       .lock();
 
     uint32_t ACTUAL_TERRAIN_TILES = TERRAIN_TILES + 1u; // includes the first point as well: TERRAIN_TILES = 2 => 0.0 <-> 0.5 <-> 1.0
     m_vertices.reserve(ACTUAL_TERRAIN_TILES * ACTUAL_TERRAIN_TILES);
@@ -70,7 +75,7 @@ void Terrain::init(bool useTransferQueue) {
         }
     }
 
-    Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), m_vkState._cmdBufPool, m_vkState._queue, m_indices,
+    Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), cmdBufPool, queue, m_indices,
                                    m_vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
 

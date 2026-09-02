@@ -13,6 +13,7 @@
 #endif
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -98,6 +99,7 @@ private:
     void createDescriptorPool();
     void createFramebuffer();
     void createPipeline();
+        void InitializeBulletPhysicsBodies();
     void recordCommandBuffers(uint32_t currentImage, bool hmiRenderData);
     void createSemaphores();
     void createDescriptorPoolForImGui();
@@ -113,6 +115,10 @@ private:
     void tryFireProjectile();
     /// Check if a sphere at position/radius intersects any static boundary cube.
     bool intersectsBoundary(const glm::vec3& position, float radius) const;
+    /// Creates the tank's kinematic Bullet body once its mesh has finished streaming in (needs radius()).
+    void createTankPhysicsBodyIfReady();
+    /// True once every model (tank/terrain/skybox/... + trees) has finished loading.
+    bool allModelsReady() const;
 #if defined(USE_DLSS) && USE_DLSS
     void setDLSSResourceTags(uint32_t currentImage, const sl::FrameToken& frameToken);
     void setDLSSConstants(const sl::FrameToken& frameToken);
@@ -162,9 +168,12 @@ private:
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
 
-    // Trees (m_semiTransparentModels) upload via the transfer queue on this thread while
-    // terrain/skybox/tank render immediately; joined in the destructor before teardown.
-    std::thread m_treeLoadThread;
+    // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this
+    // thread while the render loop starts immediately; joined in the destructor before teardown.
+    std::thread m_backgroundLoadThread;
+    std::atomic<bool> m_runtimeAssetsReady{false};
+    // Tank's Bullet body needs model->radius(), only known once its mesh finished streaming in.
+    bool m_tankPhysicsInitialized{false};
 
     std::unique_ptr<AudioManager> m_audioManager;
 

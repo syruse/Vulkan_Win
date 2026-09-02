@@ -128,10 +128,10 @@ void Particle::init(bool useTransferQueue) {
         vkUnmapMemory(m_vkState._core.getDevice(), m_uboParticle.buffersMemory[i]);
     }
 
-    auto texture = m_textureFactory.create2DTexture(m_textureFileName).lock();
+    auto texture = m_textureFactory.create2DTexture(m_textureFileName, true, true, useTransferQueue).lock();
     if (m_mode != ParticleMode::STATIC) {
         auto textureGradient =
-            m_textureFactory.create2DTexture(m_textureGradientFileName, false, true).lock();  // without mip levels
+            m_textureFactory.create2DTexture(m_textureGradientFileName, false, true, useTransferQueue).lock();  // without mip levels
         mMaterialId = m_pipelineCreatorTextured->createDescriptor(
             texture, m_textureFactory.getTextureSampler(texture->mipLevels), textureGradient,
             m_textureFactory.getTextureSampler(textureGradient->mipLevels), &m_uboParticle);
@@ -164,7 +164,9 @@ void Particle::init(bool useTransferQueue) {
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_generalBuffer, m_generalBufferMemory);
 
-        Utils::VulkanCopyBuffer(p_devide, m_vkState._queue, m_vkState._cmdBufPool, stagingBuffer, m_generalBuffer, bufferSize);
+        const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
+        const VkCommandPool commandPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
+        Utils::VulkanCopyBuffer(p_devide, queue, commandPool, stagingBuffer, m_generalBuffer, bufferSize);
 
         vkDestroyBuffer(p_devide, stagingBuffer, nullptr);
         vkFreeMemory(p_devide, stagingBufferMemory, nullptr);

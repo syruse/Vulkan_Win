@@ -65,6 +65,16 @@ public:
 
     virtual void imGuiNewFrame(VkCommandBuffer command_buffer) = 0;
 
+    // Shown as a centered "Loading..." overlay by the UI while background model streaming is in progress.
+    void setLoading(bool isLoading) {
+        mUi.setLoading(isLoading);
+    }
+
+    // Controls whether the settings Menu window is drawn (independent of the Loading overlay).
+    void setShowMenu(bool showMenu) {
+        mUi.setShowMenu(showMenu);
+    }
+
 protected:
     std::string_view m_appName;
     uint32_t m_width;

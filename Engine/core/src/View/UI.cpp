@@ -3,6 +3,7 @@
 
 const UI::States& UI::updateAndDraw() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    if (mShowMenu) {
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 28.0f, viewport->WorkPos.y + 28.0f),
                             ImGuiCond_Always, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(520.0f, 480.0f), ImGuiCond_Always);
@@ -113,6 +114,30 @@ const UI::States& UI::updateAndDraw() {
     ImGui::End();
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar(4);
+    }
+
+    if (mIsLoading) {
+        // Keep this compact overlay visible while the scene has not loaded yet.
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                       viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
+                                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(36.0f, 24.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.06f, 0.08f, 0.94f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.27f, 0.54f, 0.57f, 0.90f));
+        ImGui::Begin("##LoadingOverlay", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::SetWindowFontScale(2.25f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.98f, 0.93f, 1.0f));
+        ImGui::TextUnformatted("Loading...");
+        ImGui::PopStyleColor();
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
     ImGui::Render();
 
     return mStates;

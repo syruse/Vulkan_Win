@@ -238,68 +238,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f),
                                    300.0f, 800.0f);
-
-    // Initialize Bullet physics world used to drive transforms each frame.
-    m_btCollisionConfig = new btDefaultCollisionConfiguration();
-    m_btDispatcher = new btCollisionDispatcher(m_btCollisionConfig);
-    m_btBroadphase = new btDbvtBroadphase();
-    m_btSolver = new btSequentialImpulseConstraintSolver();
-    m_btDynamicsWorld = new btDiscreteDynamicsWorld(m_btDispatcher, m_btBroadphase, m_btSolver, m_btCollisionConfig);
-    m_btDynamicsWorld->setGravity(btVector3(0, -9.81f, 0));
-
-    // Creation of static infinite plane at Y = 0.
-    {
-        // Normal vector of the plane (0, 1, 0) and Distance from origin (0)
-        btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0, 1, 0), 0);
-        m_btCollisionShapes.push_back(groundShape);
-        // For static objects, we can skip the MotionState and use a mass of 0.
-        // The local inertia for a static plane is always (0, 0, 0).
-        btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0,                  // Mass
-                                                              nullptr,            // MotionState (optional for static objects)
-                                                              groundShape,        // Collision Shape
-                                                              btVector3(0, 0, 0)  // Local Inertia
-        );
-        m_btGroundBody = new btRigidBody(groundRBInfo);
-        m_btDynamicsWorld->addRigidBody(m_btGroundBody);
-    }
-
-    // Tree bodies: one kinematic rigid body per tree instance.
-    // The trees stand still and are animated manually when the tank gets close.
-    {
-        btCollisionShape* treeShape =
-            new btCylinderShape(btVector3(2.0f, TREE_HALF_HEIGHT, 2.0f));
-        m_btCollisionShapes.push_back(treeShape);
-
-        auto& treeInstances = m_semiTransparentModels[0]->instances();
-        m_btTreeBodies.reserve(treeInstances.size());
-        m_btTreeFallStates.reserve(treeInstances.size());
-        for (const auto& treeInstance : treeInstances) {
-            btTransform startTransform;
-            startTransform.setIdentity();
-            startTransform.setOrigin(
-                btVector3(treeInstance.posShift.x, treeInstance.posShift.y + TREE_HALF_HEIGHT, treeInstance.posShift.z));
-
-            btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
-            // mass=0 → kinematic; inertia is irrelevant for kinematic bodies.
-            btRigidBody::btRigidBodyConstructionInfo treeRBInfo(0.0f, motionState, treeShape, btVector3(0, 0, 0));
-            btRigidBody* treeBody = new btRigidBody(treeRBInfo);
-            treeBody->setCollisionFlags(treeBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
-            treeBody->setActivationState(DISABLE_DEACTIVATION);
-            m_btDynamicsWorld->addRigidBody(treeBody);
-            m_btTreeBodies.push_back(treeBody);
-
-            TreeFallState state;
-            state.baseX = treeInstance.posShift.x;
-            state.baseZ = treeInstance.posShift.z;
-            m_btTreeFallStates.push_back(state);
-        }
-    }
 }
 
 VulkanRenderer::~VulkanRenderer() {
     // Must finish before touching m_semiTransparentModels/Vulkan device teardown below.
-    if (m_treeLoadThread.joinable()) {
-        m_treeLoadThread.join();
+    if (m_backgroundLoadThread.joinable()) {
+        m_backgroundLoadThread.join();
     }
 
     Pipeliner::getInstance().saveCache();
@@ -752,15 +696,17 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         const btVector3& velocity = m_btTankBody->getLinearVelocity();
         tankVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
     }
-    const glm::vec4 exhaustVelocity = mCamera.targetModelMat() * -0.06f * glm::vec4(tankVelocity, 0.0f);
-    glm::vec4 exhaustPipePos1 =
-        mCamera.targetModelMat() *
-        glm::vec4(-4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
-    m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, exhaustVelocity);
-    glm::vec4 exhaustPipePos2 =
-        mCamera.targetModelMat() *
-        glm::vec4(4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
-    m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
+    if (m_runtimeAssetsReady.load(std::memory_order_acquire)) {
+        const glm::vec4 exhaustVelocity = mCamera.targetModelMat() * -0.06f * glm::vec4(tankVelocity, 0.0f);
+        const glm::vec4 exhaustPipePos1 =
+            mCamera.targetModelMat() *
+            glm::vec4(-4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
+        m_particles[3]->update(currentImage, deltaMS, exhaustPipePos1, exhaustVelocity);
+        const glm::vec4 exhaustPipePos2 =
+            mCamera.targetModelMat() *
+            glm::vec4(4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
+        m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
+    }
 
     const auto objectsAmount = m_models.size();
 
@@ -1170,6 +1116,11 @@ void VulkanRenderer::createCommandBuffer() {
 }
 
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderData) {
+    // Drives the ImGui "Loading..." overlay drawn by UI::updateAndDraw() while models stream in;
+    // the settings Menu window itself stays gated on the pause-menu toggle (hmiRenderData).
+    _core.getWinController()->setLoading(!allModelsReady());
+    _core.getWinController()->setShowMenu(hmiRenderData);
+
     static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
 
@@ -1198,6 +1149,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     // depth writing for each object
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
+        if (!m_models[meshIndex]->isReady()) {
+            continue;  // still streaming in on the background loader thread
+        }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[DEPTH].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);
@@ -1232,6 +1186,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     // draw shadow of 3d mesh only (without ground and skybox)
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size() - 2u; ++meshIndex) {
+        if (!m_models[meshIndex]->isReady()) {
+            continue;  // still streaming in on the background loader thread
+        }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawWithCustomPipeline(m_pipelineCreators[SHADOWMAP].get(), _cmdBufs[currentImage], currentImage,
                                                     dynamicOffset);
@@ -1271,7 +1228,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VkClearRect clearRect = {{{0u, 0u}, {_footprintBuffer.width, _footprintBuffer.height}}, 0u, 1u};
         vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
         _oneOffClearingFootPrint = false;
-    } else if (glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius()) {
+    } else if (m_models[0]->isReady() &&
+               glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius()) {
         // draw object tracks (the panzer will leave the footprint)
         uint32_t meshIndex = 0u;
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
@@ -1314,6 +1272,9 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     ///  SkyBox and 3D Models
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
+        if (!m_models[meshIndex]->isReady()) {
+            continue;  // still streaming in on the background loader thread
+        }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
@@ -1497,8 +1458,10 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
                            sizeof(PushConstant), &_pushConstant);
-        for (auto& particle : m_particles) {
-            particle->draw(_cmdBufs[currentImage], currentImage);
+        if (m_runtimeAssetsReady.load(std::memory_order_acquire)) {
+            for (auto& particle : m_particles) {
+                particle->draw(_cmdBufs[currentImage], currentImage);
+            }
         }
     }
 
@@ -1564,7 +1527,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
             // Run UI overlay here only when DLSS path successfully brought swapchain image to PRESENT layout.
             // If DLSS got disabled in evaluateDLSSPass(), fallback FXAA path below will render + overlay safely.
-            if (hmiRenderData && m_isDlssEnabled) {
+            // Also run while still loading, so the "Loading..." indicator can show even with the pause menu closed.
+            if ((hmiRenderData || !allModelsReady()) && m_isDlssEnabled) {
                 VkRenderPassBeginInfo renderPassUIInfo = {};
                 renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1588,7 +1552,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 #if defined(USE_XESS) && USE_XESS
     if (m_isXessEnabled) {
         evaluateXessPass(currentImage);
-        if (hmiRenderData && m_isXessEnabled) {
+        if ((hmiRenderData || !allModelsReady()) && m_isXessEnabled) {
             VkRenderPassBeginInfo renderPassUIInfo{};
             renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1645,7 +1609,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
         vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-        if (hmiRenderData) {
+        if (hmiRenderData || !allModelsReady()) {
             VkRenderPassBeginInfo renderPassUIInfo = {};
             renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1832,51 +1796,63 @@ void VulkanRenderer::loadModels() {
     /// lazy init when core is ready
     mTextureFactory->init();
 
-    for (auto& model : m_models) {
-        model->init();
-    }
-
-    // Trees are the heaviest/most numerous asset (TREES_COUNT instances + big texture + MD5 mesh) and
-    // their Bullet colliders use fixed constants (not model->radius()), so they're safe to stream in
-    // the background via the transfer queue while terrain/sky/tank are already rendering. Mip levels
-    // are generated on the CPU (box filter) and uploaded as plain copies, so no vkCmdBlitImage /
-    // main-thread graphics-queue involvement is needed even on a pure DMA transfer queue.
-    m_treeLoadThread = std::thread([this]() {
+    // Everything streams in on a single background thread via the transfer queue while the render
+    // loop starts immediately (an ImGui overlay shows "Loading..." until allModelsReady()). Terrain
+    // and skybox go first for the quickest visible result, then the rest of m_models, then trees
+    // (heaviest asset). Mip levels are generated on the CPU (box filter) and uploaded as plain
+    // copies, so no vkCmdBlitImage / main-thread graphics-queue involvement is needed even on a
+    // pure DMA transfer queue.
+    m_backgroundLoadThread = std::thread([this]() {
+        if (m_models.size() >= 2u) {
+            m_models[m_models.size() - 2u]->init(/*useTransferQueue=*/true);  // terrain
+            m_models[m_models.size() - 1u]->init(/*useTransferQueue=*/true);  // skybox
+        }
+        for (size_t i = 0u; i + 2u < m_models.size(); ++i) {
+            m_models[i]->init(/*useTransferQueue=*/true);
+        }
         for (auto& model : m_semiTransparentModels) {
             model->init(/*useTransferQueue=*/true);
         }
+        for (auto& particle : m_particles) {
+            particle->init(/*useTransferQueue=*/true);
+        }
+        InitializeBulletPhysicsBodies();
+        m_runtimeAssetsReady.store(true, std::memory_order_release);
     });
+}
 
-    for (auto& particle : m_particles) {
-        particle->init();
-    }
+void VulkanRenderer::InitializeBulletPhysicsBodies() {
+    m_btCollisionConfig = new btDefaultCollisionConfiguration();
+    m_btDispatcher = new btCollisionDispatcher(m_btCollisionConfig);
+    m_btBroadphase = new btDbvtBroadphase();
+    m_btSolver = new btSequentialImpulseConstraintSolver();
+    m_btDynamicsWorld = new btDiscreteDynamicsWorld(m_btDispatcher, m_btBroadphase, m_btSolver, m_btCollisionConfig);
+    m_btDynamicsWorld->setGravity(btVector3(0, -9.81f, 0));
 
-    // Panzer (main vechicle)
-    {
-        // Keep a collider close to the visible tank bounds; too small shape lets the mesh visually pass through trees.
-        btCollisionShape* boxShape =
-            new btBoxShape(btVector3(m_models[0]->radius() / 2.0f, m_models[0]->radius() / 4.0f, m_models[0]->radius() / 2.0f));
-        m_btCollisionShapes.push_back(boxShape);
-        // Camera drives the tank transform directly, so keep it kinematic.
-        btScalar mass = 0.0f;
-        btVector3 localInertia(0, 0, 0);
+    btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0, 1, 0), 0);
+    m_btCollisionShapes.push_back(groundShape);
+    btRigidBody::btRigidBodyConstructionInfo groundRBInfo(0, nullptr, groundShape, btVector3(0, 0, 0));
+    m_btGroundBody = new btRigidBody(groundRBInfo);
+    m_btDynamicsWorld->addRigidBody(m_btGroundBody);
+
+    btCollisionShape* treeShape = new btCylinderShape(btVector3(2.0f, TREE_HALF_HEIGHT, 2.0f));
+    m_btCollisionShapes.push_back(treeShape);
+    auto& treeInstances = m_semiTransparentModels[0]->instances();
+    m_btTreeBodies.reserve(treeInstances.size());
+    m_btTreeFallStates.reserve(treeInstances.size());
+    for (const auto& treeInstance : treeInstances) {
         btTransform startTransform;
         startTransform.setIdentity();
-        const glm::vec3 tankPos = mCamera.targetPos();
-        startTransform.setOrigin(btVector3(tankPos.x, tankPos.y, tankPos.z));
-
+        startTransform.setOrigin(btVector3(treeInstance.posShift.x, treeInstance.posShift.y + TREE_HALF_HEIGHT,
+                                            treeInstance.posShift.z));
         btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
-        btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, boxShape, localInertia);
-        m_btTankBody = new btRigidBody(rbInfo);
-        m_btTankBody->setCollisionFlags(m_btTankBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
-        m_btTankBody->setActivationState(DISABLE_DEACTIVATION);
-        // Enable (kind of shape casting) CCD(Continuous Collision Detection) to prevent the tank from tunneling through tree
-        // colliders at high speeds. Set a small motion threshold to trigger CCD when the tank moves more than 0.01 units in a
-        // single simulation step.
-        m_btTankBody->setCcdMotionThreshold(0.01f);
-        // Set the swept sphere radius to a value smaller than the tank's bounding box to improve CCD accuracy.
-        m_btTankBody->setCcdSweptSphereRadius(2.0f);
-        m_btDynamicsWorld->addRigidBody(m_btTankBody);
+        btRigidBody::btRigidBodyConstructionInfo treeRBInfo(0.0f, motionState, treeShape, btVector3(0, 0, 0));
+        btRigidBody* treeBody = new btRigidBody(treeRBInfo);
+        treeBody->setCollisionFlags(treeBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+        treeBody->setActivationState(DISABLE_DEACTIVATION);
+        m_btDynamicsWorld->addRigidBody(treeBody);
+        m_btTreeBodies.push_back(treeBody);
+        m_btTreeFallStates.push_back({treeInstance.posShift.x, treeInstance.posShift.z});
     }
 
     // Projectile body: dynamic sphere that can bounce from cubes and hit trees.
@@ -1927,8 +1903,53 @@ void VulkanRenderer::loadModels() {
             m_btBoundaryBodies.push_back(body);
         }
     }
+}
 
-    syncProjectileVisualFromPhysics();
+void VulkanRenderer::createTankPhysicsBodyIfReady() {
+    if (!m_runtimeAssetsReady.load(std::memory_order_acquire) || m_tankPhysicsInitialized || !m_models[0]->isReady()) {
+        return;
+    }
+
+    // Keep a collider close to the visible tank bounds; too small shape lets the mesh visually pass through trees.
+    btCollisionShape* boxShape =
+        new btBoxShape(btVector3(m_models[0]->radius() / 2.0f, m_models[0]->radius() / 4.0f, m_models[0]->radius() / 2.0f));
+    m_btCollisionShapes.push_back(boxShape);
+    // Camera drives the tank transform directly, so keep it kinematic.
+    btScalar mass = 0.0f;
+    btVector3 localInertia(0, 0, 0);
+    btTransform startTransform;
+    startTransform.setIdentity();
+    const glm::vec3 tankPos = mCamera.targetPos();
+    startTransform.setOrigin(btVector3(tankPos.x, tankPos.y, tankPos.z));
+
+    btDefaultMotionState* motionState = new btDefaultMotionState(startTransform);
+    btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, boxShape, localInertia);
+    m_btTankBody = new btRigidBody(rbInfo);
+    m_btTankBody->setCollisionFlags(m_btTankBody->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+    m_btTankBody->setActivationState(DISABLE_DEACTIVATION);
+    // Enable (kind of shape casting) CCD(Continuous Collision Detection) to prevent the tank from tunneling through tree
+    // colliders at high speeds. Set a small motion threshold to trigger CCD when the tank moves more than 0.01 units in a
+    // single simulation step.
+    m_btTankBody->setCcdMotionThreshold(0.01f);
+    // Set the swept sphere radius to a value smaller than the tank's bounding box to improve CCD accuracy.
+    m_btTankBody->setCcdSweptSphereRadius(2.0f);
+    m_btDynamicsWorld->addRigidBody(m_btTankBody);
+
+    m_tankPhysicsInitialized = true;
+}
+
+bool VulkanRenderer::allModelsReady() const {
+    for (const auto& model : m_models) {
+        if (!model->isReady()) {
+            return false;
+        }
+    }
+    for (const auto& model : m_semiTransparentModels) {
+        if (!model->isReady()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void VulkanRenderer::syncProjectileVisualFromPhysics() {
@@ -2143,6 +2164,9 @@ bool VulkanRenderer::renderScene() {
         return ret_status;
     }
 
+    // Tank input/collision needs its mesh's radius(); skip entirely until it's finished streaming in.
+    createTankPhysicsBodyIfReady();
+    if (m_models[0]->isReady()) {
     const float tankCollisionRadius = m_models[0]->radius() * 0.4f;
     const glm::vec3 upAxis(0.0f, 1.0f, 0.0f);
     const glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -2202,6 +2226,7 @@ bool VulkanRenderer::renderScene() {
     if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::FIRE)) {
         // FIRE is edge-triggered in input layer, so one click -> one projectile spawn.
         tryFireProjectile();
+    }
     }
 
     if (m_audioManager) {
@@ -2410,6 +2435,9 @@ bool VulkanRenderer::renderScene() {
     }
 
     for (auto& model : m_models) {
+        if (!model->isReady()) {
+            continue;  // GPU buffers not created yet on the background loader thread
+        }
         model->update(sceneDeltaTime, 0, isGPUCalculationFavorable, ImageIndex, mViewProj.viewProj, Z_FAR,
                   mCamera.cameraPosition());
     }
