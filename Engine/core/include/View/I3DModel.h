@@ -233,6 +233,16 @@ public:
     }
 
 protected:
+    void publishReadyAfterTransfer(bool useTransferQueue) {
+        if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+            m_vkState.registerTransferOwnershipCallback([this]() {
+                m_isReady.store(true, std::memory_order_release);
+            });
+            return;
+        }
+        m_isReady.store(true, std::memory_order_release);
+    }
+
     void sortInstances(uint32_t currentImage, const glm::mat4& viewProj, const glm::vec3& camPos, float z_far);
 
 private:

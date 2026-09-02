@@ -416,6 +416,76 @@ void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, 
     VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
 }
 
+void VulkanReleaseBufferOwnership(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer,
+                                  uint32_t transferQueueFamily, uint32_t graphicsQueueFamily) {
+    VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
+    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.srcQueueFamilyIndex = transferQueueFamily;
+    barrier.dstQueueFamilyIndex = graphicsQueueFamily;
+    barrier.buffer = buffer;
+    barrier.offset = 0u;
+    barrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0u,
+                         0u, nullptr, 1u, &barrier, 0u, nullptr);
+    VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
+}
+
+void VulkanReleaseImageOwnership(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat,
+                                 uint32_t mipLevels, uint32_t layersCount, uint32_t transferQueueFamily,
+                                 uint32_t graphicsQueueFamily) {
+    VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = transferQueueFamily;
+    barrier.dstQueueFamilyIndex = graphicsQueueFamily;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, mipLevels, 0u, layersCount};
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0u,
+                         0u, nullptr, 0u, nullptr, 1u, &barrier);
+    VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
+}
+
+void VulkanAcquireTransferOwnership(VkCommandBuffer commandBuffer, const std::vector<VkBuffer>& buffers,
+                                    const std::vector<VkImage>& images, uint32_t transferQueueFamily,
+                                    uint32_t graphicsQueueFamily, const std::vector<std::function<void()>>& callbacks) {
+    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.reserve(buffers.size());
+    for (const VkBuffer buffer : buffers) {
+        VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
+        barrier.srcQueueFamilyIndex = transferQueueFamily;
+        barrier.dstQueueFamilyIndex = graphicsQueueFamily;
+        barrier.buffer = buffer;
+        barrier.size = VK_WHOLE_SIZE;
+        bufferBarriers.push_back(barrier);
+    }
+    std::vector<VkImageMemoryBarrier> imageBarriers;
+    imageBarriers.reserve(images.size());
+    for (const VkImage image : images) {
+        VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcQueueFamilyIndex = transferQueueFamily;
+        barrier.dstQueueFamilyIndex = graphicsQueueFamily;
+        barrier.image = image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, VK_REMAINING_MIP_LEVELS, 0u, VK_REMAINING_ARRAY_LAYERS};
+        imageBarriers.push_back(barrier);
+    }
+    if (!bufferBarriers.empty() || !imageBarriers.empty()) {
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0u,
+                             0u, nullptr, static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(),
+                             static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
+    }
+    for (const auto& callback : callbacks) {
+        callback();
+    }
+}
+
 std::string formPath(std::string_view dir, std::string_view fileName) {
     std::string resultPath;
     resultPath.reserve(dir.length() + fileName.length() + 1);

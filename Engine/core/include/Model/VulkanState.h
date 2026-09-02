@@ -4,6 +4,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <array>
+#include <functional>
+#include <mutex>
 #include <vector>
 #include "VulkanCore.h"
 
@@ -122,6 +124,34 @@ struct VulkanState {
     // so loading doesn't contend with per-frame command buffers on the graphics queue/pool.
     VkQueue _transferQueue{nullptr};
     VkCommandPool _transferCmdBufPool{nullptr};
+    // Resources released by the transfer family and awaiting one acquire barrier on the graphics family.
+    mutable std::mutex _transferOwnershipMutex;
+    mutable std::vector<VkBuffer> _buffersPendingGraphicsOwnership{};
+    mutable std::vector<VkImage> _imagesPendingGraphicsOwnership{};
+    mutable std::vector<std::function<void()>> _callbacksPendingGraphicsOwnership{};
+
+    void registerTransferBufferOwnership(VkBuffer buffer) const {
+        std::lock_guard<std::mutex> lock(_transferOwnershipMutex);
+        _buffersPendingGraphicsOwnership.push_back(buffer);
+    }
+
+    void registerTransferImageOwnership(VkImage image) const {
+        std::lock_guard<std::mutex> lock(_transferOwnershipMutex);
+        _imagesPendingGraphicsOwnership.push_back(image);
+    }
+
+    void registerTransferOwnershipCallback(std::function<void()> callback) const {
+        std::lock_guard<std::mutex> lock(_transferOwnershipMutex);
+        _callbacksPendingGraphicsOwnership.push_back(std::move(callback));
+    }
+
+    void takePendingTransferOwnership(std::vector<VkBuffer>& buffers, std::vector<VkImage>& images,
+                                      std::vector<std::function<void()>>& callbacks) {
+        std::lock_guard<std::mutex> lock(_transferOwnershipMutex);
+        buffers.swap(_buffersPendingGraphicsOwnership);
+        images.swap(_imagesPendingGraphicsOwnership);
+        callbacks.swap(_callbacksPendingGraphicsOwnership);
+    }
     UBO _ubo{};
     DynamicUBO _dynamicUbo{};
     uint32_t _modelUniformAlignment{0u};

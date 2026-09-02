@@ -171,7 +171,7 @@ void MD5Model::init(bool useTransferQueue) {
             m_generalBuffer = m_CUDAandCPUaccessibleBufs[AnimationType::ANIMATION_TYPE_CUDA];
         }
 #endif
-        m_isReady.store(true, std::memory_order_release);
+        publishReadyAfterTransfer(useTransferQueue);
     } else {
         Utils::printLog(ERROR_PARAM, "Couldn't load md5 model:", m_md5ModelFileName);
     }

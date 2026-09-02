@@ -51,8 +51,13 @@ void Skybox::init(bool useTransferQueue) {
 	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), cmdBufPool, queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
+	if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+		Utils::VulkanReleaseBufferOwnership(p_devide, queue, cmdBufPool, m_generalBuffer,
+											m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
+		m_vkState.registerTransferBufferOwnership(m_generalBuffer);
+	}
 
-    m_isReady.store(true, std::memory_order_release);
+	publishReadyAfterTransfer(useTransferQueue);
 }
 
 void Skybox::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, uint32_t dynamicOffset) const {

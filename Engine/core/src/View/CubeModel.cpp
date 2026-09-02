@@ -93,6 +93,11 @@ void CubeModel::init(bool useTransferQueue) {
 
     Utils::createGeneralBuffer(pDevice, m_vkState._core.getPhysDevice(), cmdBufPool, queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+    if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+        Utils::VulkanReleaseBufferOwnership(pDevice, queue, cmdBufPool, m_generalBuffer,
+                                            m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
+        m_vkState.registerTransferBufferOwnership(m_generalBuffer);
+    }
 
     // Per-swapchain-image instance buffers are used the same way as in ObjModel/SphereModel.
     m_activeInstances = m_instances;
@@ -111,7 +116,7 @@ void CubeModel::init(bool useTransferQueue) {
         vkUnmapMemory(pDevice, m_instancesBufferMemory[i]);
     }
 
-    m_isReady.store(true, std::memory_order_release);
+    publishReadyAfterTransfer(useTransferQueue);
 }
 
 void CubeModel::update(float, int, bool, uint32_t currentImage, const glm::mat4& viewProj, float z_far,

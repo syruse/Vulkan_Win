@@ -167,6 +167,11 @@ void Particle::init(bool useTransferQueue) {
         const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
         const VkCommandPool commandPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
         Utils::VulkanCopyBuffer(p_devide, queue, commandPool, stagingBuffer, m_generalBuffer, bufferSize);
+        if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+            Utils::VulkanReleaseBufferOwnership(p_devide, queue, commandPool, m_generalBuffer,
+                                                m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
+            m_vkState.registerTransferBufferOwnership(m_generalBuffer);
+        }
 
         vkDestroyBuffer(p_devide, stagingBuffer, nullptr);
         vkFreeMemory(p_devide, stagingBufferMemory, nullptr);
@@ -185,7 +190,7 @@ void Particle::init(bool useTransferQueue) {
         }
     }
 
-    m_isReady.store(true, std::memory_order_release);
+    publishReadyAfterTransfer(useTransferQueue);
 }
 
 void Particle::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset) const {

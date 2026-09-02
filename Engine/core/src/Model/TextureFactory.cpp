@@ -365,10 +365,18 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
         // queue with VK_QUEUE_TRANSFER_BIT (including a pure DMA queue).
         VulkanCopyBufferToImageMipChain(device, queue, cmdBufPool, stagingBuffer, outTexture.m_textureImage, regions);
         // FRAGMENT_SHADER stage isn't valid on a transfer-only queue, unlike the graphics-queue path above.
-        VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount,
-                                    /*queueSupportsFragmentShaderStage=*/false);
+        const uint32_t transferFamily = static_cast<uint32_t>(m_vkState._core.getTransferQueueFamily());
+        const uint32_t graphicsFamily = static_cast<uint32_t>(m_vkState._core.getQueueFamily());
+        if (transferFamily == graphicsFamily) {
+            VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
+                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                        VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount,
+                                        /*queueSupportsFragmentShaderStage=*/false);
+        } else {
+            VulkanReleaseImageOwnership(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
+                                        mipLevels, static_cast<uint32_t>(texturesAmount), transferFamily, graphicsFamily);
+            m_vkState.registerTransferImageOwnership(outTexture.m_textureImage);
+        }
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);

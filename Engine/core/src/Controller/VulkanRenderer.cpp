@@ -696,7 +696,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         const btVector3& velocity = m_btTankBody->getLinearVelocity();
         tankVelocity = glm::vec3(velocity.x(), velocity.y(), velocity.z());
     }
-    if (m_runtimeAssetsReady.load(std::memory_order_acquire)) {
+    if (m_particles[3]->isReady() && m_particles[4]->isReady()) {
         const glm::vec4 exhaustVelocity = mCamera.targetModelMat() * -0.06f * glm::vec4(tankVelocity, 0.0f);
         const glm::vec4 exhaustPipePos1 =
             mCamera.targetModelMat() *
@@ -1127,6 +1127,15 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkResult res = vkBeginCommandBuffer(_cmdBufs[currentImage], &beginInfo);
     CHECK_VULKAN_ERROR("vkBeginCommandBuffer error %d\n", res);
 
+    if (!m_runtimeAssetsReady.load(std::memory_order_acquire)) {
+        std::vector<VkBuffer> pendingTransferBuffers;
+        std::vector<VkImage> pendingTransferImages;
+        std::vector<std::function<void()>> pendingTransferCallbacks;
+        takePendingTransferOwnership(pendingTransferBuffers, pendingTransferImages, pendingTransferCallbacks);
+        Utils::VulkanAcquireTransferOwnership(_cmdBufs[currentImage], pendingTransferBuffers, pendingTransferImages,
+                                              _core.getTransferQueueFamily(), _core.getQueueFamily(), pendingTransferCallbacks);
+    }
+
     const static VkClearValue zeroClearValues{{0.0f, 0.0f, 0.0f, 0.0f}};
 
     //---------------------------------------------------------------------------------------------//
@@ -1228,7 +1237,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VkClearRect clearRect = {{{0u, 0u}, {_footprintBuffer.width, _footprintBuffer.height}}, 0u, 1u};
         vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
         _oneOffClearingFootPrint = false;
-    } else if (m_models[0]->isReady() &&
+    } else if (m_models[0u]->isReady() &&
                glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius()) {
         // draw object tracks (the panzer will leave the footprint)
         uint32_t meshIndex = 0u;
@@ -1458,8 +1467,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
                            sizeof(PushConstant), &_pushConstant);
-        if (m_runtimeAssetsReady.load(std::memory_order_acquire)) {
-            for (auto& particle : m_particles) {
+        for (auto& particle : m_particles) {
+            if (particle->isReady()) {
                 particle->draw(_cmdBufs[currentImage], currentImage);
             }
         }
@@ -1817,7 +1826,13 @@ void VulkanRenderer::loadModels() {
             particle->init(/*useTransferQueue=*/true);
         }
         InitializeBulletPhysicsBodies();
-        m_runtimeAssetsReady.store(true, std::memory_order_release);
+        if (_core.getTransferQueueFamily() != _core.getQueueFamily()) {
+            registerTransferOwnershipCallback([this]() {
+                m_runtimeAssetsReady.store(true, std::memory_order_release);
+            });
+        } else {
+            m_runtimeAssetsReady.store(true, std::memory_order_release);
+        }
     });
 }
 

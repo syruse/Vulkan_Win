@@ -2,6 +2,7 @@
 
 #include <volk.h>
 #include <array>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -81,6 +82,15 @@ void VulkanCreateExternalBuffer(VkDevice device, VkPhysicalDevice physicalDevice
 
 void VulkanCopyBuffer(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer srcBuffer, VkBuffer dstBuffer,
                       VkDeviceSize size);
+
+void VulkanReleaseBufferOwnership(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer,
+                                  uint32_t transferQueueFamily, uint32_t graphicsQueueFamily);
+void VulkanReleaseImageOwnership(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat format,
+                                 uint32_t mipLevels, uint32_t layersCount, uint32_t transferQueueFamily,
+                                 uint32_t graphicsQueueFamily);
+void VulkanAcquireTransferOwnership(VkCommandBuffer commandBuffer, const std::vector<VkBuffer>& buffers,
+                                    const std::vector<VkImage>& images, uint32_t transferQueueFamily,
+                                    uint32_t graphicsQueueFamily, const std::vector<std::function<void()>>& callbacks);
 
 void VulkanCopyBufferToImage(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkBuffer buffer, VkImage image,
                              uint32_t width, uint32_t height, uint32_t layersCount = 1U);
