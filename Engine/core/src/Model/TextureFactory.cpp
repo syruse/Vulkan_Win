@@ -24,6 +24,11 @@ TextureFactory::TextureFactory(const VulkanState& vulkanState) noexcept(true) : 
 TextureFactory::~TextureFactory() {
     // Wait until no actions being run on device before destroying
     std::ignore = vkDeviceWaitIdle(m_vkState._core.getDevice());
+
+    // mTextureDeleter is destroyed before m_textures during implicit member teardown,
+    // so release cached textures here while their Vulkan deleter is still valid.
+    m_textures.clear();
+
     for (const auto& [key, value] : m_samplers) {
         Utils::printLog(INFO_PARAM, "sampler removal with miplevels: ", key);
         vkDestroySampler(m_vkState._core.getDevice(), value, nullptr);

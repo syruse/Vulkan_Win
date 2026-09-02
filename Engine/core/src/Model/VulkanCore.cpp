@@ -48,6 +48,18 @@ VulkanCore::VulkanCore(std::unique_ptr<IControl>&& winController) : m_winControl
 }
 
 VulkanCore::~VulkanCore() {
+    if (m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+    }
+
+#if defined(USE_DLSS) && USE_DLSS
+    // Streamline owns Vulkan resources and must release them before vkDestroyDevice.
+    if (m_slShutdownFn) {
+        m_slShutdownFn();
+        m_slShutdownFn = nullptr;
+    }
+#endif
+
 #if defined(_DEBUG)
     if (m_callback != VK_NULL_HANDLE) {
         auto func = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(
@@ -70,11 +82,9 @@ VulkanCore::~VulkanCore() {
     vkDestroyInstance(m_inst, nullptr);
 
 #if defined(USE_DLSS) && USE_DLSS
-    if (m_slShutdownFn) {
-        m_slShutdownFn();
-    }
     if (m_slModule) {
         FreeLibrary(m_slModule);
+        m_slModule = nullptr;
     }
 #endif
 }

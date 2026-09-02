@@ -24,6 +24,7 @@ public:
     void recreateDescriptors() override;
 
 private:
+    void destroyResources();
     void createPipeline() override;
     void createDescriptorSetLayout() override;
 

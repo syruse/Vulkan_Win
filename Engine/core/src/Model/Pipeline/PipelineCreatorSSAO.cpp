@@ -9,13 +9,7 @@ PipelineCreatorSSAO::PipelineCreatorSSAO(const VulkanState& vkState, VkRenderPas
 }
 
 PipelineCreatorSSAO::~PipelineCreatorSSAO() {
-    for (size_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
-        vkDestroyBuffer(m_vkState._core.getDevice(), m_ubo.buffers[i], nullptr);
-        vkFreeMemory(m_vkState._core.getDevice(), m_ubo.buffersMemory[i], nullptr);
-    }
-    vkDestroyImageView(m_vkState._core.getDevice(), m_noiseTexture.m_textureImageView, nullptr);
-    vkDestroyImage(m_vkState._core.getDevice(), m_noiseTexture.m_textureImage, nullptr);
-    vkFreeMemory(m_vkState._core.getDevice(), m_noiseTexture.m_textureImageMemory, nullptr);
+    destroyResources();
 
     // setLayout must be deleted before destroying the samplers since they are integrated
     m_descriptorSetLayout.reset();
@@ -23,7 +17,35 @@ PipelineCreatorSSAO::~PipelineCreatorSSAO() {
     vkDestroySampler(m_vkState._core.getDevice(), mSamplerViewSpace, nullptr);
 }
 
+void PipelineCreatorSSAO::destroyResources() {
+    const VkDevice device = m_vkState._core.getDevice();
+    for (size_t i = 0u; i < m_ubo.buffers.size(); ++i) {
+        if (m_ubo.buffers[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device, m_ubo.buffers[i], nullptr);
+        }
+        if (i < m_ubo.buffersMemory.size() && m_ubo.buffersMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(device, m_ubo.buffersMemory[i], nullptr);
+        }
+    }
+    m_ubo.buffers.clear();
+    m_ubo.buffersMemory.clear();
+
+    if (m_noiseTexture.m_textureImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_noiseTexture.m_textureImageView, nullptr);
+        m_noiseTexture.m_textureImageView = VK_NULL_HANDLE;
+    }
+    if (m_noiseTexture.m_textureImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, m_noiseTexture.m_textureImage, nullptr);
+        m_noiseTexture.m_textureImage = VK_NULL_HANDLE;
+    }
+    if (m_noiseTexture.m_textureImageMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_noiseTexture.m_textureImageMemory, nullptr);
+        m_noiseTexture.m_textureImageMemory = VK_NULL_HANDLE;
+    }
+}
+
 void PipelineCreatorSSAO::createPipeline() {
+    destroyResources();
     PipelineCreatorQuad::createPipeline();
 
     std::uniform_real_distribution<float> randomFloats(0.0, 1.0);
