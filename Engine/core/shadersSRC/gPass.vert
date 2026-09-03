@@ -30,7 +30,13 @@ void main() {
 	// 'dynamicUBO.model' not used, instead we have per instance animation model 'instanceModelMat'
 	// 'dynamicUBO.model' is more accurate for and used for the first instance (gl_InstanceIndex == 0)
     mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3);
-	vec3 pos = scale*inPosition + posShift;
+    vec3 localPos = scale * inPosition;
+    // Instanced opaque models store their local rotation in the instance matrix; the tank uses a translated UBO matrix.
+    //if (gl_InstanceIndex != 0 || length(dynamicUBO.model[3].xyz) < 0.0001) {
+    if (gl_InstanceIndex != 0 || dot(dynamicUBO.model[3].xyz, dynamicUBO.model[3].xyz) < 1e-8) {
+        localPos = mat3(instanceModelMat) * localPos;
+    }
+	vec3 pos = localPos + posShift;
     gl_Position = dynamicUBO.MVP * vec4(pos, 1.0f);
     vec3 T = vec3(0.0, 0.0, 0.0);
     vec3 B = vec3(0.0, 0.0, 0.0);

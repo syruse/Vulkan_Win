@@ -23,7 +23,7 @@
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
-inline constexpr uint32_t TREES_COUNT = 62;
+inline constexpr uint32_t TREES_COUNT = 80;
 inline constexpr float BOUNDARY_CUBE_HALF_EXTENT = 18.0f;
 inline constexpr uint32_t INTERIOR_CUBE_COUNT = 18;
 inline constexpr float INTERIOR_CUBE_HALF_EXTENT = 24.0f;
@@ -65,6 +65,7 @@ public:
         POST_FXAA,
         PARTICLE,
         SEMI_TRANSPARENT,
+        OIT_RESOLVE,
         GAUSS_X_BLUR,
         GAUSS_Y_BLUR,
         BLOOM,
@@ -164,10 +165,11 @@ private:
 
     // Gameplay props
     std::vector<Instance> m_interiorCubeInstances{};
-    // Indices for gameplay models rendered through the semi-transparent instance path.
+    // Indices for gameplay models rendered through the opaque model path.
     uint32_t m_barrelModelIndex{0u};
-    uint32_t m_projectileSemiTransparentModelIndex{0u};
-    uint32_t m_interiorCubeSemiTransparentModelIndex{0u};
+    uint32_t m_treeTrunkModelIndex{0u};
+    uint32_t m_projectileModelIndex{0u};
+    uint32_t m_interiorCubeModelIndex{0u};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
 

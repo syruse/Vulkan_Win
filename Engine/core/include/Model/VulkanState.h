@@ -163,6 +163,9 @@ struct VulkanState {
     ColorBuffer _motionVectorsBuffer{};  // this is for DLAA\TAA
     ColorBuffer _ssaoBuffer{};
     ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
+    // accum is summed additively, and revealage is multiplied by (1−α) to achieve order-independent transparency
+    ColorBuffer _oitAccumBuffer{};
+    ColorBuffer _oitRevealageBuffer{};
     ColorBuffer _dlssOutputBuffer{}; // it's needed for applying the UI on top of the DLSS output
     DepthBuffer _footprintBuffer{_footPrintWidthAndHeight, _footPrintWidthAndHeight};
     std::array<ColorBuffer, 2u> _bloomBuffer{}; // we need two ping-pong hdr buffers (hdr-> blurred hdr -> more blurred hdr...)

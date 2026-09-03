@@ -10,8 +10,9 @@ layout(location = 3) flat in int isGradientEnabled;
 layout(location = 4) in float alpha;
 layout(location = 5) in vec2 inMotionVector;
 
-layout(location = 0) out vec4 out_Color;
-layout(location = 1) out vec2 out_motionVectors;
+layout(location = 0) out vec4 outAccum;
+layout(location = 1) out vec4 outRevealage;
+layout(location = 2) out vec2 out_motionVectors;
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
@@ -28,7 +29,8 @@ void main() {
     if (particleColor.a <= 0.01) {
         discard;
     }
-    out_Color = particleColor;
+    outAccum = vec4(particleColor.rgb * particleColor.a, particleColor.a);
+    outRevealage = vec4(particleColor.a);
     out_motionVectors = inMotionVector;
-	gl_FragDepth = fragDepth;
+    gl_FragDepth = fragDepth;
 }

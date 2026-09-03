@@ -20,15 +20,29 @@ void PipelineCreatorParticle::createPipeline() {
     raster.cullMode = VK_CULL_MODE_NONE;
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 2;  // Color + motion vectors
+    blendInfo.attachmentCount = 3;  // OIT accumulation + revealage + motion vectors
     auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+    // Accumulate weighted transparent color and weight from every particle fragment.
+    blendAttachments[0].blendEnable = VK_TRUE;
+    blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blendAttachments[1] = blendAttachments[0];
-    blendAttachments[1].blendEnable = VK_FALSE;
-    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+    blendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachments[2] = blendAttachments[0];
+    // Motion vectors are written directly and must not be blended with prior values.
+    blendAttachments[2].blendEnable = VK_FALSE;
+    blendAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
 
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_FALSE;  // a lot of small particles beeing overlapped
+    // Test against opaque depth, but do not let transparent layers occlude one another.
+    depthStencil.depthWriteEnable = VK_FALSE;
 
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
