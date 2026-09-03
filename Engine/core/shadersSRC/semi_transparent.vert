@@ -45,7 +45,7 @@ void main() {
 	outNormal = normalize(mat3(instanceModelMat) * inNormal);
 	outTexCoord = inTexCoord;
 
-    mat4 prevInstanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.prevModel : mat4(prev_model_col0, prev_model_col1, prev_model_col2, prev_model_col3);
+    mat4 prevInstanceModelMat = mat4(prev_model_col0, prev_model_col1, prev_model_col2, prev_model_col3);
     vec4 prevOriginPos = prevInstanceModelMat * vec4(scale * inPosition, 1.0);
     vec3 prevPos = prevOriginPos.xyz + posShift;
     vec4 prevClip = uboViewProjection.prevViewProj * vec4(prevPos, 1.0);

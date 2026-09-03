@@ -23,13 +23,14 @@
 #include "PipelineCreatorBase.h"
 #include "VulkanState.h"
 
-inline constexpr uint32_t TREES_COUNT = 250;
-// Half extent of one perimeter boundary cube instance.
+inline constexpr uint32_t TREES_COUNT = 62;
 inline constexpr float BOUNDARY_CUBE_HALF_EXTENT = 18.0f;
+inline constexpr uint32_t INTERIOR_CUBE_COUNT = 18;
+inline constexpr float INTERIOR_CUBE_HALF_EXTENT = 24.0f;
 // Projectile sphere radius used by both visual mesh and hit checks.
-inline constexpr float PROJECTILE_RADIUS = 6.0f;
+inline constexpr float PROJECTILE_RADIUS = 18.0f;
 // Initial projectile speed in world units per second.
-inline constexpr float PROJECTILE_SPEED = 130.0f;
+inline constexpr float PROJECTILE_SPEED = 390.0f;
 // How long a fired projectile stays "active" before being force-deactivated.
 inline constexpr std::chrono::seconds PROJECTILE_TIMEOUT{8};
 // Half-height of a tree's cylinder collider (also used to derive its visual base position).
@@ -111,6 +112,8 @@ private:
     void calculateAdditionalMat();
     /// Sync projectile render instance with Bullet body transform and auto-hide/deactivate when needed.
     void syncProjectileVisualFromPhysics();
+    /// Sync dynamic interior cube positions from Bullet bodies into their render instances.
+    void syncInteriorCubesVisualFromPhysics();
     /// Spawn/launch projectile from tank muzzle if no active projectile exists.
     void tryFireProjectile();
     /// Check if a sphere at position/radius intersects any static boundary cube.
@@ -155,16 +158,16 @@ private:
     btRigidBody* m_btProjectileBody{nullptr};
     // Static rigid bodies matching visual perimeter cubes.
     std::vector<btRigidBody*> m_btBoundaryBodies{};
+    std::vector<btRigidBody*> m_btInteriorCubeBodies{};
     std::vector<btRigidBody*> m_btTreeBodies{};
     std::vector<TreeFallState>  m_btTreeFallStates{};
 
     // Gameplay props
-    // Cached transforms for perimeter cube rendering and simple collision checks.
-    std::vector<Instance> m_boundaryCubeInstances{};
-    // Indices in m_models for quick access to newly added gameplay models.
+    std::vector<Instance> m_interiorCubeInstances{};
+    // Indices for gameplay models rendered through the semi-transparent instance path.
     uint32_t m_barrelModelIndex{0u};
-    uint32_t m_projectileModelIndex{0u};
-    uint32_t m_boundaryModelIndex{0u};
+    uint32_t m_projectileSemiTransparentModelIndex{0u};
+    uint32_t m_interiorCubeSemiTransparentModelIndex{0u};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
 

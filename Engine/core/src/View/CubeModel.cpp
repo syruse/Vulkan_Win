@@ -12,7 +12,7 @@ void CubeModel::buildMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& 
 
     // Half extent controls actual cube size in world space.
     // We keep a per-face vertex layout (24 vertices total) so each face has stable UVs/normals.
-    const float h = m_vertexMagnitudeMultiplier;
+    const glm::vec3 h = m_halfExtents;
 
     struct FaceData {
         glm::vec3 n;
@@ -23,12 +23,12 @@ void CubeModel::buildMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& 
     };
 
     const std::array<FaceData, 6> faces = {
-        FaceData{glm::vec3(0, 0, 1), glm::vec3(-h, -h, h), glm::vec3(h, -h, h), glm::vec3(h, h, h), glm::vec3(-h, h, h)},
-        FaceData{glm::vec3(0, 0, -1), glm::vec3(h, -h, -h), glm::vec3(-h, -h, -h), glm::vec3(-h, h, -h), glm::vec3(h, h, -h)},
-        FaceData{glm::vec3(1, 0, 0), glm::vec3(h, -h, h), glm::vec3(h, -h, -h), glm::vec3(h, h, -h), glm::vec3(h, h, h)},
-        FaceData{glm::vec3(-1, 0, 0), glm::vec3(-h, -h, -h), glm::vec3(-h, -h, h), glm::vec3(-h, h, h), glm::vec3(-h, h, -h)},
-        FaceData{glm::vec3(0, 1, 0), glm::vec3(-h, h, h), glm::vec3(h, h, h), glm::vec3(h, h, -h), glm::vec3(-h, h, -h)},
-        FaceData{glm::vec3(0, -1, 0), glm::vec3(-h, -h, -h), glm::vec3(h, -h, -h), glm::vec3(h, -h, h), glm::vec3(-h, -h, h)},
+        FaceData{glm::vec3(0, 0, 1), glm::vec3(-h.x, -h.y, h.z), glm::vec3(h.x, -h.y, h.z), glm::vec3(h.x, h.y, h.z), glm::vec3(-h.x, h.y, h.z)},
+        FaceData{glm::vec3(0, 0, -1), glm::vec3(h.x, -h.y, -h.z), glm::vec3(-h.x, -h.y, -h.z), glm::vec3(-h.x, h.y, -h.z), glm::vec3(h.x, h.y, -h.z)},
+        FaceData{glm::vec3(1, 0, 0), glm::vec3(h.x, -h.y, h.z), glm::vec3(h.x, -h.y, -h.z), glm::vec3(h.x, h.y, -h.z), glm::vec3(h.x, h.y, h.z)},
+        FaceData{glm::vec3(-1, 0, 0), glm::vec3(-h.x, -h.y, -h.z), glm::vec3(-h.x, -h.y, h.z), glm::vec3(-h.x, h.y, h.z), glm::vec3(-h.x, h.y, -h.z)},
+        FaceData{glm::vec3(0, 1, 0), glm::vec3(-h.x, h.y, h.z), glm::vec3(h.x, h.y, h.z), glm::vec3(h.x, h.y, -h.z), glm::vec3(-h.x, h.y, -h.z)},
+        FaceData{glm::vec3(0, -1, 0), glm::vec3(-h.x, -h.y, -h.z), glm::vec3(h.x, -h.y, -h.z), glm::vec3(h.x, -h.y, h.z), glm::vec3(-h.x, -h.y, h.z)},
     };
 
     for (const auto& f : faces) {
@@ -78,7 +78,7 @@ void CubeModel::init(bool useTransferQueue) {
     buildMesh(vertices, indices);
 
     // Approximate bounding sphere for culling/gameplay checks (sqrt(3) * halfExtent).
-    m_radius = m_vertexMagnitudeMultiplier * 1.7320508f;
+    m_radius = glm::length(m_halfExtents);
     m_indicesCount = static_cast<uint32_t>(indices.size());
 
     // View type must match the bound pipeline's shader (sampler2DArray vs sampler2D).

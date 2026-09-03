@@ -14,6 +14,13 @@ public:
           m_textureName(textureName) {
     }
 
+        CubeModel(const VulkanState& vulkanState, TextureFactory& textureFactory, std::string_view textureName,
+              PipelineCreatorTextured* pipelineCreatorTextured, const glm::vec3& halfExtents,
+              const std::vector<Instance>& instances = {}) noexcept(true)
+          : I3DModel(vulkanState, textureFactory, pipelineCreatorTextured, nullptr, 1.0f, instances),
+            m_textureName(textureName), m_halfExtents(halfExtents) {
+        }
+
     // Create GPU resources and generate textured cube mesh.
     void init(bool useTransferQueue = false) override;
     // Update visible instances (culling/sorting) and upload instance data for current frame.
@@ -39,4 +46,6 @@ private:
     uint32_t m_indicesCount{0u};
     // Material descriptor id returned by TextureFactory for binding.
     uint32_t m_materialDescriptorId{0u};
+    // Per-axis half extents; equal values preserve the original cube behavior.
+    glm::vec3 m_halfExtents{m_vertexMagnitudeMultiplier};
 };

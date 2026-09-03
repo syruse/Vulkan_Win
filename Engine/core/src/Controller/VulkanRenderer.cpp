@@ -66,24 +66,6 @@ static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
 float _footPrintRedrawingK = 0.7f;
 
-namespace {
-std::vector<Instance> makeBoundaryCubeInstances(float halfExtent, float sceneHalfSize, float spacing) {
-    // Build a closed rectangular perimeter from cube instances.
-    // Cubes are placed on the four borders of the play area and reused by both
-    // rendering (instanced CubeModel) and gameplay collision checks.
-    std::vector<Instance> out;
-    for (float x = -sceneHalfSize; x <= sceneHalfSize; x += spacing) {
-        out.push_back({glm::vec3(x, halfExtent, -sceneHalfSize), 1.0f});
-        out.push_back({glm::vec3(x, halfExtent, sceneHalfSize), 1.0f});
-    }
-    for (float z = -sceneHalfSize + spacing; z <= sceneHalfSize - spacing; z += spacing) {
-        out.push_back({glm::vec3(-sceneHalfSize, halfExtent, z), 1.0f});
-        out.push_back({glm::vec3(sceneHalfSize, halfExtent, z), 1.0f});
-    }
-    return out;
-}
-}
-
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
     : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
@@ -156,19 +138,25 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
                                        {}, nullptr, false));
 
-    // Projectile visual model. Physics body drives instance position every frame.
-    m_projectileModelIndex = static_cast<uint32_t>(m_models.size());
-    m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg",
-                                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                          PROJECTILE_RADIUS));
-
-    // Perimeter cubes around the map: visible wall + static Bullet colliders.
-    m_boundaryCubeInstances = makeBoundaryCubeInstances(BOUNDARY_CUBE_HALF_EXTENT, 0.9f * Z_FAR, 2.5f * BOUNDARY_CUBE_HALF_EXTENT);
-    m_boundaryModelIndex = static_cast<uint32_t>(m_models.size());
-    m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg",
-                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
-                                        BOUNDARY_CUBE_HALF_EXTENT, m_boundaryCubeInstances));
-
+    std::mt19937 gen(std::random_device{}());
+    std::uniform_real_distribution<float> positionDistribution(-0.72f * Z_FAR, 0.72f * Z_FAR);
+    m_interiorCubeInstances.reserve(INTERIOR_CUBE_COUNT);
+    while (m_interiorCubeInstances.size() < INTERIOR_CUBE_COUNT) {
+        const glm::vec3 position(positionDistribution(gen), INTERIOR_CUBE_HALF_EXTENT, positionDistribution(gen));
+        if (glm::length(glm::vec2(position.x, position.z)) < 180.0f) {
+            continue;
+        }
+        bool overlapsExistingCube = false;
+        for (const auto& cube : m_interiorCubeInstances) {
+            if (glm::length(glm::vec2(position.x - cube.posShift.x, position.z - cube.posShift.z)) < 120.0f) {
+                overlapsExistingCube = true;
+                break;
+            }
+        }
+        if (!overlapsExistingCube) {
+            m_interiorCubeInstances.push_back({position, 1.0f});
+        }
+    }
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
 
@@ -178,30 +166,26 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_models.emplace_back(new Skybox(*this, *mTextureFactory, skyBoxTextures,
                                      static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SKYBOX].get())));
 
-    // we create a lot of trees
     {
         std::vector<Instance> semiTransparentInstances{TREES_COUNT};
-        std::random_device rd;
-        std::mt19937 gen(rd());  // seed the generator
-        float limit = 0.8f * Z_FAR;
-        std::uniform_real_distribution<double> distrScale(0.5, 1.0); 
-        int32_t gridLen = std::floor(std::sqrt(semiTransparentInstances.size()));
-        float step = 2.0f * limit / gridLen;
-        // std::uniform_real<> distr(0.0f, 0.1f * step);
-        const float startX = -limit;
-        const float startZ = -limit;
-        for (std::size_t i = 0u; i < semiTransparentInstances.size(); ++i) {
-            auto& instance = semiTransparentInstances[i];
-            // float xOffset = distr(gen);
-            // float zOffset = distr(gen);
-            instance.posShift.y = 0.0f;
-
-            instance.scale = distrScale(gen);
-
-            auto row = i / gridLen;
-            auto col = i % gridLen;
-            instance.posShift.x = startX + row * step;
-            instance.posShift.z = startZ + col * step;
+        std::uniform_real_distribution<float> treeScaleDistribution(0.5f, 1.0f);
+        for (auto& instance : semiTransparentInstances) {
+            glm::vec3 position{};
+            bool validPosition = false;
+            while (!validPosition) {
+                position = glm::vec3(positionDistribution(gen), 0.0f, positionDistribution(gen));
+                validPosition = glm::length(glm::vec2(position.x, position.z)) >= 180.0f;
+                for (const auto& cube : m_interiorCubeInstances) {
+                    const glm::vec2 offset(position.x - cube.posShift.x, position.z - cube.posShift.z);
+                    // it's faster than glm::length(offset) < 90.0f
+                    if (glm::dot(offset, offset) < 90.0f * 90.0f) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+            }
+            instance.posShift = position;
+            instance.scale = treeScaleDistribution(gen);
         }
 
         auto lowPolyTrink =
@@ -218,6 +202,27 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                          static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get()), nullptr, 10.0f, 0.1f,
                          true, semiTransparentInstances));
     }
+
+    auto* semiTransparentPipeline = static_cast<PipelineCreatorTextured*>(m_pipelineCreators[SEMI_TRANSPARENT].get());
+    const glm::vec3 wallAlongX(0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                               BOUNDARY_CUBE_HALF_EXTENT);
+    const glm::vec3 wallAlongZ(BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                               0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT);
+    m_semiTransparentModels.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline, wallAlongX,
+                                                       {{glm::vec3(0.0f, BOUNDARY_CUBE_HALF_EXTENT, -0.9f * Z_FAR), 1.0f}}));
+    m_semiTransparentModels.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline, wallAlongX,
+                                                       {{glm::vec3(0.0f, BOUNDARY_CUBE_HALF_EXTENT, 0.9f * Z_FAR), 1.0f}}));
+    m_semiTransparentModels.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline, wallAlongZ,
+                                                       {{glm::vec3(-0.9f * Z_FAR, BOUNDARY_CUBE_HALF_EXTENT, 0.0f), 1.0f}}));
+    m_semiTransparentModels.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline, wallAlongZ,
+                                                       {{glm::vec3(0.9f * Z_FAR, BOUNDARY_CUBE_HALF_EXTENT, 0.0f), 1.0f}}));
+
+    m_interiorCubeSemiTransparentModelIndex = static_cast<uint32_t>(m_semiTransparentModels.size());
+    m_semiTransparentModels.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline,
+                                                       INTERIOR_CUBE_HALF_EXTENT, m_interiorCubeInstances));
+    m_projectileSemiTransparentModelIndex = static_cast<uint32_t>(m_semiTransparentModels.size());
+    m_semiTransparentModels.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", semiTransparentPipeline,
+                                                         PROJECTILE_RADIUS));
 
     m_particles[0] = std::make_unique<StaticParticle>(*this, *mTextureFactory, "bush4.png",
                                                         static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()),
@@ -277,6 +282,13 @@ VulkanRenderer::~VulkanRenderer() {
             delete body;
         }
         m_btBoundaryBodies.clear();
+
+        for (auto* body : m_btInteriorCubeBodies) {
+            m_btDynamicsWorld->removeRigidBody(body);
+            delete body->getMotionState();
+            delete body;
+        }
+        m_btInteriorCubeBodies.clear();
 
         if (m_btGroundBody) {
             m_btDynamicsWorld->removeRigidBody(m_btGroundBody);
@@ -1879,7 +1891,7 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
         // by default it's under the ground
         startTransform.setOrigin(btVector3(0.0f, -2000.0f, 0.0f));
 
-        btScalar mass = 35.0f;
+        btScalar mass = 150.0f;
         btVector3 localInertia(0, 0, 0);
         sphereShape->calculateLocalInertia(mass, localInertia);
 
@@ -1887,8 +1899,9 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
         btRigidBody::btRigidBodyConstructionInfo rbInfo(mass, motionState, sphereShape, localInertia);
         m_btProjectileBody = new btRigidBody(rbInfo);
         // it can bounce off other objects
-        m_btProjectileBody->setRestitution(0.8f);
+        m_btProjectileBody->setRestitution(0.95f);
         m_btProjectileBody->setFriction(0.4f);
+        m_btProjectileBody->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
         // ecable Continuous Collision Detection (CCD) to prevent tunneling at high speeds.
         m_btProjectileBody->setCcdMotionThreshold(0.01f);
         // sphere radius is smaller than the projectile's bounding sphere to avoid false negatives in CCD.
@@ -1897,24 +1910,59 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
         m_btDynamicsWorld->addRigidBody(m_btProjectileBody);
     }
 
-    // Boundary cubes around scene perimeter: block tank and reflect projectile.
+    // Four long perimeter walls block the tank and reflect the projectile.
     {
-        btCollisionShape* cubeShape = new btBoxShape(btVector3(BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
-                                                                BOUNDARY_CUBE_HALF_EXTENT));
-        m_btCollisionShapes.push_back(cubeShape);
-        m_btBoundaryBodies.reserve(m_boundaryCubeInstances.size());
-
-        for (const auto& cube : m_boundaryCubeInstances) {
+        const auto addWall = [this](const btVector3& halfExtents, const btVector3& position) {
+            btCollisionShape* wallShape = new btBoxShape(halfExtents);
+            m_btCollisionShapes.push_back(wallShape);
             btTransform t;
             t.setIdentity();
-            t.setOrigin(btVector3(cube.posShift.x, cube.posShift.y, cube.posShift.z));
+            t.setOrigin(position);
             btDefaultMotionState* motionState = new btDefaultMotionState(t);
-            btRigidBody::btRigidBodyConstructionInfo rbInfo(0.0f, motionState, cubeShape, btVector3(0, 0, 0));
+            btRigidBody::btRigidBodyConstructionInfo rbInfo(0.0f, motionState, wallShape, btVector3(0, 0, 0));
             btRigidBody* body = new btRigidBody(rbInfo);
             body->setRestitution(0.95f);
             body->setFriction(0.8f);
             m_btDynamicsWorld->addRigidBody(body);
             m_btBoundaryBodies.push_back(body);
+        };
+        m_btBoundaryBodies.reserve(4);
+        addWall(btVector3(0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                          BOUNDARY_CUBE_HALF_EXTENT),
+            btVector3(0.0f, BOUNDARY_CUBE_HALF_EXTENT, -0.9f * Z_FAR));
+        addWall(btVector3(0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                          BOUNDARY_CUBE_HALF_EXTENT),
+            btVector3(0.0f, BOUNDARY_CUBE_HALF_EXTENT, 0.9f * Z_FAR));
+        addWall(btVector3(BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                  0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT),
+            btVector3(-0.9f * Z_FAR, BOUNDARY_CUBE_HALF_EXTENT, 0.0f));
+        addWall(btVector3(BOUNDARY_CUBE_HALF_EXTENT, BOUNDARY_CUBE_HALF_EXTENT,
+                  0.9f * Z_FAR + BOUNDARY_CUBE_HALF_EXTENT),
+            btVector3(0.9f * Z_FAR, BOUNDARY_CUBE_HALF_EXTENT, 0.0f));
+    }
+
+    {
+        btCollisionShape* cubeShape = new btBoxShape(btVector3(INTERIOR_CUBE_HALF_EXTENT, INTERIOR_CUBE_HALF_EXTENT,
+                                     INTERIOR_CUBE_HALF_EXTENT));
+        m_btCollisionShapes.push_back(cubeShape);
+        m_btInteriorCubeBodies.reserve(m_interiorCubeInstances.size());
+        for (const auto& cube : m_interiorCubeInstances) {
+            btTransform t;
+            t.setIdentity();
+            t.setOrigin(btVector3(cube.posShift.x, cube.posShift.y, cube.posShift.z));
+            constexpr btScalar cubeMass = 750.0f;
+            btVector3 localInertia(0, 0, 0);
+            cubeShape->calculateLocalInertia(cubeMass, localInertia);
+            btDefaultMotionState* motionState = new btDefaultMotionState(t);
+            btRigidBody::btRigidBodyConstructionInfo rbInfo(cubeMass, motionState, cubeShape, localInertia);
+            btRigidBody* body = new btRigidBody(rbInfo);
+            body->setFriction(1.0f);
+            body->setRestitution(0.95f);
+            body->setDamping(0.85f, 1.0f);
+            body->setAngularFactor(btVector3(0.0f, 0.0f, 0.0f));
+            body->setLinearFactor(btVector3(1.0f, 0.0f, 1.0f));
+            m_btDynamicsWorld->addRigidBody(body);
+            m_btInteriorCubeBodies.push_back(body);
         }
     }
 }
@@ -1967,11 +2015,11 @@ bool VulkanRenderer::allModelsReady() const {
 }
 
 void VulkanRenderer::syncProjectileVisualFromPhysics() {
-    if (m_projectileModelIndex >= m_models.size()) {
+    if (m_projectileSemiTransparentModelIndex >= m_semiTransparentModels.size()) {
         return;
     }
 
-    auto& projectileInstances = m_models[m_projectileModelIndex]->instances();
+    auto& projectileInstances = m_semiTransparentModels[m_projectileSemiTransparentModelIndex]->instances();
     if (projectileInstances.empty()) {
         return;
     }
@@ -1985,6 +2033,16 @@ void VulkanRenderer::syncProjectileVisualFromPhysics() {
     const btTransform& t = m_btProjectileBody->getWorldTransform();
     const btVector3& p = t.getOrigin();
     projectileInstances[0].posShift = glm::vec3(p.x(), p.y(), p.z());
+    const btQuaternion q = t.getRotation();
+    const glm::mat4 rotation = glm::mat4_cast(glm::quat(q.w(), q.x(), q.y(), q.z()));
+    projectileInstances[0].prev_model_col0 = projectileInstances[0].model_col0;
+    projectileInstances[0].prev_model_col1 = projectileInstances[0].model_col1;
+    projectileInstances[0].prev_model_col2 = projectileInstances[0].model_col2;
+    projectileInstances[0].prev_model_col3 = projectileInstances[0].model_col3;
+    projectileInstances[0].model_col0 = glm::packHalf4x16(rotation[0]);
+    projectileInstances[0].model_col1 = glm::packHalf4x16(rotation[1]);
+    projectileInstances[0].model_col2 = glm::packHalf4x16(rotation[2]);
+    projectileInstances[0].model_col3 = glm::packHalf4x16(rotation[3]);
 
     /// NOTE: not needed right now
     ///const btVector3 v = m_btProjectileBody->getLinearVelocity();
@@ -1994,8 +2052,32 @@ void VulkanRenderer::syncProjectileVisualFromPhysics() {
     ///}
 }
 
+void VulkanRenderer::syncInteriorCubesVisualFromPhysics() {
+    if (m_interiorCubeSemiTransparentModelIndex >= m_semiTransparentModels.size()) {
+        return;
+    }
+
+    auto& cubeInstances = m_semiTransparentModels[m_interiorCubeSemiTransparentModelIndex]->instances();
+    const size_t cubeCount = std::min(cubeInstances.size(), m_btInteriorCubeBodies.size());
+    for (size_t i = 0; i < cubeCount; ++i) {
+        const btTransform& transform = m_btInteriorCubeBodies[i]->getWorldTransform();
+        const btVector3& position = transform.getOrigin();
+        cubeInstances[i].posShift = glm::vec3(position.x(), position.y(), position.z());
+        const btQuaternion q = transform.getRotation();
+        const glm::mat4 rotation = glm::mat4_cast(glm::quat(q.w(), q.x(), q.y(), q.z()));
+        cubeInstances[i].prev_model_col0 = cubeInstances[i].model_col0;
+        cubeInstances[i].prev_model_col1 = cubeInstances[i].model_col1;
+        cubeInstances[i].prev_model_col2 = cubeInstances[i].model_col2;
+        cubeInstances[i].prev_model_col3 = cubeInstances[i].model_col3;
+        cubeInstances[i].model_col0 = glm::packHalf4x16(rotation[0]);
+        cubeInstances[i].model_col1 = glm::packHalf4x16(rotation[1]);
+        cubeInstances[i].model_col2 = glm::packHalf4x16(rotation[2]);
+        cubeInstances[i].model_col3 = glm::packHalf4x16(rotation[3]);
+    }
+}
+
 void VulkanRenderer::tryFireProjectile() {
-    if (!m_btProjectileBody || m_projectileModelIndex >= m_models.size()) {
+    if (!m_btProjectileBody || m_projectileSemiTransparentModelIndex >= m_semiTransparentModels.size()) {
         return;
     }
 
@@ -2022,7 +2104,9 @@ void VulkanRenderer::tryFireProjectile() {
     // Re-seed body state at muzzle and launch with configured speed.
     m_btProjectileBody->setLinearVelocity(btVector3(forward.x * PROJECTILE_SPEED, forward.y * PROJECTILE_SPEED,
                                                     forward.z * PROJECTILE_SPEED));
-    m_btProjectileBody->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+    const glm::vec3 rollingAxis = glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::vec3 angularVelocity = rollingAxis * (PROJECTILE_SPEED / PROJECTILE_RADIUS);
+    m_btProjectileBody->setAngularVelocity(btVector3(angularVelocity.x, angularVelocity.y, angularVelocity.z));
     m_btProjectileBody->clearForces();
     m_btProjectileBody->activate(true);
 
@@ -2036,17 +2120,8 @@ void VulkanRenderer::tryFireProjectile() {
 
 // Note: we need it since the tank is kinetic model
 bool VulkanRenderer::intersectsBoundary(const glm::vec3& position, float radius) const {
-    // Cheap AABB-vs-point(radius-expanded) check against each perimeter cube center.
-    // This is enough for gameplay blocking of tank movement at scene borders.
-    const float threshold = BOUNDARY_CUBE_HALF_EXTENT + radius;
-    for (const auto& cube : m_boundaryCubeInstances) {
-        const float dx = std::abs(position.x - cube.posShift.x);
-        const float dz = std::abs(position.z - cube.posShift.z);
-        if (dx <= threshold && dz <= threshold) {
-            return true;
-        }
-    }
-    return false;
+    const float playableHalfSize = 0.9f * Z_FAR - BOUNDARY_CUBE_HALF_EXTENT - radius;
+    return std::abs(position.x) >= playableHalfSize || std::abs(position.z) >= playableHalfSize;
 }
 
 bool VulkanRenderer::renderScene() {
@@ -2352,15 +2427,31 @@ bool VulkanRenderer::renderScene() {
                 const bool tankHit = (dx * dx + dz * dz < triggerDist * triggerDist);
                 const bool projectileHit = (std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) &&
                                            (dxProj * dxProj + dzProj * dzProj < projectileTriggerDist * projectileTriggerDist);
-                if (tankHit || projectileHit) {
+                glm::vec3 cubeImpactPos{};
+                bool cubeHit = false;
+                // calculates the distance from the center of a cube to its corner on the X/Z plane
+                // std::sqrt(INTERIOR_CUBE_HALF_EXTENT*INTERIOR_CUBE_HALF_EXTENT + INTERIOR_CUBE_HALF_EXTENT*INTERIOR_CUBE_HALF_EXTENT) =
+                // std::sqrt(2) * INTERIOR_CUBE_HALF_EXTENT = 1.41421356 * INTERIOR_CUBE_HALF_EXTENT
+                const float cubeTreeTriggerDist = INTERIOR_CUBE_HALF_EXTENT * 1.41421356f + kTreeRadius;
+                for (const auto* cubeBody : m_btInteriorCubeBodies) {
+                    const btVector3& cubePos = cubeBody->getWorldTransform().getOrigin();
+                    const float cubeDx = cubePos.x() - s.baseX;
+                    const float cubeDz = cubePos.z() - s.baseZ;
+                    if (cubeDx * cubeDx + cubeDz * cubeDz < cubeTreeTriggerDist * cubeTreeTriggerDist) {
+                        cubeImpactPos = glm::vec3(cubePos.x(), cubePos.y(), cubePos.z());
+                        cubeHit = true;
+                        break;
+                    }
+                }
+                if (tankHit || projectileHit || cubeHit) {
                     s.falling = true;
                     if (m_audioManager) {
                         m_audioManager->playOneShot(AudioManager::Sound::TreeBreak);
                     }
                     // Fall direction = away from tank (i.e. in the direction the tank is pushing).
                     // Use impact source (tank or projectile) to compute realistic fall direction.
-                    const float srcDx = projectileHit ? dxProj : dx;
-                    const float srcDz = projectileHit ? dzProj : dz;
+                    const float srcDx = projectileHit ? dxProj : (cubeHit ? cubeImpactPos.x - s.baseX : dx);
+                    const float srcDz = projectileHit ? dzProj : (cubeHit ? cubeImpactPos.z - s.baseZ : dz);
                     float len = std::sqrt(srcDx * srcDx + srcDz * srcDz);
                     float fdx = (len > 1e-4f) ? -srcDx / len : 1.0f;   // tree_base - hit_source_pos
                     float fdz = (len > 1e-4f) ? -srcDz / len : 0.0f;
@@ -2393,6 +2484,7 @@ bool VulkanRenderer::renderScene() {
         m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
         // After Bullet step, propagate projectile body transform into render instance data.
         syncProjectileVisualFromPhysics();
+        syncInteriorCubesVisualFromPhysics();
     }
 
     // -- GET NEXT IMAGE --
