@@ -22,7 +22,12 @@ void main() {
     if (diffColor.a <= 0.01) {
         discard;
     }
-    outAccum = vec4(diffColor.rgb * diffColor.a, diffColor.a);
+    // McGuire's weighted-blended OIT weight: this was missing entirely before, so accum/revealage
+    // summed every overlapping fragment (leaves and smoke) with equal weight regardless of depth,
+    // which is what caused both the hazy foliage blur and the original smoke/leaves order bug.
+    // Nearer fragments get a much higher weight, so they dominate the resolve pass's weighted average.
+    float weight = clamp(pow(min(1.0, diffColor.a * 10.0) + 0.01, 3.0) * 1e8 * pow(1.0 - gl_FragCoord.z * 0.9, 3.0), 1e-2, 3e3);
+    outAccum = vec4(diffColor.rgb * diffColor.a, diffColor.a) * weight;
     outRevealage = vec4(diffColor.a);
     out_motionVectors = inMotionVector;
 }

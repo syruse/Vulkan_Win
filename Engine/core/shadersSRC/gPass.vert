@@ -31,9 +31,13 @@ void main() {
 	// 'dynamicUBO.model' is more accurate for and used for the first instance (gl_InstanceIndex == 0)
     mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3);
     vec3 localPos = scale * inPosition;
-    // Instanced opaque models store their local rotation in the instance matrix; the tank uses a translated UBO matrix.
-    //if (gl_InstanceIndex != 0 || length(dynamicUBO.model[3].xyz) < 0.0001) {
-    if (gl_InstanceIndex != 0 || dot(dynamicUBO.model[3].xyz, dynamicUBO.model[3].xyz) < 1e-8) {
+    // dynamicUBO.model[3].w is an explicit CPU-set flag (1.0 = MVP already bakes in this model matrix,
+    // e.g. tank/barrel; 0.0 = position comes from posShift and rotation must be applied here manually,
+    // e.g. instanced cubes/trunk/projectile). Using the flag instead of "is translation zero" avoids
+    // misclassifying the tank/barrel when they happen to sit exactly at the world origin.
+    // [3].w is chosen because it's always 1.0 in any valid affine matrix and otherwise unused, so
+    // overwriting it cannot corrupt the matrix's real translation/rotation/scale.
+    if (gl_InstanceIndex != 0 || dynamicUBO.model[3].w < 0.5) {
         localPos = mat3(instanceModelMat) * localPos;
     }
 	vec3 pos = localPos + posShift;

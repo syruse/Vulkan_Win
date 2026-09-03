@@ -67,8 +67,11 @@ void PipelineCreatorSemiTransparent::createPipeline() {
 
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;
-    // Test against opaque depth, but do not let transparent layers occlude one another.
-    depthStencil.depthWriteEnable = VK_FALSE;
+    // Foliage is now alpha-tested (opaque), not blended, so depth write must stay on:
+    // otherwise overlapping leaf layers all pass the depth test and get additively
+    // averaged together in the OIT accum/revealage buffers, producing a gray haze
+    // instead of the nearest leaf occluding the ones behind it.
+    depthStencil.depthWriteEnable = VK_TRUE;
     
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._offscreenWidth, m_vkState._offscreenHeight,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),

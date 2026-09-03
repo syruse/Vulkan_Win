@@ -38,7 +38,9 @@
 
 #include <btBulletDynamicsCommon.h>
 
-static constexpr float Z_NEAR = 0.1f;
+static constexpr float Z_NEAR = 5.0f;  // was 0.1: with far=2500 that ratio starved depth precision at distance,
+                                        // causing noisy world-position reconstruction and shadow flicker that faded up close.
+                                        // Farthest geometry (perimeter walls) is most sensitive to this ratio.
 static constexpr float Z_FAR = 1000.0f;
 // to avoid clipping issues with distant objects like boundery cubes
 static constexpr float CAMERA_Z_FAR = 2500.0f;
@@ -755,17 +757,14 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     mViewProj.view = cameraViewProj.view;
     mViewProj.footPrintViewProj = m_footPrintViewProj;
 
-    // Copy VP data
-    void* data;
-    vkMapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage], 0, sizeof(mViewProj), 0, &data);
-    memcpy(data, &mViewProj, sizeof(mViewProj));
-    vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
-
     // Copy Model data except skybox
     for (size_t i = 1u; i < objectsAmount - 1; i++) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->prevModel = pModel->model;
         pModel->model = identityMatrix;
+        // Flag: position/rotation come from posShift+instance matrix, not from this model matrix.
+        // [3][3] is always 1.0 in a valid affine matrix and otherwise unused, so it's a safe slot for this flag.
+        pModel->model[3][3] = 0.0f;
         pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
@@ -788,6 +787,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         const btQuaternion q = m_btProjectileBody->getWorldTransform().getRotation();
         pProjectile->prevModel = pProjectile->model;
         pProjectile->model = glm::mat4_cast(glm::quat(q.w(), q.x(), q.y(), q.z()));
+        // Flag: position comes from posShift, only rotation is carried by this model matrix.
+        pProjectile->model[3][3] = 0.0f;
         pProjectile->MVP = mViewProj.viewProj;
     }
 
@@ -869,6 +870,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     Model* pTreeTrunk = (Model*)((uint64_t)mp_modelTransferSpace + (m_treeTrunkModelIndex * _modelUniformAlignment));
     pTreeTrunk->prevModel = pTreeTrunk->model;
     pTreeTrunk->model = firstTreeModelMat;
+    // Flag: position comes from posShift, only rotation is carried by this model matrix.
+    pTreeTrunk->model[3][3] = 0.0f;
     pTreeTrunk->MVP = mViewProj.viewProj;
     } else {
         // Trees not loaded yet: keep their slots as a valid (identity) transform instead of leaving
@@ -912,6 +915,13 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         glm::ortho(-shadowSide, shadowSide, -shadowSide, shadowSide, -500.0f, Z_FAR * 4.0f) *
         glm::lookAt(glm::vec3(_pushConstant.lightPos), target, glm::vec3(0.0f, 1.0f, 0.0f));
     m_lightViewProj[1][1] *= -1;
+
+    // The shadow matrix is calculated after the first ViewProj upload; overwrite it with this frame's matrix.
+    mViewProj.lightViewProj = m_lightViewProj;
+    void* data;
+    vkMapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage], 0, sizeof(mViewProj), 0, &data);
+    memcpy(data, &mViewProj, sizeof(mViewProj));
+    vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
     // Map the list of model data
     vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0,
