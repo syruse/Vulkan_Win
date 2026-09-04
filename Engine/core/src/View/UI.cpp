@@ -3,6 +3,38 @@
 
 const UI::States& UI::updateAndDraw() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float hudWidth = 440.0f;
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - 28.0f),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowSize(ImVec2(hudWidth, 0.0f), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.025f, 0.04f, 0.035f, 0.84f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.25f, 0.58f, 0.42f, 0.72f));
+    ImGui::Begin("##CombatHUD", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::TextUnformatted("HULL");
+    ImGui::SameLine(64.0f);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.76f, 0.20f, 0.16f, 1.0f));
+    ImGui::ProgressBar(mHealth, ImVec2(184.0f, 16.0f), "");
+    ImGui::PopStyleColor();
+    ImGui::SameLine(246.0f);
+    ImGui::Text("%d%%", static_cast<int>(mHealth * 100.0f));
+    ImGui::SameLine(312.0f);
+    ImGui::Text("SHELLS  %u", mShellCount);
+    ImGui::TextUnformatted("RELOAD");
+    ImGui::SameLine(64.0f);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, mReloadProgress >= 1.0f ? ImVec4(0.30f, 0.86f, 0.44f, 1.0f)
+                                                                            : ImVec4(0.95f, 0.64f, 0.18f, 1.0f));
+    ImGui::ProgressBar(mReloadProgress, ImVec2(184.0f, 16.0f), mReloadProgress >= 1.0f ? "READY" : "");
+    ImGui::PopStyleColor();
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
+
     if (mShowMenu) {
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 28.0f, viewport->WorkPos.y + 28.0f),
                             ImGuiCond_Always, ImVec2(1.0f, 0.0f));

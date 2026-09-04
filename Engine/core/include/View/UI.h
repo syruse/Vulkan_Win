@@ -61,6 +61,12 @@ public:
         mXessSupported = xessSupported;
     }
 
+    void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
+        mHealth = health;
+        mReloadProgress = reloadProgress;
+        mShellCount = shellCount;
+    }
+
 private:
     States mStates;
     std::array<ResolutionEntry, 4> m_resolutions;
@@ -69,4 +75,7 @@ private:
     bool mShowMenu = true;
     bool mDlssSupported = false;
     bool mXessSupported = false;
+    float mHealth = 1.0f;
+    float mReloadProgress = 1.0f;
+    uint32_t mShellCount = 10u;
 };

@@ -1172,6 +1172,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     _core.getWinController()->setLoading(!allModelsReady());
     _core.getWinController()->setShowMenu(hmiRenderData);
     _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
+    const auto now = std::chrono::steady_clock::now();
+    const float reloadProgress = now < m_projectileTimeoutDeadline
+        ? 1.0f - std::chrono::duration<float>(m_projectileTimeoutDeadline - now).count() /
+                     std::chrono::duration<float>(PROJECTILE_TIMEOUT).count()
+        : 1.0f;
+    _core.getWinController()->setCombatState(m_tankHealth / 100.0f, reloadProgress, m_shellCount);
 
     static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
@@ -1599,7 +1605,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             // Run UI overlay here only when DLSS path successfully brought swapchain image to PRESENT layout.
             // If DLSS got disabled in evaluateDLSSPass(), fallback FXAA path below will render + overlay safely.
             // Also run while still loading, so the "Loading..." indicator can show even with the pause menu closed.
-            if ((hmiRenderData || !allModelsReady()) && m_isDlssEnabled) {
+            if (m_isDlssEnabled) {
                 VkRenderPassBeginInfo renderPassUIInfo = {};
                 renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1623,7 +1629,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 #if defined(USE_XESS) && USE_XESS
     if (m_isXessEnabled) {
         evaluateXessPass(currentImage);
-        if ((hmiRenderData || !allModelsReady()) && m_isXessEnabled) {
+        if (m_isXessEnabled) {
             VkRenderPassBeginInfo renderPassUIInfo{};
             renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -1678,7 +1684,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
         vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
-        if (hmiRenderData || !allModelsReady()) {
+        {
             VkRenderPassBeginInfo renderPassUIInfo = {};
             renderPassUIInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassUIInfo.renderPass = m_renderPassUIOverlay;
@@ -2143,7 +2149,7 @@ void VulkanRenderer::syncInteriorCubesVisualFromPhysics() {
 }
 
 void VulkanRenderer::tryFireProjectile() {
-    if (!m_btProjectileBody || m_projectileModelIndex >= m_models.size()) {
+    if (!m_btProjectileBody || m_projectileModelIndex >= m_models.size() || m_shellCount == 0u) {
         return;
     }
 
@@ -2177,6 +2183,7 @@ void VulkanRenderer::tryFireProjectile() {
     m_btProjectileBody->activate(true);
 
     m_projectileTimeoutDeadline = std::chrono::steady_clock::now() + PROJECTILE_TIMEOUT;
+    --m_shellCount;
     syncProjectileVisualFromPhysics();
 
     if (m_audioManager) {
@@ -2548,6 +2555,24 @@ bool VulkanRenderer::renderScene() {
 
         const float deltaSec = deltaTime * 0.001f;
         m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
+
+        if (m_btProjectileBody && m_btTankBody && std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) {
+            const int manifoldCount = m_btDynamicsWorld->getDispatcher()->getNumManifolds();
+            for (int manifoldIndex = 0; manifoldIndex < manifoldCount; ++manifoldIndex) {
+                const btPersistentManifold* manifold = m_btDynamicsWorld->getDispatcher()->getManifoldByIndexInternal(manifoldIndex);
+                const bool projectileHitTank =
+                    (manifold->getBody0() == m_btProjectileBody && manifold->getBody1() == m_btTankBody) ||
+                    (manifold->getBody0() == m_btTankBody && manifold->getBody1() == m_btProjectileBody);
+                if (projectileHitTank && manifold->getNumContacts() > 0) {
+                    m_tankHealth = std::max(0.0f, m_tankHealth - 10.0f);
+                    m_projectileTimeoutDeadline = std::chrono::steady_clock::now();
+                    m_btProjectileBody->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
+                    m_btProjectileBody->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+                    break;
+                }
+            }
+        }
+
         // After Bullet step, propagate projectile body transform into render instance data.
         syncProjectileVisualFromPhysics();
         syncInteriorCubesVisualFromPhysics();

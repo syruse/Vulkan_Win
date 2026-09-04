@@ -172,6 +172,8 @@ private:
     uint32_t m_interiorCubeModelIndex{0u};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
+    float m_tankHealth{100.0f};
+    uint32_t m_shellCount{10u};
 
     // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this
     // thread while the render loop starts immediately; joined in the destructor before teardown.

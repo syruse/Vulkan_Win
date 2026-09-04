@@ -43,6 +43,7 @@ const float brightness = 2.7;
 const float contrastSSAOFactor = 7;
 const float bloomThreshold = 1.5;
 const float bloomIntensity = 0.35;
+const float specularIntensity = 0.15;
 
 
 float getShading(vec3 world, float bias)
@@ -152,7 +153,7 @@ void main()
 		
 		vec4 final_color = vec4(1.0);
 		
-		final_color.rgb = brightness * (albedo.rgb) + (spec * albedo.rgb);
+        final_color.rgb = brightness * albedo.rgb + specularIntensity * spec * albedo.rgb;
 	    final_color.a = albedo.a;
 
 		out_color = final_color;

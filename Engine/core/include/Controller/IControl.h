@@ -79,6 +79,10 @@ public:
         mUi.setUpscalerSupport(dlssSupported, xessSupported);
     }
 
+    void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
+        mUi.setCombatState(health, reloadProgress, shellCount);
+    }
+
 protected:
     std::string_view m_appName;
     uint32_t m_width;
