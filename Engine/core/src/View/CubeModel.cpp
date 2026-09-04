@@ -33,18 +33,21 @@ void CubeModel::buildMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& 
 
     for (const auto& f : faces) {
         const uint32_t base = static_cast<uint32_t>(vertices.size());
+        const float textureTileSize = 2.0f * h.y;
+        const float uRepeat = glm::length(f.p1 - f.p0) / textureTileSize;
+        const float vRepeat = glm::length(f.p2 - f.p1) / textureTileSize;
         Vertex v0{};
         v0.pos = f.p0;
         v0.normal = f.n;
-        v0.texCoord = glm::vec2(0, 1);
+        v0.texCoord = glm::vec2(0, vRepeat);
         Vertex v1{};
         v1.pos = f.p1;
         v1.normal = f.n;
-        v1.texCoord = glm::vec2(1, 1);
+        v1.texCoord = glm::vec2(uRepeat, vRepeat);
         Vertex v2{};
         v2.pos = f.p2;
         v2.normal = f.n;
-        v2.texCoord = glm::vec2(1, 0);
+        v2.texCoord = glm::vec2(uRepeat, 0);
         Vertex v3{};
         v3.pos = f.p3;
         v3.normal = f.n;

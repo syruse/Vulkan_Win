@@ -41,6 +41,8 @@ const float shiness = 8.5;
 const float softShadingFactor = 0.45; // soft shading by minimum factor limitation
 const float brightness = 2.7;
 const float contrastSSAOFactor = 7;
+const float bloomThreshold = 1.5;
+const float bloomIntensity = 0.35;
 
 
 float getShading(vec3 world, float bias)
@@ -155,9 +157,10 @@ void main()
 
 		out_color = final_color;
 		
-		// really bright area (which goes beyound ldr color range [0;1]) will be located into hdr render target for bloom effect
-		if(dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722)) > 1.0) // vec3(0.2126, 0.7152, 0.0722) is correct way of translating into gray-scale
-			out_hdr = final_color;
+        // Send only brightness exceeding the threshold to bloom, rather than the full lit material color.
+        float luminance = dot(final_color.rgb, vec3(0.2126, 0.7152, 0.0722));
+        if (luminance > bloomThreshold)
+            out_hdr = vec4(final_color.rgb * ((luminance - bloomThreshold) / luminance) * bloomIntensity, final_color.a);
 		// now shading (shadows + ambientOcclusion) is moved to separate pass where blurring is applied for SSAO
 		out_shading = vec4(vec3(shading * ambientOcclusion), 1.0);
 	}

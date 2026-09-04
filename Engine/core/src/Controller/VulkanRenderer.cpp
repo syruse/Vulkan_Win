@@ -866,6 +866,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->prevModel = pModel->model;
         pModel->model = firstTreeModelMat;
+        // The crown also gets its position from posShift, so preserve only its rotation like the trunk.
+        pModel->model[3][3] = 0.0f;
         pModel->MVP = mViewProj.viewProj;
     }
     Model* pTreeTrunk = (Model*)((uint64_t)mp_modelTransferSpace + (m_treeTrunkModelIndex * _modelUniformAlignment));
