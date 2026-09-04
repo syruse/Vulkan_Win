@@ -35,6 +35,7 @@ layout(location = 14) in vec4 prev_model_col3;
 layout(location = 0) out vec2 outTexCoord;
 layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outMotionVector;
+layout(location = 3) out vec3 outWorldPos;
 
 void main() {
     // 'dynamicUBO.model' not used, instead we have per instance animation model 'instanceModelMat'
@@ -44,6 +45,7 @@ void main() {
 	gl_Position = dynamicUBO.MVP * vec4(pos, 1.0f);
 	outNormal = normalize(mat3(instanceModelMat) * inNormal);
 	outTexCoord = inTexCoord;
+    outWorldPos = pos;
 
     mat4 prevInstanceModelMat = mat4(prev_model_col0, prev_model_col1, prev_model_col2, prev_model_col3);
     vec4 prevOriginPos = prevInstanceModelMat * vec4(scale * inPosition, 1.0);
