@@ -29,8 +29,9 @@ void main() {
     if (particleColor.a <= 0.01) {
         discard;
     }
-    // Same McGuire weight as semi_transparent.frag: both feed the same accum/revealage
-    // buffers, so weighting must match or smoke and foliage would combine inconsistently.
+    // McGuire weighted-blended OIT weight: particles are the only remaining OIT accum/revealage
+    // consumer now (foliage draws directly with depth write, see semi_transparent.frag), so this
+    // only needs to correctly order overlapping smoke/particle layers against each other.
     float weight = clamp(pow(min(1.0, particleColor.a * 10.0) + 0.01, 3.0) * 1e8 * pow(1.0 - gl_FragCoord.z * 0.9, 3.0), 1e-2, 3e3);
     outAccum = vec4(particleColor.rgb * particleColor.a, particleColor.a) * weight;
     outRevealage = vec4(particleColor.a);

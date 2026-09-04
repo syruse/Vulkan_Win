@@ -6,7 +6,7 @@ class PipelineCreatorOITResolve : public PipelineCreatorBase {
 public:
     PipelineCreatorOITResolve(const VulkanState& vkState, VkRenderPass& renderPass, std::string_view vertShader,
                               std::string_view fragShader)
-        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, 1u) {
+        : PipelineCreatorBase(vkState, renderPass, vertShader, fragShader, 2u) {
     }
 
     void createDescriptorPool() override;

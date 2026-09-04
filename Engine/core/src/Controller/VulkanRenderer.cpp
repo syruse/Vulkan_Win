@@ -100,8 +100,9 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_pipelineCreators[POST_FXAA].reset(new PipelineCreatorQuad(*this, m_renderPassFXAA, "vert_fxaa.spv", "frag_fxaa.spv",
                                                                 &this->_colorBuffer, PipelineCreatorQuad::BLEND::NONE, true,
                                                                 m_pushConstantRange, true));
+    // subpass of SEMI_TRANSPARENT
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
-                                                                   "frag_particle.spv", 0u, m_pushConstantRange));
+                                                                   "frag_particle.spv", 1u, m_pushConstantRange));
     m_pipelineCreators[SEMI_TRANSPARENT].reset(new PipelineCreatorSemiTransparent(
         *this, m_renderPassSemiTrans, "vert_semi_transparent.spv", "frag_semi_transparent.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[OIT_RESOLVE].reset(
@@ -1516,6 +1517,22 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSemiTransInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
+        // Foliage forward pass: depth-tested and depth-written directly to the scene color, so
+        // particles behind it fail the depth test in the next subpass regardless of draw order.
+        for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
+            if (!m_semiTransparentModels[meshIndex]->isReady()) {
+                continue;  // still streaming in on the background loader thread
+            }
+            const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
+            vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                               sizeof(PushConstant), &_pushConstant);
+            const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
+            m_semiTransparentModels[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
+        }
+    }
+
+    vkCmdNextSubpass(_cmdBufs[currentImage], VK_SUBPASS_CONTENTS_INLINE);
+    {
         const auto& pipelineCreator = m_pipelineCreators[PARTICLE];
         vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
                            sizeof(PushConstant), &_pushConstant);
@@ -1524,18 +1541,6 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
                 particle->draw(_cmdBufs[currentImage], currentImage);
             }
         }
-    }
-
-    for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
-        if (!m_semiTransparentModels[meshIndex]->isReady()) {
-            continue;  // still streaming in on the background loader thread
-        }
-        // TODO
-        const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
-        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
-                           sizeof(PushConstant), &_pushConstant);
-        const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
-        m_semiTransparentModels[meshIndex]->draw(_cmdBufs[currentImage], currentImage, dynamicOffset);
     }
 
     vkCmdNextSubpass(_cmdBufs[currentImage], VK_SUBPASS_CONTENTS_INLINE);
@@ -2959,31 +2964,43 @@ void VulkanRenderer::createRenderPass() {
     depthAttachmentSemiTransReference.attachment = 3;
     depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference motionVectorAttachmentRef{2u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference opaqueColorReference{4u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
     std::array<VkAttachmentReference, 3> oitColorAttachments{};
     oitColorAttachments[0].attachment = 0u;
     oitColorAttachments[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     oitColorAttachments[1].attachment = 1u;
     oitColorAttachments[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    oitColorAttachments[2].attachment = 2u;
-    oitColorAttachments[2].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    oitColorAttachments[2] = motionVectorAttachmentRef;
     std::array<VkAttachmentReference, 2> oitInputs{};
     oitInputs[0].attachment = 0u;
     oitInputs[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     oitInputs[1].attachment = 1u;
     oitInputs[1].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkAttachmentReference opaqueColorReference{4u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    std::array<VkSubpassDescription, 2> subpassesSemiTrans{};
-    // Subpass 0: accumulate all transparent fragments into order-independent color and revealage buffers.
+
+    // Foliage is alpha-tested (effectively opaque), not genuine order-independent transparency, so it no
+    // longer shares the OIT accum/revealage buffers with particles (see semi_transparent.frag). It draws
+    // directly to the scene color with real depth test+write in its own subpass before the OIT ones, so a
+    // particle actually hidden behind it is rejected by the depth test regardless of draw order.
+    std::array<VkAttachmentReference, 2> foliageColorAttachments{opaqueColorReference, motionVectorAttachmentRef};
+    std::array<VkSubpassDescription, 3> subpassesSemiTrans{};
+    // Subpass 0: foliage forward pass, depth-tested and depth-written directly onto the opaque scene color.
     subpassesSemiTrans[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassesSemiTrans[0].colorAttachmentCount = static_cast<uint32_t>(oitColorAttachments.size());
-    subpassesSemiTrans[0].pColorAttachments = oitColorAttachments.data();
+    subpassesSemiTrans[0].colorAttachmentCount = static_cast<uint32_t>(foliageColorAttachments.size());
+    subpassesSemiTrans[0].pColorAttachments = foliageColorAttachments.data();
     subpassesSemiTrans[0].pDepthStencilAttachment = &depthAttachmentSemiTransReference;
-    // Subpass 1: resolve accumulated transparency and composite it over the opaque scene color.
+    // Subpass 1: accumulate genuinely soft transparent fragments (particles/smoke only) into OIT buffers.
     subpassesSemiTrans[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassesSemiTrans[1].colorAttachmentCount = 1u;
-    subpassesSemiTrans[1].pColorAttachments = &opaqueColorReference;
-    subpassesSemiTrans[1].inputAttachmentCount = static_cast<uint32_t>(oitInputs.size());
-    subpassesSemiTrans[1].pInputAttachments = oitInputs.data();
+    subpassesSemiTrans[1].colorAttachmentCount = static_cast<uint32_t>(oitColorAttachments.size());
+    subpassesSemiTrans[1].pColorAttachments = oitColorAttachments.data();
+    subpassesSemiTrans[1].pDepthStencilAttachment = &depthAttachmentSemiTransReference;
+    // Subpass 2: resolve accumulated transparency and composite it over the opaque scene color.
+    subpassesSemiTrans[2].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassesSemiTrans[2].colorAttachmentCount = 1u;
+    subpassesSemiTrans[2].pColorAttachments = &opaqueColorReference;
+    subpassesSemiTrans[2].inputAttachmentCount = static_cast<uint32_t>(oitInputs.size());
+    subpassesSemiTrans[2].pInputAttachments = oitInputs.data();
 
     VkAttachmentDescription opaqueColorAttachment = colorAttachment;
     opaqueColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -2993,16 +3010,28 @@ void VulkanRenderer::createRenderPass() {
         oitAccumAttachment, oitRevealageAttachment, motionVectorsAttachmentSemiTrans, depthAttachmentSemiTrans,
         opaqueColorAttachment};
 
-    std::array<VkSubpassDependency, 3u> dependencySemiTrans{};
-    // Make the opaque depth buffer readable before transparent fragments perform depth testing.
+    std::array<VkSubpassDependency, 5u> dependencySemiTrans{};
+    // Make the opaque depth buffer readable before the foliage forward pass performs depth testing.
     dependencySemiTrans[0] = {VK_SUBPASS_EXTERNAL, 0u, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                               VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT, VK_DEPENDENCY_BY_REGION_BIT};
+    // Foliage's(leaves) depth write and motion-vector write must be visible before particles test/write them.
+    dependencySemiTrans[1] = {0u, 1u,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+                              VK_DEPENDENCY_BY_REGION_BIT};
+    // Foliage's(leaves) write to the opaque scene color must complete before the resolve subpass blends over it.
+    dependencySemiTrans[2] = {0u, 2u, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+                              VK_DEPENDENCY_BY_REGION_BIT};
     // Make OIT accumulation writes visible to the resolve subpass input attachments.
-    dependencySemiTrans[1] = {0u, 1u, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    dependencySemiTrans[3] = {1u, 2u, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, VK_DEPENDENCY_BY_REGION_BIT};
     // Make the resolved color visible to FXAA, DLSS, XeSS, or other later sampling passes.
-    dependencySemiTrans[2] = {1u, VK_SUBPASS_EXTERNAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    dependencySemiTrans[4] = {2u, VK_SUBPASS_EXTERNAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                               VK_ACCESS_SHADER_READ_BIT, VK_DEPENDENCY_BY_REGION_BIT};
 

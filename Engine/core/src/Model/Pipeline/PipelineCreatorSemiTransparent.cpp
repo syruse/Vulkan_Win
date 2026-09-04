@@ -43,34 +43,27 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 3;  // OIT accumulation + revealage + motion vectors
+    blendInfo.attachmentCount = 2;  // Scene color + motion vectors (no longer feeds the OIT accum/revealage buffers)
     auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
-    // Accumulate weighted transparent color and weight from every fragment.
     blendAttachments[0].blendEnable = VK_TRUE;
-    blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
     blendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
     blendAttachments[1] = blendAttachments[0];
-    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
-    blendAttachments[1].srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-    blendAttachments[1].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachments[1].srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    blendAttachments[1].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachments[2] = blendAttachments[0];
+    blendAttachments[1].blendEnable = VK_FALSE;
     // Motion vectors are written directly and must not be blended with prior values.
-    blendAttachments[2].blendEnable = VK_FALSE;
-    blendAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
 
     auto& raster = Pipeliner::getInstance().getRasterizationInfo();
     raster.cullMode = VK_CULL_MODE_NONE;
 
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;
-    // Foliage is now alpha-tested (opaque), not blended, so depth write must stay on:
-    // otherwise overlapping leaf layers all pass the depth test and get additively
-    // averaged together in the OIT accum/revealage buffers, producing a gray haze
-    // instead of the nearest leaf occluding the ones behind it.
+    // Foliage draws in its own subpass before particles, with real depth write, so overlapping leaf
+    // layers occlude each other and particles behind it fail the depth test in the next subpass.
     depthStencil.depthWriteEnable = VK_TRUE;
     
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._offscreenWidth, m_vkState._offscreenHeight,
