@@ -46,6 +46,7 @@ static constexpr float Z_FAR = 1000.0f;
 static constexpr float CAMERA_Z_FAR = 2500.0f;
 static constexpr float FOV = 65.0f;
 static constexpr float XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA = 0.00001f;
+static constexpr float NPC_CORNER_OFFSET = 720.0f;
 
 #if defined(USE_DLSS) && USE_DLSS
 namespace {
@@ -72,7 +73,9 @@ float _footPrintRedrawingK = 0.7f;
 VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, uint16_t windowHeight)
     : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
-    mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, CAMERA_Z_FAR}, {0.0f, 55.0f, -130.0f}) {
+      mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, CAMERA_Z_FAR},
+                      {-NPC_CORNER_OFFSET, 55.0f, -NPC_CORNER_OFFSET - 130.0f},
+                      {-NPC_CORNER_OFFSET, 0.0f, -NPC_CORNER_OFFSET}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
@@ -131,10 +134,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
         }
     }
 
+    const std::vector<Instance> tankInstances(NPC_TANK_COUNT + 1u);
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "TankHull.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
-                                       {}, nullptr, false));
+                                       tankInstances, nullptr, false));
 
     // barrel of the panzer: the tank splitted into hull + barrel models.
     // It currently inherits tank transform and then adds an extra yaw from Q/E.
@@ -142,7 +146,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "TankBarrel.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
-                                       {}, nullptr, false));
+                                       tankInstances, nullptr, false));
+
+    m_npcTanks[0].position = glm::vec3(-NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET);
+    m_npcTanks[1].position = glm::vec3(NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET);
+    m_npcTanks[2].position = glm::vec3(NPC_CORNER_OFFSET, 0.0f, -NPC_CORNER_OFFSET);
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<float> positionDistribution(-0.72f * Z_FAR, 0.72f * Z_FAR);
@@ -217,7 +225,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline,
                                         INTERIOR_CUBE_HALF_EXTENT, m_interiorCubeInstances));
     m_projectileModelIndex = static_cast<uint32_t>(m_models.size());
-    m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline, PROJECTILE_RADIUS));
+    m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline, PROJECTILE_RADIUS,
+                                          24u, 16u, std::vector<Instance>(NPC_TANK_COUNT + 1u)));
 
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
@@ -276,6 +285,20 @@ VulkanRenderer::~VulkanRenderer() {
             delete m_btProjectileBody->getMotionState();
             delete m_btProjectileBody;
             m_btProjectileBody = nullptr;
+        }
+
+        for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+            btRigidBody* body = m_btNpcTankBodies[npcIndex];
+            if (!body) {
+                continue;
+            }
+            if (m_npcTanks[npcIndex].alive) {
+                m_btDynamicsWorld->removeRigidBody(body);
+            }
+            delete body->getMotionState();
+            delete body;
+            m_btNpcTankBodies[npcIndex] = nullptr;
+            m_npcTanks[npcIndex].body = nullptr;
         }
 
         for (auto* body : m_btBoundaryBodies) {
@@ -769,17 +792,33 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
+    // we don't need the translation matrix since we use posShift 
+    // that's why we cast (mat4(mat3(...)) to keep the rotation only
     Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace);
     pModel->prevModel = pModel->model;
-    pModel->model = model;
-    pModel->MVP = mViewProj.viewProj * pModel->model;
+    pModel->model = glm::mat4(glm::mat3(model));
+    pModel->MVP = mViewProj.viewProj * model;
+
+    const glm::vec3 tankHullPos = mCamera.targetPos();
+    auto& hullInstances = m_models[0]->instances();
+    assert(!hullInstances.empty());
+    if (!hullInstances.empty()) {
+        hullInstances[0].posShift = tankHullPos;
+    }
 
     // Barrel placeholder follows tank transform, but rotates by independent Q/E yaw.
     if (m_barrelModelIndex < objectsAmount) {
         Model* pBarrel = (Model*)((uint64_t)mp_modelTransferSpace + (m_barrelModelIndex * _modelUniformAlignment));
+        const glm::mat4 barrelModel = mCamera.barrelModelMat();
         pBarrel->prevModel = pBarrel->model;
-        pBarrel->model = mCamera.barrelModelMat();
-        pBarrel->MVP = mViewProj.viewProj * pBarrel->model;
+        pBarrel->model = glm::mat4(glm::mat3(barrelModel));
+        pBarrel->MVP = mViewProj.viewProj * barrelModel;
+
+        auto& barrelInstances = m_models[m_barrelModelIndex]->instances();
+        assert(!barrelInstances.empty());
+        if (!barrelInstances.empty()) {
+            barrelInstances[0].posShift = tankHullPos;
+        }
     }
 
     if (m_projectileModelIndex < objectsAmount && m_btProjectileBody) {
@@ -1980,6 +2019,21 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
         m_btProjectileBody->setCcdSweptSphereRadius(PROJECTILE_RADIUS * 0.7f);
         m_btProjectileBody->setActivationState(DISABLE_DEACTIVATION);
         m_btDynamicsWorld->addRigidBody(m_btProjectileBody);
+
+        m_projectiles.resize(NPC_TANK_COUNT);
+        for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+            btDefaultMotionState* npcMotionState = new btDefaultMotionState(startTransform);
+            btRigidBody::btRigidBodyConstructionInfo npcBodyInfo(mass, npcMotionState, sphereShape, localInertia);
+            btRigidBody* npcProjectile = new btRigidBody(npcBodyInfo);
+            npcProjectile->setRestitution(0.95f);
+            npcProjectile->setFriction(0.4f);
+            npcProjectile->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
+            npcProjectile->setCcdMotionThreshold(0.01f);
+            npcProjectile->setCcdSweptSphereRadius(PROJECTILE_RADIUS * 0.7f);
+            npcProjectile->setActivationState(DISABLE_DEACTIVATION);
+            m_btDynamicsWorld->addRigidBody(npcProjectile);
+            m_projectiles[npcIndex] = {npcProjectile, npcIndex + 1u, {}, false};
+        }
     }
 
     // Four long perimeter walls block the tank and reflect the projectile.
@@ -2072,6 +2126,231 @@ void VulkanRenderer::createTankPhysicsBodyIfReady() {
     m_tankPhysicsInitialized = true;
 }
 
+void VulkanRenderer::createNpcTankPhysicsBodiesIfReady() {
+    if (m_npcTankPhysicsInitialized || !m_btDynamicsWorld || !m_models[0]->isReady()) {
+        return;
+    }
+
+    const btScalar halfWidth = m_models[0]->radius() / 2.0f;
+    const btScalar halfHeight = m_models[0]->radius() / 4.0f;
+    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+        btCollisionShape* shape = new btBoxShape(btVector3(halfWidth, halfHeight, halfWidth));
+        m_btCollisionShapes.push_back(shape);
+
+        btTransform transform;
+        transform.setIdentity();
+        const glm::vec3& position = m_npcTanks[npcIndex].position;
+        transform.setOrigin(btVector3(position.x, position.y, position.z));
+        btDefaultMotionState* motionState = new btDefaultMotionState(transform);
+        btRigidBody::btRigidBodyConstructionInfo bodyInfo(0.0f, motionState, shape, btVector3(0.0f, 0.0f, 0.0f));
+        btRigidBody* body = new btRigidBody(bodyInfo);
+        body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+        body->setActivationState(DISABLE_DEACTIVATION);
+        m_btDynamicsWorld->addRigidBody(body);
+        m_btNpcTankBodies[npcIndex] = body;
+        m_npcTanks[npcIndex].body = body;
+    }
+
+    m_npcTankPhysicsInitialized = true;
+    syncNpcTankVisuals();
+}
+
+void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
+    if (!m_npcTankPhysicsInitialized || deltaTimeSeconds <= 0.0f) {
+        return;
+    }
+
+    constexpr float moveSpeed = 35.0f;
+    constexpr float turnSpeed = 1.6f;
+    const auto squaredDistance = [](const glm::vec3& first, const glm::vec3& second) {
+        const glm::vec3 delta = first - second;
+        return glm::dot(delta, delta);
+    };
+    // std::sin(angle) and std::cos(angle) convert the angle into a point on the unit circle.
+    // std::atan2(y, x) reconstructs the angle from that point.
+    // The result is always in the range [-pi, pi], approximately [-180, 180] degrees.
+    //
+    // Current angle: 179 degrees
+    // Target angle: -179 degrees
+    // Naive difference: -179 - 179 = -358 degrees
+    // In reality, the NPC only needs to turn +2 degrees. wrapAngle converts -358 degrees
+    // to +2 degrees, allowing the tank to take the shortest path.
+    const auto wrapAngle = [](float radians) {
+        return std::atan2(std::sin(radians), std::cos(radians));
+    };
+    const glm::vec3 playerPosition = mCamera.targetPos();
+    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+        NpcTankState& npc = m_npcTanks[npcIndex];
+        if (!npc.alive || !npc.body) {
+            continue;
+        }
+
+        glm::vec3 targetPosition = playerPosition;
+        float nearestDistanceSquared = squaredDistance(npc.position, playerPosition);
+        for (uint32_t otherIndex = 0u; otherIndex < NPC_TANK_COUNT; ++otherIndex) {
+            if (otherIndex == npcIndex || !m_npcTanks[otherIndex].alive) {
+                continue;
+            }
+            const float distanceSquared = squaredDistance(npc.position, m_npcTanks[otherIndex].position);
+            if (distanceSquared < nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                targetPosition = m_npcTanks[otherIndex].position;
+            }
+        }
+
+        const glm::vec2 targetOffset(targetPosition.x - npc.position.x, targetPosition.z - npc.position.z);
+        const float targetYaw = std::atan2(targetOffset.x, targetOffset.y);
+        const float yawDelta = wrapAngle(targetYaw - npc.hullYaw);
+        npc.hullYaw += glm::clamp(yawDelta, -turnSpeed * deltaTimeSeconds, turnSpeed * deltaTimeSeconds);
+        npc.turretYaw = wrapAngle(targetYaw - npc.hullYaw);
+
+        const glm::vec3 forward(std::sin(npc.hullYaw), 0.0f, std::cos(npc.hullYaw));
+        if (nearestDistanceSquared > 260.0f * 260.0f) {
+            const glm::vec3 nextPosition = npc.position + forward * moveSpeed * deltaTimeSeconds;
+            if (!intersectsBoundary(nextPosition, m_models[0]->radius() * 0.4f)) {
+                npc.position = nextPosition;
+            }
+        }
+
+        btTransform transform;
+        transform.setIdentity();
+        transform.setOrigin(btVector3(npc.position.x, npc.position.y, npc.position.z));
+        transform.setRotation(btQuaternion(btVector3(0.0f, 1.0f, 0.0f), npc.hullYaw));
+        npc.body->getMotionState()->setWorldTransform(transform);
+        npc.body->setWorldTransform(transform);
+        npc.body->activate(true);
+
+        ProjectileState& projectile = m_projectiles[npcIndex];
+        const auto now = std::chrono::steady_clock::now();
+        if (npc.shellCount > 0u && now >= npc.reloadDeadline && !projectile.active) {
+            const glm::vec3 barrelForward(std::sin(npc.hullYaw + npc.turretYaw), 0.0f,
+                                          std::cos(npc.hullYaw + npc.turretYaw));
+            const glm::vec3 spawnPosition = npc.position + barrelForward *
+                (m_models[0]->radius() * 0.7f + PROJECTILE_RADIUS + 6.0f) + glm::vec3(0.0f, 18.0f, 0.0f);
+            btTransform projectileTransform;
+            projectileTransform.setIdentity();
+            projectileTransform.setOrigin(btVector3(spawnPosition.x, spawnPosition.y, spawnPosition.z));
+            projectile.body->getMotionState()->setWorldTransform(projectileTransform);
+            projectile.body->setWorldTransform(projectileTransform);
+            projectile.body->setInterpolationWorldTransform(projectileTransform);
+            projectile.body->setLinearVelocity(
+                btVector3(barrelForward.x * PROJECTILE_SPEED, barrelForward.y * PROJECTILE_SPEED,
+                          barrelForward.z * PROJECTILE_SPEED));
+            projectile.body->clearForces();
+            projectile.body->activate(true);
+            projectile.expiry = now + PROJECTILE_TIMEOUT;
+            projectile.active = true;
+            npc.reloadDeadline = now + PROJECTILE_TIMEOUT;
+            --npc.shellCount;
+        }
+    }
+}
+
+void VulkanRenderer::syncNpcTankVisuals() {
+    if (m_models.size() <= m_barrelModelIndex) {
+        return;
+    }
+
+    auto& hullInstances = m_models[0]->instances();
+    auto& barrelInstances = m_models[m_barrelModelIndex]->instances();
+    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+        const uint32_t instanceIndex = npcIndex + 1u;
+        const NpcTankState& npc = m_npcTanks[npcIndex];
+        if (instanceIndex >= hullInstances.size() || instanceIndex >= barrelInstances.size()) {
+            continue;
+        }
+
+        const glm::mat4 hullRotation = glm::rotate(npc.hullYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::mat4 barrelRotation = glm::rotate(npc.hullYaw + npc.turretYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+        hullInstances[instanceIndex].posShift = npc.alive ? npc.position : glm::vec3(0.0f, -2000.0f, 0.0f);
+        barrelInstances[instanceIndex].posShift = hullInstances[instanceIndex].posShift;
+        hullInstances[instanceIndex].model_col0 = glm::packHalf4x16(hullRotation[0]);
+        hullInstances[instanceIndex].model_col1 = glm::packHalf4x16(hullRotation[1]);
+        hullInstances[instanceIndex].model_col2 = glm::packHalf4x16(hullRotation[2]);
+        hullInstances[instanceIndex].model_col3 = glm::packHalf4x16(hullRotation[3]);
+        barrelInstances[instanceIndex].model_col0 = glm::packHalf4x16(barrelRotation[0]);
+        barrelInstances[instanceIndex].model_col1 = glm::packHalf4x16(barrelRotation[1]);
+        barrelInstances[instanceIndex].model_col2 = glm::packHalf4x16(barrelRotation[2]);
+        barrelInstances[instanceIndex].model_col3 = glm::packHalf4x16(barrelRotation[3]);
+    }
+}
+
+void VulkanRenderer::resolveProjectileHits() {
+    const auto now = std::chrono::steady_clock::now();
+    const auto manifoldHasContact = [](const btPersistentManifold* manifold) {
+        for (int contactIndex = 0; contactIndex < manifold->getNumContacts(); ++contactIndex) {
+            if (manifold->getContactPoint(contactIndex).getDistance() <= 0.0f) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto deactivate = [](btRigidBody* body) {
+        body->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
+        body->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+    };
+
+    const int manifoldCount = m_btDynamicsWorld->getDispatcher()->getNumManifolds();
+    const auto applyHit = [this, &deactivate, &manifoldHasContact](btRigidBody* projectileBody, uint32_t ownerTankIndex,
+                                                                     bool& active,
+                                                                     const std::function<void()>& deactivateProjectile) {
+        for (int manifoldIndex = 0; manifoldIndex < m_btDynamicsWorld->getDispatcher()->getNumManifolds(); ++manifoldIndex) {
+            const btPersistentManifold* manifold =
+                m_btDynamicsWorld->getDispatcher()->getManifoldByIndexInternal(manifoldIndex);
+            if (!manifoldHasContact(manifold)) {
+                continue;
+            }
+            const btCollisionObject* otherBody = manifold->getBody0() == projectileBody ? manifold->getBody1()
+                                                                                           : manifold->getBody0();
+            if (manifold->getBody0() != projectileBody && manifold->getBody1() != projectileBody) {
+                continue;
+            }
+
+            // An NPC projectile hit the player's main tank.
+            if (ownerTankIndex != 0u && otherBody == m_btTankBody) {
+                m_tankHealth = std::max(0.0f, m_tankHealth - 10.0f);
+            } else {
+                // The player's or an NPC's projectile hit an NPC tank.
+                bool hitNpc = false;
+                for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+                    if (ownerTankIndex == npcIndex + 1u || otherBody != m_btNpcTankBodies[npcIndex] ||
+                        !m_npcTanks[npcIndex].alive) {
+                        continue;
+                    }
+                    m_npcTanks[npcIndex].health = std::max(0.0f, m_npcTanks[npcIndex].health - 10.0f);
+                    m_npcTanks[npcIndex].alive = m_npcTanks[npcIndex].health > 0.0f;
+                    if (!m_npcTanks[npcIndex].alive) {
+                        m_btDynamicsWorld->removeRigidBody(m_btNpcTankBodies[npcIndex]);
+                    }
+                    hitNpc = true;
+                    break;
+                }
+                if (!hitNpc) {
+                    continue;
+                }
+            }
+
+            active = false;
+            deactivate(projectileBody);
+            deactivateProjectile();
+            return;
+        }
+    };
+
+    if (m_btProjectileBody && now < m_projectileTimeoutDeadline) {
+        bool playerProjectileActive = true;
+        applyHit(m_btProjectileBody, 0u, playerProjectileActive, [this, now]() {
+            m_projectileTimeoutDeadline = now;
+        });
+    }
+    for (ProjectileState& projectile : m_projectiles) {
+        if (projectile.active) {
+            applyHit(projectile.body, projectile.ownerTankIndex, projectile.active, []() {});
+        }
+    }
+    syncNpcTankVisuals();
+}
+
 bool VulkanRenderer::allModelsReady() const {
     for (const auto& model : m_models) {
         if (!model->isReady()) {
@@ -2096,25 +2375,41 @@ void VulkanRenderer::syncProjectileVisualFromPhysics() {
         return;
     }
 
-    if (!m_btProjectileBody || std::chrono::steady_clock::now() >= m_projectileTimeoutDeadline) {
-        // Keep projectile hidden until a shot is active.
-        projectileInstances[0].posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
-        return;
-    }
+    const auto syncInstance = [&projectileInstances](uint32_t instanceIndex, btRigidBody* body, bool active) {
+        if (instanceIndex >= projectileInstances.size() || !body || !active) {
+            if (instanceIndex < projectileInstances.size()) {
+                projectileInstances[instanceIndex].posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
+            }
+            return;
+        }
 
-    const btTransform& t = m_btProjectileBody->getWorldTransform();
-    const btVector3& p = t.getOrigin();
-    projectileInstances[0].posShift = glm::vec3(p.x(), p.y(), p.z());
-    const btQuaternion q = t.getRotation();
-    const glm::mat4 rotation = glm::mat4_cast(glm::quat(q.w(), q.x(), q.y(), q.z()));
-    projectileInstances[0].prev_model_col0 = projectileInstances[0].model_col0;
-    projectileInstances[0].prev_model_col1 = projectileInstances[0].model_col1;
-    projectileInstances[0].prev_model_col2 = projectileInstances[0].model_col2;
-    projectileInstances[0].prev_model_col3 = projectileInstances[0].model_col3;
-    projectileInstances[0].model_col0 = glm::packHalf4x16(rotation[0]);
-    projectileInstances[0].model_col1 = glm::packHalf4x16(rotation[1]);
-    projectileInstances[0].model_col2 = glm::packHalf4x16(rotation[2]);
-    projectileInstances[0].model_col3 = glm::packHalf4x16(rotation[3]);
+        const btTransform& transform = body->getWorldTransform();
+        const btVector3& position = transform.getOrigin();
+        Instance& instance = projectileInstances[instanceIndex];
+        instance.posShift = glm::vec3(position.x(), position.y(), position.z());
+        const btQuaternion rotationQ = transform.getRotation();
+        const glm::mat4 rotation = glm::mat4_cast(glm::quat(rotationQ.w(), rotationQ.x(), rotationQ.y(), rotationQ.z()));
+        instance.prev_model_col0 = instance.model_col0;
+        instance.prev_model_col1 = instance.model_col1;
+        instance.prev_model_col2 = instance.model_col2;
+        instance.prev_model_col3 = instance.model_col3;
+        instance.model_col0 = glm::packHalf4x16(rotation[0]);
+        instance.model_col1 = glm::packHalf4x16(rotation[1]);
+        instance.model_col2 = glm::packHalf4x16(rotation[2]);
+        instance.model_col3 = glm::packHalf4x16(rotation[3]);
+    };
+
+    const auto now = std::chrono::steady_clock::now();
+    syncInstance(0u, m_btProjectileBody, now < m_projectileTimeoutDeadline);
+    for (uint32_t npcIndex = 0u; npcIndex < m_projectiles.size(); ++npcIndex) {
+        ProjectileState& projectile = m_projectiles[npcIndex];
+        if (projectile.active && now >= projectile.expiry) {
+            projectile.active = false;
+            projectile.body->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
+            projectile.body->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+        }
+        syncInstance(npcIndex + 1u, projectile.body, projectile.active);
+    }
 
     /// NOTE: not needed right now
     ///const btVector3 v = m_btProjectileBody->getLinearVelocity();
@@ -2333,6 +2628,7 @@ bool VulkanRenderer::renderScene() {
 
     // Tank input/collision needs its mesh's radius(); skip entirely until it's finished streaming in.
     createTankPhysicsBodyIfReady();
+    createNpcTankPhysicsBodiesIfReady();
     if (m_models[0]->isReady()) {
     const float tankCollisionRadius = m_models[0]->radius() * 0.4f;
     const glm::vec3 upAxis(0.0f, 1.0f, 0.0f);
@@ -2554,24 +2850,9 @@ bool VulkanRenderer::renderScene() {
         }
 
         const float deltaSec = deltaTime * 0.001f;
+        updateNpcTanks(deltaSec);
         m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
-
-        if (m_btProjectileBody && m_btTankBody && std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) {
-            const int manifoldCount = m_btDynamicsWorld->getDispatcher()->getNumManifolds();
-            for (int manifoldIndex = 0; manifoldIndex < manifoldCount; ++manifoldIndex) {
-                const btPersistentManifold* manifold = m_btDynamicsWorld->getDispatcher()->getManifoldByIndexInternal(manifoldIndex);
-                const bool projectileHitTank =
-                    (manifold->getBody0() == m_btProjectileBody && manifold->getBody1() == m_btTankBody) ||
-                    (manifold->getBody0() == m_btTankBody && manifold->getBody1() == m_btProjectileBody);
-                if (projectileHitTank && manifold->getNumContacts() > 0) {
-                    m_tankHealth = std::max(0.0f, m_tankHealth - 10.0f);
-                    m_projectileTimeoutDeadline = std::chrono::steady_clock::now();
-                    m_btProjectileBody->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
-                    m_btProjectileBody->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
-                    break;
-                }
-            }
-        }
+        resolveProjectileHits();
 
         // After Bullet step, propagate projectile body transform into render instance data.
         syncProjectileVisualFromPhysics();

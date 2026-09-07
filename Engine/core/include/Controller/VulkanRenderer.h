@@ -35,6 +35,8 @@ inline constexpr float PROJECTILE_SPEED = 390.0f;
 inline constexpr std::chrono::seconds PROJECTILE_TIMEOUT{8};
 // Half-height of a tree's cylinder collider (also used to derive its visual base position).
 inline constexpr float TREE_HALF_HEIGHT = 60.0f;
+inline constexpr uint32_t NPC_TANK_COUNT = 3u;
+inline constexpr uint32_t NPC_SHELL_COUNT = 8u;
 
 class btDefaultCollisionConfiguration;
 class btCollisionDispatcher;
@@ -52,6 +54,24 @@ struct TreeFallState {
     float axisZ = 0.0f;
     float angle  = 0.0f;      // current tipping angle [0 .. PI/2]
     bool  falling = false;
+};
+
+struct NpcTankState {
+    glm::vec3 position{0.0f};
+    float hullYaw{0.0f};
+    float turretYaw{0.0f};
+    float health{100.0f};
+    uint32_t shellCount{NPC_SHELL_COUNT};
+    std::chrono::steady_clock::time_point reloadDeadline{};
+    btRigidBody* body{nullptr};
+    bool alive{true};
+};
+
+struct ProjectileState {
+    btRigidBody* body{nullptr};
+    uint32_t ownerTankIndex{0u};
+    std::chrono::steady_clock::time_point expiry{};
+    bool active{false};
 };
 
 class VulkanRenderer : public VulkanState {
@@ -117,6 +137,10 @@ private:
     void syncInteriorCubesVisualFromPhysics();
     /// Spawn/launch projectile from tank muzzle if no active projectile exists.
     void tryFireProjectile();
+    void createNpcTankPhysicsBodiesIfReady();
+    void updateNpcTanks(float deltaTimeSeconds);
+    void syncNpcTankVisuals();
+    void resolveProjectileHits();
     /// Check if a sphere at position/radius intersects any static boundary cube.
     bool intersectsBoundary(const glm::vec3& position, float radius) const;
     /// Creates the tank's kinematic Bullet body once its mesh has finished streaming in (needs radius()).
@@ -157,6 +181,7 @@ private:
     btRigidBody* m_btTankBody{nullptr};
     // Dynamic rigid body of the fired sphere; reused between shots.
     btRigidBody* m_btProjectileBody{nullptr};
+    std::array<btRigidBody*, NPC_TANK_COUNT> m_btNpcTankBodies{};
     // Static rigid bodies matching visual perimeter cubes.
     std::vector<btRigidBody*> m_btBoundaryBodies{};
     std::vector<btRigidBody*> m_btInteriorCubeBodies{};
@@ -174,6 +199,8 @@ private:
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
     float m_tankHealth{100.0f};
     uint32_t m_shellCount{10u};
+    std::array<NpcTankState, NPC_TANK_COUNT> m_npcTanks{};
+    std::vector<ProjectileState> m_projectiles{};
 
     // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this
     // thread while the render loop starts immediately; joined in the destructor before teardown.
@@ -181,6 +208,7 @@ private:
     std::atomic<bool> m_runtimeAssetsReady{false};
     // Tank's Bullet body needs model->radius(), only known once its mesh finished streaming in.
     bool m_tankPhysicsInitialized{false};
+    bool m_npcTankPhysicsInitialized{false};
 
     std::unique_ptr<AudioManager> m_audioManager;
 
