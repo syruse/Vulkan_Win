@@ -61,7 +61,7 @@ sl::float4x4 toSLRowMajor(const glm::mat4& m) {
 #endif
 
 // light source position offset from the camera
-const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, -Z_FAR);
+const static glm::vec3 _lightPos = glm::vec3(0.0f, 0.6f * Z_FAR, Z_FAR);
 // clear depth buffer only once and then we accumulate trails of the vehicle
 static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
@@ -953,8 +953,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // We "jump" the light source only when the projection moved to the next texel shadow map.
     // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
-    const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
-    if (glm::distance(glm::vec3(_pushConstant.lightPos), snappedLightPos) > 0.0f) {
+    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.5f * texelSize) {
+        const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
         _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
     }
 
@@ -2140,7 +2140,8 @@ void VulkanRenderer::createTankPhysicsBodyIfReady() {
 }
 
 void VulkanRenderer::createNpcTankPhysicsBodiesIfReady() {
-    if (m_npcTankPhysicsInitialized || !m_btDynamicsWorld || !m_models[0]->isReady()) {
+    if (!m_runtimeAssetsReady.load(std::memory_order_acquire) || m_npcTankPhysicsInitialized || !m_btDynamicsWorld ||
+        !m_models[0]->isReady() || m_projectiles.size() < NPC_TANK_COUNT) {
         return;
     }
 
@@ -2169,7 +2170,7 @@ void VulkanRenderer::createNpcTankPhysicsBodiesIfReady() {
 }
 
 void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
-    if (!m_npcTankPhysicsInitialized || deltaTimeSeconds <= 0.0f) {
+    if (!m_npcTankPhysicsInitialized || deltaTimeSeconds <= 0.0f || m_projectiles.size() < NPC_TANK_COUNT) {
         return;
     }
 
@@ -2235,7 +2236,7 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
 
         ProjectileState& projectile = m_projectiles[npcIndex];
         const auto now = std::chrono::steady_clock::now();
-        if (npc.shellCount > 0u && now >= npc.reloadDeadline && !projectile.active) {
+        if (projectile.body && npc.shellCount > 0u && now >= npc.reloadDeadline && !projectile.active) {
             const glm::vec3 barrelForward(std::sin(npc.hullYaw + npc.turretYaw), 0.0f,
                                           std::cos(npc.hullYaw + npc.turretYaw));
             const glm::vec3 spawnPosition = npc.position + barrelForward *
@@ -2780,7 +2781,7 @@ bool VulkanRenderer::renderScene() {
         m_btTankBody->activate(true);
     }
 
-    if (!isGamePaused && m_btDynamicsWorld && deltaTime > 0.0f) {
+    if (!isGamePaused && m_runtimeAssetsReady.load(std::memory_order_acquire) && m_btDynamicsWorld && deltaTime > 0.0f) {
         // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
         const glm::vec3 tankPos = mCamera.targetPos();
         glm::vec3 projectilePos(0.0f);

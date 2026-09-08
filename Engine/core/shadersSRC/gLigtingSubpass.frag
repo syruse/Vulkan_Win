@@ -44,6 +44,7 @@ const float contrastSSAOFactor = 7;
 const float bloomThreshold = 1.5;
 const float bloomIntensity = 0.35;
 const float specularIntensity = 0.15;
+const float shadowCompareSoftness = 0.0025;
 
 
 float getShading(vec3 world, float bias)
@@ -59,19 +60,28 @@ float getShading(vec3 world, float bias)
         return 1.0;
     }
     
-    // calculate average shading basing on nearest pixels
+    // Weighted 5x5 PCF hides isolated unstable shadow texels on nearly flat surfaces.
     float shadow = 0.0;
+    float weightSum = 0.0;
     vec2 texelSize = 1.0 / textureSize(inputShadowMap, 0);
-    for(int x = -1; x <= 1; ++x)
+    for(int x = -2; x <= 2; ++x)
     {
-        for(int y = -1; y <= 1; ++y)
+        for(int y = -2; y <= 2; ++y)
         {
             float pcfDepth = texture(inputShadowMap, normalizedCoords.xy + vec2(x, y) * texelSize).r;
-            // check whether current frag pos is in shadow
-            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;        
-        }    
+            // gives more weight to central samples and less to distant ones.
+            // x = -2 -> 3 - abs(-2) = 1
+            // x = -1 -> 3 - abs(-1) = 2
+            // x =  0 -> 3 - abs( 0) = 3
+            // x =  1 -> 3 - abs( 1) = 2
+            // x =  2 -> 3 - abs( 2) = 1
+            float weight = float((3 - abs(x)) * (3 - abs(y)));
+            // Smooth the depth compare so borderline self-shadowing fades instead of flickering on/off.
+            shadow += smoothstep(pcfDepth, pcfDepth + shadowCompareSoftness, currentDepth - bias) * weight;
+            weightSum += weight;
+        }
     }
-    shadow /= 9.0;
+    shadow /= weightSum;
 
     return 1.0 - shadow;
 }
@@ -134,6 +144,19 @@ void main()
 		// Blinn-Phong lighting model calculation
         vec3 lightDir   = normalize(pushConstant.lightPos - world);
 		vec3 viewDir    = normalize(pushConstant.cameraPos - world);
+        // normal -> for lighting/specular, can be bump/normal-map
+        // shadowNormal -> for shadow bias, must be geometrically stable because normal is noisy for shadow bias
+        // dFdx(world) — how the world changes to the adjacent pixel to the right on the screen.
+        // Reconstruct the geometric surface normal from world-position derivatives.
+        // This avoids using bump/normal-map details for shadow bias.
+        // even without a bump map, the G-buffer normal is usually an interpolated vertex normal. 
+        // It can be smoothed between edges. Meanwhile, the shadowNormal from dFdx/dFdy(world) is closer to 
+        // the actual screen-space surface/face normal.
+        vec3 shadowNormal = normalize(cross(dFdx(world), dFdy(world)));
+        // cross(dFdx(world), dFdy(world)) may give normal in the opposite direction depending on the orientation of the coordinates/projection/screen Y
+        if (dot(shadowNormal, normal) < 0.0) {
+            shadowNormal = -shadowNormal;
+        }
 		
 		vec3 specInputDir = vec3(0.0);
 		// Blinn-Phong
@@ -148,7 +171,7 @@ void main()
 		
 		// if the surface would have a steep angle to the light source, the shadows may still display shadow acne
 		// the bias based on dot product of normal and lightDir will solve this issue
-		float bias = max(0.47 * (1.0 - dot(normal, normalize(lightDir))), 0.14);
+        float bias = max(0.47 * (1.0 - dot(shadowNormal, lightDir)), 0.14);
         float shading = clamp(getShading(world, bias), softShadingFactor, 1.0);
 		
 		vec4 final_color = vec4(1.0);
