@@ -37,9 +37,10 @@ out VS_OUT {
 } vs_out;
 
 void main() {
-	// 'dynamicUBO.model' not used, instead we have per instance animation model 'instanceModelMat'
-	// 'dynamicUBO.model' is more accurate for and used for the first instance (gl_InstanceIndex == 0)
-    mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3);
+	// 'dynamicUBO.model' is more accurate and can be used for the first instance (gl_InstanceIndex == 0)
+    // mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3);
+    // but logic becomes inconsistent and more error prone
+    mat4 instanceModelMat = mat4(model_col0, model_col1, model_col2, model_col3);
     // Always go through the universal viewProj (not the per-instance-baked dynamicUBO.MVP): MVP bakes in
     // instance 0's (player) model matrix, so reusing it for other instances (e.g. NPC tanks) would apply
     // the player's rotation/translation on top of their already-correct world-space position.

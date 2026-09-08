@@ -786,9 +786,6 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->prevModel = pModel->model;
         pModel->model = identityMatrix;
-        // Flag: position/rotation come from posShift+instance matrix, not from this model matrix.
-        // [3][3] is always 1.0 in a valid affine matrix and otherwise unused, so it's a safe slot for this flag.
-        pModel->model[3][3] = 0.0f;
         pModel->MVP = mViewProj.viewProj;
     }
     // set target model matrix from Camera for our main 3d model
@@ -800,9 +797,20 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     pModel->MVP = mViewProj.viewProj * model;
 
     const glm::vec3 tankHullPos = mCamera.targetPos();
+    // we don't use translation matrix instead of this we have unique posShift per instance
+    // that's why we get rid of translation matrix and keep only rotation.
+    const glm::mat4 tankHullRotation = glm::mat4(glm::mat3(model));
     auto& hullInstances = m_models[0]->instances();
     assert(!hullInstances.empty());
     if (!hullInstances.empty()) {
+        hullInstances[0].prev_model_col0 = hullInstances[0].model_col0;
+        hullInstances[0].prev_model_col1 = hullInstances[0].model_col1;
+        hullInstances[0].prev_model_col2 = hullInstances[0].model_col2;
+        hullInstances[0].prev_model_col3 = hullInstances[0].model_col3;
+        hullInstances[0].model_col0 = glm::packHalf4x16(tankHullRotation[0]);
+        hullInstances[0].model_col1 = glm::packHalf4x16(tankHullRotation[1]);
+        hullInstances[0].model_col2 = glm::packHalf4x16(tankHullRotation[2]);
+        hullInstances[0].model_col3 = glm::packHalf4x16(tankHullRotation[3]);
         hullInstances[0].posShift = tankHullPos;
     }
 
@@ -817,6 +825,15 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         auto& barrelInstances = m_models[m_barrelModelIndex]->instances();
         assert(!barrelInstances.empty());
         if (!barrelInstances.empty()) {
+            const glm::mat4 barrelRotation = glm::mat4(glm::mat3(barrelModel));
+            barrelInstances[0].prev_model_col0 = barrelInstances[0].model_col0;
+            barrelInstances[0].prev_model_col1 = barrelInstances[0].model_col1;
+            barrelInstances[0].prev_model_col2 = barrelInstances[0].model_col2;
+            barrelInstances[0].prev_model_col3 = barrelInstances[0].model_col3;
+            barrelInstances[0].model_col0 = glm::packHalf4x16(barrelRotation[0]);
+            barrelInstances[0].model_col1 = glm::packHalf4x16(barrelRotation[1]);
+            barrelInstances[0].model_col2 = glm::packHalf4x16(barrelRotation[2]);
+            barrelInstances[0].model_col3 = glm::packHalf4x16(barrelRotation[3]);
             barrelInstances[0].posShift = tankHullPos;
         }
     }
@@ -827,8 +844,6 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         const btQuaternion q = m_btProjectileBody->getWorldTransform().getRotation();
         pProjectile->prevModel = pProjectile->model;
         pProjectile->model = glm::mat4_cast(glm::quat(q.w(), q.x(), q.y(), q.z()));
-        // Flag: position comes from posShift, only rotation is carried by this model matrix.
-        pProjectile->model[3][3] = 0.0f;
         pProjectile->MVP = mViewProj.viewProj;
     }
 
@@ -905,15 +920,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         Model* pModel = (Model*)((uint64_t)mp_modelTransferSpace + (i * _modelUniformAlignment));
         pModel->prevModel = pModel->model;
         pModel->model = firstTreeModelMat;
-        // The crown also gets its position from posShift, so preserve only its rotation like the trunk.
-        pModel->model[3][3] = 0.0f;
         pModel->MVP = mViewProj.viewProj;
     }
     Model* pTreeTrunk = (Model*)((uint64_t)mp_modelTransferSpace + (m_treeTrunkModelIndex * _modelUniformAlignment));
     pTreeTrunk->prevModel = pTreeTrunk->model;
     pTreeTrunk->model = firstTreeModelMat;
-    // Flag: position comes from posShift, only rotation is carried by this model matrix.
-    pTreeTrunk->model[3][3] = 0.0f;
     pTreeTrunk->MVP = mViewProj.viewProj;
     } else {
         // Trees not loaded yet: keep their slots as a valid (identity) transform instead of leaving
@@ -933,14 +944,18 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     glm::vec3 tankPos = mCamera.targetPos();
     glm::vec3 desiredLightPos = tankPos + _lightPos;
 
-    // We "jump" the light source only when the tank moves significantly (10% of Z_FAR).
+    // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
+    const float shadowSide = Z_FAR * 1.1f;
+    // Shadow map resolution is _shadowMapWidthAndHeight (8000x8000).
+    // Texel snapping aligns the light frustum to the shadow map grid to prevent sub-texel flickering.
+    // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
+    float texelSize = (shadowSide * 2.0f) / _shadowMapWidthAndHeight;
+
+    // We "jump" the light source only when the projection moved to the next texel shadow map.
     // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
-    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
-        // Shadow map resolution is _shadowMapWidthAndHeight (8000x8000).
-        // Texel snapping aligns the light frustum to the shadow map grid to prevent sub-texel flickering.
-        // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
-        float texelSize = (Z_FAR * 2.2f) / _shadowMapWidthAndHeight;
-        _pushConstant.lightPos = glm::vec4(glm::floor(desiredLightPos / texelSize) * texelSize, _pushConstant.lightPos.w);
+    const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
+    if (glm::distance(glm::vec3(_pushConstant.lightPos), snappedLightPos) > 0.0f) {
+        _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
     }
 
     // We keep a constant direction vector: from -1000 to +1000 in Z (length 3500).
@@ -948,8 +963,6 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f, -_lightPos.y, -_lightPos.z)) * (Z_FAR * 3.5f);
     glm::vec3 target = glm::vec3(_pushConstant.lightPos) + lightDir;
 
-    // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
-    const float shadowSide = Z_FAR * 1.1f;
     m_lightViewProj =
         // from light source to center(sqrt{900^2 + 1000^2} = ~1345+)
         // Far=4000 is sufficient, to cover the distance to the tank and the terrain beyond it.

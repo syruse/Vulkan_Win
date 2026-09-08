@@ -25,9 +25,7 @@ layout(location = 9) in vec4 model_col2;
 layout(location = 10) in vec4 model_col3;
 
 void main() {
-    // 'dynamicUBO.model' not used, instead we have per instance animation model 'instanceModelMat'
-    // 'dynamicUBO.model' is more accurate for and used for the first instance (gl_InstanceIndex == 0)  
-    mat4 instanceModelMat = gl_InstanceIndex == 0 ? dynamicUBO.model : mat4(model_col0, model_col1, model_col2, model_col3); // it's too resource intensive to have mat4 for each instance, it takes ~5fps
+    mat4 instanceModelMat = mat4(model_col0, model_col1, model_col2, model_col3); // it's too resource intensive to have mat4 for each instance, it takes ~5fps
     vec4 origin_pos = instanceModelMat * vec4(scale * inPosition, 1.0);
 	vec3 pos = origin_pos.xyz + posShift;
     gl_Position = uboViewProjection.lightViewProj * vec4(pos, 1.0f);
