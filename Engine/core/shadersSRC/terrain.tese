@@ -23,6 +23,35 @@ layout(set = 0, binding = 2) uniform UBOViewProjectionObject {
 
 // bump the terrain geometry by vehicle wheels
 #define FOOTPRINT_DISPLACEMENT -3
+// Adjacent samples are taken not 1 texel away, but 3 texels away from the center. This means the blur is wider and the edges are softer.
+#define FOOTPRINT_EDGE_SOFTNESS_TEXELS 3.0
+
+// Samples the footprint mask with a soft edge so terrain displacement matches color fading.
+float sampleFootPrintAmount(vec2 uv)
+{
+    vec2 texel = FOOTPRINT_EDGE_SOFTNESS_TEXELS / vec2(textureSize(footPrintDepth, 0));
+
+    float depth = 0.0;
+    // 3x3 weighted kernel for soft blurring
+    // 0.05  0.10  0.05
+    // 0.10  0.40  0.10
+    // 0.05  0.10  0.05
+    // The sum is 1.0, meaning the brightness/depth remained unchanged on average;
+    // the center remained dominant, meaning the footprint wouldn't become too blurry;
+    // the neighboring edges softened the edge of the footprint mask;
+    // the diagonals has a lesser effect, ensuring the smoothing was rounded but not excessive.
+    depth += texture(footPrintDepth, uv).r * 0.40;
+    depth += texture(footPrintDepth, uv + vec2(-texel.x,  0.0)).r * 0.10;
+    depth += texture(footPrintDepth, uv + vec2( texel.x,  0.0)).r * 0.10;
+    depth += texture(footPrintDepth, uv + vec2( 0.0, -texel.y)).r * 0.10;
+    depth += texture(footPrintDepth, uv + vec2( 0.0,  texel.y)).r * 0.10;
+    depth += texture(footPrintDepth, uv + vec2(-texel.x, -texel.y)).r * 0.05;
+    depth += texture(footPrintDepth, uv + vec2( texel.x, -texel.y)).r * 0.05;
+    depth += texture(footPrintDepth, uv + vec2(-texel.x,  texel.y)).r * 0.05;
+    depth += texture(footPrintDepth, uv + vec2( texel.x,  texel.y)).r * 0.05;
+
+    return clamp(1.0 - depth, 0.0, 1.0);
+}
  
 void main()
 {
@@ -34,7 +63,7 @@ void main()
  
     vec4 position = gl_TessCoord.x * gl_in[0].gl_Position + gl_TessCoord.y * gl_in[1].gl_Position + gl_TessCoord.z * gl_in[2].gl_Position;
 	
-	float footPrintFactor = 1.0 - texture(footPrintDepth, outTexCoordNormalized).r;
+    float footPrintFactor = sampleFootPrintAmount(outTexCoordNormalized);
 	position.y += FOOTPRINT_DISPLACEMENT * footPrintFactor;
 	
     gl_Position = uboViewProjection.viewProj * position;
