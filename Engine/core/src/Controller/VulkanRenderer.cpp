@@ -21,6 +21,7 @@
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <random>
@@ -1670,7 +1671,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
                 renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
 
                 vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-                _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+                _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
                 vkCmdEndRenderPass(_cmdBufs[currentImage]);
             }
         }
@@ -1688,7 +1689,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             renderPassUIInfo.renderArea.extent = {_windowWidth, _windowHeight};
             renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
             vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
             vkCmdEndRenderPass(_cmdBufs[currentImage]);
         }
     }
@@ -1749,7 +1750,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
 
             vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage]);
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
             vkCmdEndRenderPass(_cmdBufs[currentImage]);
         }
     }
@@ -2286,6 +2287,55 @@ void VulkanRenderer::syncNpcTankVisuals() {
         barrelInstances[instanceIndex].model_col1 = glm::packHalf4x16(barrelRotation[1]);
         barrelInstances[instanceIndex].model_col2 = glm::packHalf4x16(barrelRotation[2]);
         barrelInstances[instanceIndex].model_col3 = glm::packHalf4x16(barrelRotation[3]);
+    }
+}
+
+void VulkanRenderer::drawNpcHealthBars() {
+    if (m_models.empty() || !m_models[0]->isReady() || _windowWidth == 0u || _windowHeight == 0u) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const float tankRadius = m_models[0]->radius();
+    const float barWidth = 72.0f;
+    const float barHeight = 9.0f;
+    const float barYOffset = tankRadius * 0.75f + 28.0f;
+
+    for (const NpcTankState& npc : m_npcTanks) {
+        if (!npc.alive || npc.health <= 0.0f) {
+            continue;
+        }
+
+        const glm::vec4 clip = mViewProj.viewProj * glm::vec4(npc.position + glm::vec3(0.0f, barYOffset, 0.0f), 1.0f);
+        // NPC is outside the view frustum, if we divide by w we can get NaN, comparing NaN will always return false
+        if (clip.w <= 0.001f) {
+            continue;
+        }
+
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.x < -1.05f || ndc.x > 1.05f || ndc.y < -1.05f || ndc.y > 1.05f || ndc.z < 0.0f || ndc.z > 1.0f) {
+            continue;
+        }
+
+        const ImVec2 center((ndc.x * 0.5f + 0.5f) * static_cast<float>(_windowWidth),
+                            (ndc.y * 0.5f + 0.5f) * static_cast<float>(_windowHeight));
+        const ImVec2 barMin(center.x - barWidth * 0.5f, center.y - barHeight * 0.5f);
+        const ImVec2 barMax(center.x + barWidth * 0.5f, center.y + barHeight * 0.5f);
+        const float healthK = glm::clamp(npc.health / 100.0f, 0.0f, 1.0f);
+        const ImVec2 fillMax(barMin.x + barWidth * healthK, barMax.y);
+
+        drawList->AddRectFilled(ImVec2(barMin.x - 1.0f, barMin.y - 1.0f), ImVec2(barMax.x + 1.0f, barMax.y + 1.0f),
+                                IM_COL32(8, 11, 10, 205), 2.0f);
+        drawList->AddRectFilled(barMin, barMax, IM_COL32(92, 17, 18, 220), 1.0f);
+        drawList->AddRectFilled(barMin, fillMax, IM_COL32(38, 196, 82, 235), 1.0f);
+        drawList->AddRect(barMin, barMax, IM_COL32(232, 244, 226, 210), 1.0f);
+
+        char healthText[16]{};
+        std::snprintf(healthText, sizeof(healthText), "%d", static_cast<int>(std::round(npc.health)));
+        const ImVec2 textSize = ImGui::CalcTextSize(healthText);
+        const ImVec2 textPos(center.x - textSize.x * 0.5f, barMin.y - textSize.y - 2.0f);
+        drawList->AddText(ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), IM_COL32(0, 0, 0, 220), healthText);
+        drawList->AddText(textPos, IM_COL32(245, 252, 239, 255), healthText);
     }
 }
 

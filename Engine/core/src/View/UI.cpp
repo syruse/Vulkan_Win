@@ -1,7 +1,7 @@
 #include "UI.h"
 #include <imgui/imgui.h>
 
-const UI::States& UI::updateAndDraw() {
+const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float hudWidth = 440.0f;
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
@@ -175,6 +175,10 @@ const UI::States& UI::updateAndDraw() {
         ImGui::End();
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(2);
+    }
+
+    if (drawOverlay) {
+        drawOverlay();
     }
 
     ImGui::Render();

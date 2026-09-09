@@ -140,6 +140,7 @@ private:
     void createNpcTankPhysicsBodiesIfReady();
     void updateNpcTanks(float deltaTimeSeconds);
     void syncNpcTankVisuals();
+    void drawNpcHealthBars();
     void resolveProjectileHits();
     /// Check if a sphere at position/radius intersects any static boundary cube.
     bool intersectsBoundary(const glm::vec3& position, float radius) const;

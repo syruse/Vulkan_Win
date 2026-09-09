@@ -67,13 +67,12 @@ void XCBControl::init() {
     Utils::printLog(INFO_PARAM, "SDL window created");
 }
 
-void XCBControl::imGuiNewFrame(VkCommandBuffer command_buffer) {
+void XCBControl::imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay) {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    m_windowQueueMsg.hmiStates = &mUi.updateAndDraw();
-    ImGui::Render();
+    m_windowQueueMsg.hmiStates = &mUi.updateAndDraw(drawOverlay);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }
 

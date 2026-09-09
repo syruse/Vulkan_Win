@@ -1,6 +1,7 @@
 #pragma once
 
 #include <volk.h>
+#include <functional>
 #include <string>
 #include "UI.h"
 
@@ -63,7 +64,7 @@ public:
 
     virtual WindowQueueMSG processWindowQueueMSGs() = 0;
 
-    virtual void imGuiNewFrame(VkCommandBuffer command_buffer) = 0;
+    virtual void imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay = {}) = 0;
 
     // Shown as a centered "Loading..." overlay by the UI while background model streaming is in progress.
     void setLoading(bool isLoading) {

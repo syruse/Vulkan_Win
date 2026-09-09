@@ -3,6 +3,7 @@
 #include <utility>
 #include <array>
 #include <cstdint>
+#include <functional>
 
 enum class UpscalerType   : uint8_t { None = 0, DLSS, XESS };
 enum class UpscalerPreset : uint8_t { NativeAA = 0, UltraQuality, Quality, Balanced, Performance, UltraPerformance };
@@ -43,7 +44,7 @@ public:
 
     constexpr UI() : m_resolutions(kResolutions) {}
 
-    const States& updateAndDraw();
+    const States& updateAndDraw(const std::function<void()>& drawOverlay = {});
 
     // Toggles the centered "Loading..." overlay drawn on top of the menu while models stream in.
     void setLoading(bool isLoading) {

@@ -26,7 +26,7 @@ public:
     virtual WindowQueueMSG processWindowQueueMSGs() override;
 
 private:
-    virtual void imGuiNewFrame(VkCommandBuffer command_buffer) override;
+    virtual void imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay = {}) override;
 
 private:
     HINSTANCE m_hinstance;

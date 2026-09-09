@@ -21,7 +21,7 @@ public:
 
     virtual WindowQueueMSG processWindowQueueMSGs() override;
 
-    virtual void imGuiNewFrame(VkCommandBuffer command_buffer) override;
+    virtual void imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay = {}) override;
 
 private:
     SDL_Window* m_window{nullptr};

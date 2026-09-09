@@ -88,12 +88,12 @@ void Win32Control::init() {
     ShowWindow(m_hwnd, SW_SHOWMAXIMIZED);
 }
 
-void Win32Control::imGuiNewFrame(VkCommandBuffer command_buffer) {
+void Win32Control::imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay) {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    _windowQueueMsg.hmiStates = &mUi.updateAndDraw();
+    _windowQueueMsg.hmiStates = &mUi.updateAndDraw(drawOverlay);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }
 
