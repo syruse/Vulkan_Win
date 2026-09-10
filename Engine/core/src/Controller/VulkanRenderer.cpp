@@ -1042,9 +1042,6 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     if (SurfaceCaps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
         SwapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     }
-    if (SurfaceCaps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
-        SwapChainCreateInfo.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    }
     SwapChainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     SwapChainCreateInfo.imageArrayLayers = 1;
     SwapChainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -1947,22 +1944,23 @@ void VulkanRenderer::loadModels() {
     // (heaviest asset). Mip levels are generated on the CPU (box filter) and uploaded as plain
     // copies, so no vkCmdBlitImage / main-thread graphics-queue involvement is needed even on a
     // pure DMA transfer queue.
-    m_backgroundLoadThread = std::thread([this]() {
+    const bool useTransferQueue = _core.hasDedicatedTransferQueue();
+    m_backgroundLoadThread = std::thread([this, useTransferQueue]() {
         if (m_models.size() >= 2u) {
-            m_models[m_models.size() - 2u]->init(/*useTransferQueue=*/true);  // terrain
-            m_models[m_models.size() - 1u]->init(/*useTransferQueue=*/true);  // skybox
+            m_models[m_models.size() - 2u]->init(useTransferQueue);  // terrain
+            m_models[m_models.size() - 1u]->init(useTransferQueue);  // skybox
         }
         for (size_t i = 0u; i + 2u < m_models.size(); ++i) {
-            m_models[i]->init(/*useTransferQueue=*/true);
+            m_models[i]->init(useTransferQueue);
         }
         for (auto& model : m_semiTransparentModels) {
-            model->init(/*useTransferQueue=*/true);
+            model->init(useTransferQueue);
         }
         for (auto& particle : m_particles) {
-            particle->init(/*useTransferQueue=*/true);
+            particle->init(useTransferQueue);
         }
         InitializeBulletPhysicsBodies();
-        if (_core.getTransferQueueFamily() != _core.getQueueFamily()) {
+        if (useTransferQueue) {
             registerTransferOwnershipCallback([this]() {
                 m_runtimeAssetsReady.store(true, std::memory_order_release);
             });
@@ -1970,6 +1968,14 @@ void VulkanRenderer::loadModels() {
             m_runtimeAssetsReady.store(true, std::memory_order_release);
         }
     });
+
+    // No dedicated transfer queue family: the "transfer" queue is the same VkQueue as the graphics
+    // one (or otherwise not truly parallel), so background loading would race the render thread's
+    // per-frame submissions on that same queue. Join immediately so it runs to completion before the
+    // render loop starts submitting, instead of actually running concurrently.
+    if (!useTransferQueue) {
+        m_backgroundLoadThread.join();
+    }
 }
 
 void VulkanRenderer::InitializeBulletPhysicsBodies() {

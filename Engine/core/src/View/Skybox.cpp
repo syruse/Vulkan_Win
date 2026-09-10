@@ -51,7 +51,7 @@ void Skybox::init(bool useTransferQueue) {
 	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), cmdBufPool, queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
                                    m_generalBufferMemory);
-	if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+	if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
 		Utils::VulkanReleaseBufferOwnership(p_devide, queue, cmdBufPool, m_generalBuffer,
 											m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
 		m_vkState.registerTransferBufferOwnership(m_generalBuffer);

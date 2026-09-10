@@ -1,0 +1,44 @@
+#version 450
+
+// Box-filter downsample: reads one mip level and writes the next one, one layer per z-slice
+// so cubemaps/texture arrays are handled in a single dispatch alongside plain 2D textures.
+
+// The work group size is 8×8×1 threads. 
+// Each thread processes one texel of the resulting mip level. 
+// The dispatch operation (vkCmdDispatch) must cover dstWidth × dstHeight × layerCount, 
+// rounded up to the nearest multiple of 8.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform readonly image2DArray srcMip;
+layout(binding = 1, rgba8) uniform writeonly image2DArray dstMip;
+
+layout(push_constant) uniform PushConsts {
+    ivec2 srcSize;
+    ivec2 dstSize;
+} pc;
+
+void main() {
+    // gl_GlobalInvocationID — the global thread index (x, y, z), 
+    // accounting for work-group size and the number of groups. 
+    // Here, x and y are the texel coordinates in the target mip level, 
+    // and z is the index of the array layer or cubemap face.
+    ivec3 dstCoord = ivec3(gl_GlobalInvocationID);
+    // Culling excess threads: since the dispatch size is rounded up to a multiple of 8, 
+    // some threads may fall outside the actual mipmap dimensions 
+    // (for example, a 3×3 mip is still dispatched using 8×8 groups)—these "excess" threads simply exit without writing.
+    if (dstCoord.x >= pc.dstSize.x || dstCoord.y >= pc.dstSize.y) {
+        return;
+    }
+
+    const ivec2 maxSrcCoord = pc.srcSize - ivec2(1); // max pixels indices
+    const ivec2 base = dstCoord.xy * 2;
+    ivec2 c00 = min(base, maxSrcCoord);
+    ivec2 c10 = min(base + ivec2(1, 0), maxSrcCoord);
+    ivec2 c01 = min(base + ivec2(0, 1), maxSrcCoord);
+    ivec2 c11 = min(base + ivec2(1, 1), maxSrcCoord);
+
+    vec4 sum = imageLoad(srcMip, ivec3(c00, dstCoord.z)) + imageLoad(srcMip, ivec3(c10, dstCoord.z)) +
+               imageLoad(srcMip, ivec3(c01, dstCoord.z)) + imageLoad(srcMip, ivec3(c11, dstCoord.z));
+
+    imageStore(dstMip, dstCoord, sum * 0.25);
+}

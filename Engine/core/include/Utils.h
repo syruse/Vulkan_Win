@@ -113,10 +113,22 @@ VkShaderModule VulkanCreateShaderModule(VkDevice device, std::string_view fileNa
 
 VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
                            VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
-                           VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U, uint32_t arrayLayers = 1U);
+                           VkDeviceMemory& imageMemory, uint32_t mipLevels = 1U, uint32_t arrayLayers = 1U,
+                           VkImageCreateFlags extraFlags = 0U);
 
 void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufPool, VkImage image, VkFormat imageFormat,
                            int16_t texWidth, int16_t texHeight, uint8_t mipLevels, uint8_t layersAmount = 1u);
+
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+// Same contract as VulkanGenerateMipmaps but downsamples via a compute shader (box filter) instead of
+// vkCmdBlitImage. Requires the image to have been created with VK_IMAGE_USAGE_STORAGE_BIT and
+// VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT so a UNORM storage view can alias the (possibly SRGB) sampled format.
+// queueSupportsFragmentShaderStage: false for a queue family without GRAPHICS_BIT (e.g. an async-compute-
+// only transfer family), since FRAGMENT_SHADER isn't a valid barrier stage there.
+void VulkanGenerateMipmapsGPGPU(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+                                VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels,
+                                uint32_t layersAmount = 1u, bool queueSupportsFragmentShaderStage = true);
+#endif
 
 void VulkanImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout,
                               VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t mipLevels, uint32_t layersCount,
@@ -128,9 +140,11 @@ void VulkanTransitionImageLayout(VkDevice device, VkQueue queue, VkCommandPool c
                                  VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t mipLevels = 1U,
                                  uint32_t layersCount = 1U, bool queueSupportsFragmentShaderStage = true);
 
+/// @viewUsage: we set explicitly flags to exclude STORAGE_BIT usage for the SRGB sampled view
+/// otherwise it inherits the usage flags from the underlying image, which may include STORAGE_BIT.
 VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask,
                                VkImageView& imageView, uint32_t mipLevels = 1U, VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D,
-                               uint32_t layersCount = 1U);
+                               uint32_t layersCount = 1U, VkImageUsageFlags viewUsage = 0);
 
 bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling,
                                VkFormatFeatureFlags features, VkFormat& ret_format);

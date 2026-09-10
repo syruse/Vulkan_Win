@@ -7,6 +7,7 @@ option(USE_CUDA "Use CUDA" ON)
 option(USE_FSR "Use FSR" OFF)
 option(USE_DLSS "Use DLSS" ON)
 option(USE_XESS "Use XeSS" ON)
+option(USE_GPGPU_MIPMAP_GEN "Use GPGPU for mipmap generation" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -216,6 +217,10 @@ target_compile_definitions(${APP_NAME} PRIVATE
 	GLM_FORCE_RADIANS
 	GLM_FORCE_DEPTH_ZERO_TO_ONE  # coerce the perspective projection matrix to be in depth: [0.0 to 1.0]
 )
+
+if(USE_GPGPU_MIPMAP_GEN)
+    target_compile_definitions(${APP_NAME} PRIVATE USE_GPGPU_MIPMAP_GEN=1)
+endif()
 
 target_link_libraries(${APP_NAME} 
     imgui

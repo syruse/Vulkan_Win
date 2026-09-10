@@ -90,7 +90,7 @@ void SphereModel::init(bool useTransferQueue) {
 
     Utils::createGeneralBuffer(pDevice, m_vkState._core.getPhysDevice(), cmdBufPool, queue, indices,
                                vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
-    if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+    if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
         Utils::VulkanReleaseBufferOwnership(pDevice, queue, cmdBufPool, m_generalBuffer,
                                             m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
         m_vkState.registerTransferBufferOwnership(m_generalBuffer);

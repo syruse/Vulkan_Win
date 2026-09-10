@@ -98,6 +98,26 @@ public:
                m_queues.at(Queue_family::GFX_QUEUE_FAMILY).familyIndex;
     }
 
+    // False for an async-compute-only transfer family (TRANSFER + COMPUTE, no GRAPHICS): FRAGMENT_SHADER
+    // isn't a valid pipeline barrier stage on a queue family without GRAPHICS_BIT.
+    bool transferQueueSupportsGraphics() const {
+        const int family = m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex;
+        const VkQueueFlags flags = m_physDevices.m_qFamilyProps[m_gfxDevIndex][family].queueFlags;
+        return (flags & VK_QUEUE_GRAPHICS_BIT) != 0;
+    }
+
+    // False for a dedicated DMA-only / async-compute-only transfer queue family: those don't support
+    // the GRAPHICS_BIT stages (e.g. FRAGMENT_SHADER) that the rest of the upload pipeline relies on
+    // after mip generation, so GPGPU mip generation is only safe when the "transfer" queue actually
+    // fell back to sharing the graphics-capable queue family.
+    // Note: familyIndex is never -1 here — createLogicalDevice() always resolves the fallback to the
+    // graphics family before this can be called.
+    bool transferQueueSupportsCompute() const {
+        const int family = m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex;
+        const VkQueueFlags flags = m_physDevices.m_qFamilyProps[m_gfxDevIndex][family].queueFlags;
+        return (flags & VK_QUEUE_COMPUTE_BIT) != 0;
+    }
+
     VkInstance getInstance() const {
         return m_inst;
     }

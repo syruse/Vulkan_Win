@@ -234,7 +234,7 @@ public:
 
 protected:
     void publishReadyAfterTransfer(bool useTransferQueue) {
-        if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+        if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
             m_vkState.registerTransferOwnershipCallback([this]() {
                 m_isReady.store(true, std::memory_order_release);
             });

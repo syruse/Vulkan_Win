@@ -8,6 +8,11 @@
 #include <stb_image.h>
 
 static constexpr VkFormat IMAGE_FORMAT = VK_FORMAT_R8G8B8A8_SRGB;
+// When USE_GPGPU_MIPMAP_GEN is on, the underlying image also carries STORAGE_BIT (for the compute-shader
+// mip generation UNORM alias view). VK_FORMAT_R8G8B8A8_SRGB itself doesn't support storage image usage on
+// most hardware, so this SRGB sampled view must explicitly restrict its own usage to what it actually needs.
+static constexpr VkImageUsageFlags TEXTURE_VIEW_USAGE =
+    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 TextureFactory::TextureFactory(const VulkanState& vulkanState) noexcept(true) : m_vkState(vulkanState) {
     mTextureDeleter = [this](TextureFactory::Texture* p) {
@@ -66,7 +71,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::createCubeTexture(const s
         }
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
                                          VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, 1U, VK_IMAGE_VIEW_TYPE_CUBE,
-                                         textureFileNames.size()) != VK_SUCCESS) {
+                                         textureFileNames.size(), TEXTURE_VIEW_USAGE) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create cubic texture imageView ");
         }
 
@@ -109,7 +114,7 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DArrayTexture(std:
         VkImageViewType viewType = isArrayView ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
                                          VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, texture->mipLevels,
-                                         viewType, filePaths.size()) != VK_SUCCESS) {
+                                         viewType, filePaths.size(), TEXTURE_VIEW_USAGE) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create 2DArray texture imageView ");
         }
 
@@ -143,8 +148,8 @@ std::weak_ptr<TextureFactory::Texture> TextureFactory::create2DTexture(std::stri
             Utils::printLog(ERROR_PARAM, "failed to create texture image ");
         }
         if (Utils::VulkanCreateImageView(m_vkState._core.getDevice(), texture->m_textureImage, IMAGE_FORMAT,
-                                         VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView,
-                                         texture->mipLevels) != VK_SUCCESS) {
+                                         VK_IMAGE_ASPECT_COLOR_BIT, texture->m_textureImageView, texture->mipLevels,
+                                         VK_IMAGE_VIEW_TYPE_2D, 1U, TEXTURE_VIEW_USAGE) != VK_SUCCESS) {
             Utils::printLog(ERROR_PARAM, "failed to create texture imageView ");
         }
 
@@ -249,9 +254,19 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
     outTexture.mipLevels = mipLevels;
 
     res = VulkanCreateImage(device, physicalDevice, texWidth, texHeight, IMAGE_FORMAT, VK_IMAGE_TILING_OPTIMAL,
-                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+                                | VK_IMAGE_USAGE_STORAGE_BIT
+#endif
+                            ,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outTexture.m_textureImage, outTexture.m_textureImageMemory,
-                            mipLevels, texturesAmount);
+                            mipLevels, texturesAmount
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+                            // EXTENDED_USAGE is required alongside MUTABLE_FORMAT: STORAGE_BIT isn't supported by the
+                            // SRGB base format itself, only by the UNORM alias view created for the compute shader.
+                            , VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+#endif
+                            );
 
     VulkanTransitionImageLayout(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, VK_IMAGE_LAYOUT_UNDEFINED,
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
@@ -283,24 +298,73 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                         VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, texturesAmount);
         } else {
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+            VulkanGenerateMipmapsGPGPU(device, physicalDevice, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
+                                      texWidth, texHeight, mipLevels, static_cast<uint32_t>(texturesAmount));
+#else
             // Check if the format supports linear blitting before asking the GPU to do it.
             VkFormatProperties formatProperties{};
             vkGetPhysicalDeviceFormatProperties(physicalDevice, IMAGE_FORMAT, &formatProperties);
             if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
                 Utils::printLog(ERROR_PARAM, "texture image format does not support linear blitting!");
             }
-
             VulkanGenerateMipmaps(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, texWidth, texHeight,
                                  mipLevels, texturesAmount);
+#endif
         }
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
         return res;
-    } else {
-        // Pure DMA / transfer queue: vkCmdBlitImage isn't available there, so the whole mip chain is
-        // generated on the CPU (box filter) instead and uploaded as plain per-level copies.
+    }
+
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+    // Only safe without a queue-family ownership transfer when the "transfer" queue actually shares the
+    // graphics family (no dedicated DMA-only/async-compute engine on this GPU). A genuinely separate
+    // async-compute family (transferQueueSupportsCompute() true but hasDedicatedTransferQueue() true)
+    // falls through to the CPU path below, which already does the cross-family ownership transfer.
+    if (is_miplevelsEnabling && !m_vkState._core.hasDedicatedTransferQueue() &&
+        m_vkState._core.transferQueueSupportsCompute()) {
+        // "Transfer" queue actually shares the graphics-capable queue family (no dedicated DMA-only
+        // engine on this GPU): upload the base level only and let the compute shader derive the rest,
+        // same as the graphics-queue path, instead of computing the whole chain on the CPU.
+        const VkDeviceSize layerSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4u;
+        const VkDeviceSize imageSizeTotal = layerSize * texturesAmount;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        VulkanCreateBuffer(device, physicalDevice, imageSizeTotal, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
+                           stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, imageSizeTotal, 0, &data);
+        for (std::size_t i = 0; i < texturesAmount; ++i) {
+            memcpy(static_cast<char*>(data) + layerSize * i, textureData[i].get(), static_cast<size_t>(layerSize));
+        }
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        VulkanCopyBufferToImage(device, queue, cmdBufPool, stagingBuffer, outTexture.m_textureImage,
+                                static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), texturesAmount);
+
+        VulkanGenerateMipmapsGPGPU(device, physicalDevice, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
+                                  texWidth, texHeight, mipLevels, static_cast<uint32_t>(texturesAmount));
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        // transferQueueSupportsCompute() guarantees this queue family is the graphics-capable one,
+        // so no cross-family ownership transfer is needed and the image is already left in
+        // SHADER_READ_ONLY_OPTIMAL by VulkanGenerateMipmapsGPGPU.
+        return res;
+    }
+#endif
+
+    {
+        // Pure DMA-only transfer queue (or USE_GPGPU_MIPMAP_GEN disabled): vkCmdBlitImage/compute
+        // shaders aren't available there, so the whole mip chain is generated on the CPU (box filter)
+        // instead and uploaded as plain per-level copies.
         // Unlike the Blit path (which only stages mip0 and lets the GPU derive the rest), we must
         // allocate the staging buffer for ALL mip levels up front since nothing generates them on GPU.
         std::vector<int> mipWidths(mipLevels), mipHeights(mipLevels);

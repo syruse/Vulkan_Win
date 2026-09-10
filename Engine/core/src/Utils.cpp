@@ -552,7 +552,7 @@ void VulkanCheckValidationLayerSupport() {
 
 VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
                            VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
-                           VkDeviceMemory& imageMemory, uint32_t mipLevels, uint32_t arrayLayers) {
+                           VkDeviceMemory& imageMemory, uint32_t mipLevels, uint32_t arrayLayers, VkImageCreateFlags extraFlags) {
     VkResult res;
 
     VkImageCreateInfo imageInfo{};
@@ -569,8 +569,9 @@ VkResult VulkanCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uin
     imageInfo.usage = usage;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.flags = extraFlags;
     if (arrayLayers == 6u) {
-        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
 
     res = vkCreateImage(device, &imageInfo, nullptr, &image);
@@ -824,12 +825,195 @@ void VulkanGenerateMipmaps(VkDevice device, VkQueue queue, VkCommandPool cmdBufP
     VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
 }
 
+#if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
+namespace {
+// UNORM view of the (possibly SRGB) sampled format: storage images don't support SRGB formats on most
+// hardware, and the image was created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT so this aliasing is legal
+// (same bit layout / format compatibility class as the sampled format).
+constexpr VkFormat GPGPU_MIPMAP_STORAGE_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+}  // namespace
+
+// Note: it will be used if we have a queue that supports compute shaders (non pure DMA queue).
+void VulkanGenerateMipmapsGPGPU(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool cmdBufPool,
+                                VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels,
+                                uint32_t layersAmount, bool queueSupportsFragmentShaderStage) {
+    (void)imageFormat;
+
+    VkShaderModule computeModule = VulkanCreateShaderModule(device, "comp_mipmapGen.spv");
+
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings[1] = bindings[0];
+    bindings[1].binding = 1;
+
+    VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+    setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setLayoutInfo.bindingCount = 2u;
+    setLayoutInfo.pBindings = bindings;
+
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkResult res = vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &descriptorSetLayout);
+    CHECK_VULKAN_ERROR("vkCreateDescriptorSetLayout (mipmapGen) error %d\n", res);
+
+    VkPushConstantRange pushConstRange{};
+    pushConstRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushConstRange.offset = 0;
+    pushConstRange.size = sizeof(int32_t) * 4;  // ivec2 srcSize, ivec2 dstSize
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1u;
+    layoutInfo.pSetLayouts = &descriptorSetLayout;
+    layoutInfo.pushConstantRangeCount = 1u;
+    layoutInfo.pPushConstantRanges = &pushConstRange;
+
+    VkPipelineLayout pipelineLayout;
+    res = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout);
+    CHECK_VULKAN_ERROR("vkCreatePipelineLayout (mipmapGen) error %d\n", res);
+
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = computeModule;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = stageInfo;
+    pipelineInfo.layout = pipelineLayout;
+
+    VkPipeline computePipeline;
+    res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1u, &pipelineInfo, nullptr, &computePipeline);
+    CHECK_VULKAN_ERROR("vkCreateComputePipelines (mipmapGen) error %d\n", res);
+
+    const uint32_t levelPairs = mipLevels - 1u;
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, levelPairs * 2u};
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = levelPairs;
+    poolInfo.poolSizeCount = 1u;
+    poolInfo.pPoolSizes = &poolSize;
+
+    VkDescriptorPool descriptorPool;
+    res = vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
+    CHECK_VULKAN_ERROR("vkCreateDescriptorPool (mipmapGen) error %d\n", res);
+
+    // temp views with GPGPU_MIPMAP_STORAGE_FORMAT = UNORM as SRGB original view format is not supported by GPGPU
+    std::vector<VkImageView> levelViews(mipLevels);
+    for (uint32_t level = 0u; level < mipLevels; ++level) {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        viewInfo.format = GPGPU_MIPMAP_STORAGE_FORMAT;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = level;
+        viewInfo.subresourceRange.levelCount = 1u;
+        viewInfo.subresourceRange.baseArrayLayer = 0u;
+        viewInfo.subresourceRange.layerCount = layersAmount;
+        res = vkCreateImageView(device, &viewInfo, nullptr, &levelViews[level]);
+        CHECK_VULKAN_ERROR("vkCreateImageView (mipmapGen level) error %d\n", res);
+    }
+
+    VkCommandBuffer commandBuffer = VulkanBeginSingleTimeCommands(device, cmdBufPool);
+
+    // Storage image writes/reads require GENERAL layout; the whole chain currently sits in
+    // TRANSFER_DST_OPTIMAL (mip 0 holds real data, the rest are uninitialized).
+    VulkanImageMemoryBarrier(commandBuffer, image, GPGPU_MIPMAP_STORAGE_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, layersAmount,
+                             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+
+    int32_t mipWidth = texWidth;
+    int32_t mipHeight = texHeight;
+
+    std::vector<VkDescriptorSet> descriptorSets(levelPairs);
+    VkDescriptorSetAllocateInfo dsAllocInfo{};
+    dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsAllocInfo.descriptorPool = descriptorPool;
+    dsAllocInfo.descriptorSetCount = 1u;
+    dsAllocInfo.pSetLayouts = &descriptorSetLayout;
+
+    for (uint32_t i = 1u; i < mipLevels; ++i) {
+        const int32_t dstWidth = mipWidth > 1 ? mipWidth / 2 : 1;
+        const int32_t dstHeight = mipHeight > 1 ? mipHeight / 2 : 1;
+
+        res = vkAllocateDescriptorSets(device, &dsAllocInfo, &descriptorSets[i - 1u]);
+        CHECK_VULKAN_ERROR("vkAllocateDescriptorSets (mipmapGen) error %d\n", res);
+
+        VkDescriptorImageInfo srcImageInfo{VK_NULL_HANDLE, levelViews[i - 1u], VK_IMAGE_LAYOUT_GENERAL};
+        VkDescriptorImageInfo dstImageInfo{VK_NULL_HANDLE, levelViews[i], VK_IMAGE_LAYOUT_GENERAL};
+
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = descriptorSets[i - 1u];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1u;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[0].pImageInfo = &srcImageInfo;
+        writes[1] = writes[0];
+        writes[1].dstBinding = 1;
+        writes[1].pImageInfo = &dstImageInfo;
+
+        vkUpdateDescriptorSets(device, 2u, writes, 0u, nullptr);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0u, 1u,
+                                &descriptorSets[i - 1u], 0u, nullptr);
+
+        const int32_t pushConsts[4] = {mipWidth, mipHeight, dstWidth, dstHeight};
+        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConsts), pushConsts);
+
+        const uint32_t groupsX = (static_cast<uint32_t>(dstWidth) + 7u) / 8u;
+        const uint32_t groupsY = (static_cast<uint32_t>(dstHeight) + 7u) / 8u;
+        vkCmdDispatch(commandBuffer, groupsX, groupsY, layersAmount);
+
+        // Make sure the just-written level is visible before it's read as the source of the next iteration.
+        VulkanImageMemoryBarrier(commandBuffer, image, GPGPU_MIPMAP_STORAGE_FORMAT, VK_IMAGE_LAYOUT_GENERAL,
+                                 VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1u, layersAmount,
+                                 VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+        mipWidth = dstWidth;
+        mipHeight = dstHeight;
+    }
+
+    VulkanImageMemoryBarrier(commandBuffer, image, GPGPU_MIPMAP_STORAGE_FORMAT, VK_IMAGE_LAYOUT_GENERAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, layersAmount,
+                             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             queueSupportsFragmentShaderStage ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                                                              : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+    VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
+
+    for (auto view : levelViews) {
+        vkDestroyImageView(device, view, nullptr);
+    }
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    vkDestroyPipeline(device, computePipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+    vkDestroyShaderModule(device, computeModule, nullptr);
+}
+#endif  // USE_GPGPU_MIPMAP_GEN
+
 VkResult VulkanCreateImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectMask,
-                               VkImageView& imageView, uint32_t mipLevels, VkImageViewType type, uint32_t layersCount) {
+                               VkImageView& imageView, uint32_t mipLevels, VkImageViewType type, uint32_t layersCount,
+                               VkImageUsageFlags viewUsage) {
     VkResult res;
+
+    VkImageViewUsageCreateInfo usageInfo{};
+    usageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
+    usageInfo.usage = viewUsage;
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.pNext = viewUsage != 0 ? &usageInfo : nullptr;
     viewInfo.image = image;
     viewInfo.viewType = type;
     viewInfo.format = format;

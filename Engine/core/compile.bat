@@ -54,4 +54,6 @@ SET OptimizationFlag=%PerfOptimizationFlag%
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/semi_transparent.frag -o shaders/frag_semi_transparent.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/oitResolve.vert -o shaders/vert_oitResolve.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/oitResolve.frag -o shaders/frag_oitResolve.spv
+
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/mipmapGen.comp -o shaders/comp_mipmapGen.spv
 pause

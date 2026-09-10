@@ -167,7 +167,7 @@ void Particle::init(bool useTransferQueue) {
         const VkQueue queue = useTransferQueue ? m_vkState._transferQueue : m_vkState._queue;
         const VkCommandPool commandPool = useTransferQueue ? m_vkState._transferCmdBufPool : m_vkState._cmdBufPool;
         Utils::VulkanCopyBuffer(p_devide, queue, commandPool, stagingBuffer, m_generalBuffer, bufferSize);
-        if (useTransferQueue && m_vkState._core.getTransferQueueFamily() != m_vkState._core.getQueueFamily()) {
+        if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
             Utils::VulkanReleaseBufferOwnership(p_devide, queue, commandPool, m_generalBuffer,
                                                 m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());
             m_vkState.registerTransferBufferOwnership(m_generalBuffer);
