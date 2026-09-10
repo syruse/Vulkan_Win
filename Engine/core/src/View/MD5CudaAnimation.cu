@@ -641,12 +641,15 @@ __global__ void updateAnimationChunk(uint32_t* cuda_interpolatedSkeletonMutex, m
         return;
     }
 
-    if (globalThreadIndx == 0) {
+    // Mutex removed: cuda_md5_update and updateAnimationChunk are launched on the same cuda_stream,
+    // and CUDA already guarantees kernels on one stream execute in program order, so this busy-wait
+    // was purely redundant atomic traffic/latency with no additional correctness guarantee.
+    /*if (globalThreadIndx == 0) {
         // we have several 'updateAnimationChunk' being ongoing since we need to have '1' signaling the skeleton is ready
         while (atomicCAS(cuda_interpolatedSkeletonMutex, 1, 1) != 1) {
             // Wait until the mutex is free
         }
-    }
+    }*/
 
     __syncthreads();
 
@@ -713,10 +716,10 @@ __global__ void updateAnimationChunk(uint32_t* cuda_interpolatedSkeletonMutex, m
     } 
     
     __syncthreads();
-    if (globalThreadIndx == 0) {
+    /*if (globalThreadIndx == 0) {
         // reset the mutex
         *cuda_interpolatedSkeletonMutex = 0u;
-    }
+    }*/
     // Note: we don't need to update indices every time, since they are static and already copied to the mapped buffer
     // Update the subset's buffer by copying i-th index to the mapped buffer
     /*if (globalThreadIndx < subset.indicesCount) {
@@ -782,11 +785,13 @@ __global__ void cuda_md5_update(uint32_t* cuda_interpolatedSkeletonMutex, md5_cu
         return;
     }
 
-    if (globalThreadIndx == 0) {
+    // Mutex removed: this kernel and updateAnimationChunk are launched on the same cuda_stream, so
+    // execution order is already guaranteed by CUDA — this busy-wait was redundant overhead.
+    /*if (globalThreadIndx == 0) {
         while (atomicCAS(cuda_interpolatedSkeletonMutex, 0, 0) != 0) {
             // Wait until the mutex is free
         }
-    }
+    }*/
 
     ///if (GPU_DEBUG_ENABLED && globalThreadIndx == 0) {
     ///    printf("Updating animation %d with deltaTimeMS: %f\n", animationID, deltaTimeMS);
@@ -824,8 +829,9 @@ __global__ void cuda_md5_update(uint32_t* cuda_interpolatedSkeletonMutex, md5_cu
             currentFrame - frame0;  // Get the remainder (in time) between frame0 and frame1 to use as interpolation factor
     }
 
-    // Synchronize threads within the warp to ensure all threads have the same currentFrame, frame0, frame1, and interpolation values
-    __syncwarp();
+    // Synchronize threads to ensure all threads (not just the first warp) see currentFrame, frame0,
+    // frame1, and interpolation: __syncwarp() only covers 32 threads, unsafe once blockDim.x > warpSize.
+    __syncthreads();
 
     // each thread will calculate its own joint in the interpolatedSkeleton
     calculateInterpolatedSkeleton(cuda_MD5Model, animationID, cuda_interpolatedSkeleton, frame0, frame1, interpolation);
@@ -839,7 +845,7 @@ __global__ void cuda_md5_update(uint32_t* cuda_interpolatedSkeletonMutex, md5_cu
 
         __threadfence();  // everything before this point must be visible to other threads before we set the mutex
 
-        *cuda_interpolatedSkeletonMutex = 1u;  // Set the mutex to indicate that the interpolated skeleton is ready for use
+        // *cuda_interpolatedSkeletonMutex = 1u; -- mutex removed, see comment above the wait-loop it used to unblock
     }
 
     // Print out the 10th joint of the interpolated skeleton for debugging purposes
@@ -852,8 +858,8 @@ __global__ void cuda_md5_update(uint32_t* cuda_interpolatedSkeletonMutex, md5_cu
 }
 
 __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instance* cuda_instances_original, uint32_t* cuda_instances_flags, 
-                                      Instance* cuda_instances_filtered, glm::mat4* cuda_viewProj, uint32_t cuda_numInstances, char* cuda_extrVkMappedBuffer,
-                                      uint64_t cuda_instancesBufferOffset, float z_far, float radius) {
+                                      Instance* cuda_instances_filtered, glm::mat4* cuda_viewProj, uint32_t cuda_numInstances,
+                                      float z_far, float radius) {
     // Unique thread index among all blocks
     int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
     // thread index within one block
@@ -882,8 +888,9 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
         biasCubeValues[8] = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);  // no bias (for center point)
     }
 
-    // Synchronize threads within the warp to ensure all threads have the same bias values
-    __syncwarp();
+    // Synchronize threads to ensure all threads (not just the first warp) see biasCubeValues:
+    // __syncwarp() only covers 32 threads, unsafe once blockDim.x > warpSize.
+    __syncthreads();
 
     const float maxLimitVal = 1.0f + FLT_EPSILON;  // float epsilon is used to avoid precision issues
     Instance& instance = cuda_instances_original[globalThreadIndx];
@@ -905,19 +912,21 @@ __global__ void cuda_filter_instances(uint32_t* out_activeInstancesCount, Instan
     // Synchronize threads to ensure all threads have completed the calculation of i'th instance before proceeding
     __syncthreads();
 
-    // Update the filtered instances buffer
-    if (globalThreadIndx == 0) {
-        uint32_t visibleInstances = 0;
-        for (uint32_t i = 0; i < cuda_numInstances; i++) {
-            if (cuda_instances_flags[i] == 1) {
-                cuda_instances_filtered[visibleInstances] = cuda_instances_original[i];
-                visibleInstances++;
-            }
-        }
-        *out_activeInstancesCount = visibleInstances;  // Update the count of active instances
+    // Update the filtered instances buffer. Parallel compaction: every visible instance claims its own
+    // output slot via atomicAdd instead of a single thread serially scanning all instances (that thread-0
+    // loop used to dominate this kernel's runtime for scenes with many instances).
+    if (cuda_instances_flags[globalThreadIndx] == 1) {
+        uint32_t dstIndex = atomicAdd(out_activeInstancesCount, 1u);
+        cuda_instances_filtered[dstIndex] = instance;
     }
+}
 
-    __syncthreads();
+// Separate kernel (launched after cuda_filter_instances on the same stream) so the copy only starts once
+// ALL blocks' atomicAdd compactions have completed: a single __syncthreads() only covers one block, not
+// the whole grid, so it can't be used here to wait on other blocks' writes to out_activeInstancesCount.
+__global__ void cuda_copy_filtered_instances(uint32_t* out_activeInstancesCount, Instance* cuda_instances_filtered,
+                                             char* cuda_extrVkMappedBuffer, uint64_t cuda_instancesBufferOffset) {
+    int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
     // Copy the filtered instances to the mapped buffer
     if (globalThreadIndx < *out_activeInstancesCount) {
         // Copy the filtered instance to the mapped buffer
@@ -939,10 +948,18 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, uint64_t cuda_signalVkValue
     if (isInstancesUpdating && cuda_numInstances > 1u) {
         // cpu memory resident variable without sync can be filled directly
         memcpy(cuda_ViewProj, &viewProj[0][0], sizeof(glm::mat4));
+        // Reset before launch: cuda_filter_instances now accumulates visible-instance count via atomicAdd
+        // instead of overwriting it, since compaction happens across all threads in parallel.
+        *cuda_activeInstancesCount = 0u;
         blocksPerGrid = cuda_numInstances / threadsPerBlock + 1;
         cuda_filter_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
             cuda_activeInstancesCount, cuda_instances_original, cuda_instances_flags, cuda_instances_filtered, cuda_ViewProj,
-            cuda_numInstances, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset, z_far, cuda_radius);
+            cuda_numInstances, z_far, cuda_radius);
+        gpuKernelCheck();
+        // Separate launch (same stream => runs strictly after cuda_filter_instances) so every thread here
+        // sees the fully-compacted out_activeInstancesCount from all blocks of the previous kernel.
+        cuda_copy_filtered_instances<<<blocksPerGrid, threadsPerBlock, 0, (cudaStream_t)cuda_stream>>>(
+            cuda_activeInstancesCount, cuda_instances_filtered, cuda_extrVkMappedBuffer, cuda_instancesBufferOffset);
         gpuKernelCheck();
         // cudaMemcpy garantees the cuda_activeInstancesCount is copied only after the kernel execution is completed
         // 'pinned' memory is not copied to host since it is already in host memory
