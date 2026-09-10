@@ -982,12 +982,19 @@ void VulkanGenerateMipmapsGPGPU(VkDevice device, VkPhysicalDevice physicalDevice
         mipHeight = dstHeight;
     }
 
-    VulkanImageMemoryBarrier(commandBuffer, image, GPGPU_MIPMAP_STORAGE_FORMAT, VK_IMAGE_LAYOUT_GENERAL,
-                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, layersAmount,
-                             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+    // A queue family without GRAPHICS_BIT cannot use FRAGMENT_SHADER as a destination
+    // stage. Leave the image in TRANSFER_DST_OPTIMAL there; the graphics queue's
+    // ownership acquire will transition it to SHADER_READ_ONLY_OPTIMAL.
+    VulkanImageMemoryBarrier(commandBuffer, image, GPGPU_MIPMAP_STORAGE_FORMAT,
+                             VK_IMAGE_LAYOUT_GENERAL,
+                             queueSupportsFragmentShaderStage ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                              : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, layersAmount,
+                             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
+                             queueSupportsFragmentShaderStage ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_WRITE_BIT,
                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              queueSupportsFragmentShaderStage ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-                                                              : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+                                                              : VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     VulkanEndSingleTimeCommands(device, queue, cmdBufPool, &commandBuffer);
 

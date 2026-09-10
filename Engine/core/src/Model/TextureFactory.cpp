@@ -320,15 +320,11 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
     }
 
 #if defined(USE_GPGPU_MIPMAP_GEN) && USE_GPGPU_MIPMAP_GEN
-    // Only safe without a queue-family ownership transfer when the "transfer" queue actually shares the
-    // graphics family (no dedicated DMA-only/async-compute engine on this GPU). A genuinely separate
-    // async-compute family (transferQueueSupportsCompute() true but hasDedicatedTransferQueue() true)
-    // falls through to the CPU path below, which already does the cross-family ownership transfer.
-    if (is_miplevelsEnabling && !m_vkState._core.hasDedicatedTransferQueue() &&
+    // A dedicated transfer + compute queue can generate mipmaps on the GPU
+    // unlike DMA only (transfer) queue. The compute path below performs 
+    // the required queue-family ownership transfer before the image is used for rendering.
+    if (is_miplevelsEnabling && m_vkState._core.hasDedicatedTransferQueue() &&
         m_vkState._core.transferQueueSupportsCompute()) {
-        // "Transfer" queue actually shares the graphics-capable queue family (no dedicated DMA-only
-        // engine on this GPU): upload the base level only and let the compute shader derive the rest,
-        // same as the graphics-queue path, instead of computing the whole chain on the CPU.
         const VkDeviceSize layerSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4u;
         const VkDeviceSize imageSizeTotal = layerSize * texturesAmount;
 
@@ -349,14 +345,19 @@ VkResult TextureFactory::loadImages(TextureFactory::Texture& outTexture, const s
                                 static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), texturesAmount);
 
         VulkanGenerateMipmapsGPGPU(device, physicalDevice, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT,
-                                  texWidth, texHeight, mipLevels, static_cast<uint32_t>(texturesAmount));
+                                  texWidth, texHeight, mipLevels, static_cast<uint32_t>(texturesAmount), false);
+
+        const uint32_t transferFamily = static_cast<uint32_t>(m_vkState._core.getTransferQueueFamily());
+        const uint32_t graphicsFamily = static_cast<uint32_t>(m_vkState._core.getQueueFamily());
+        VulkanReleaseImageOwnership(device, queue, cmdBufPool, outTexture.m_textureImage, IMAGE_FORMAT, mipLevels,
+                                    static_cast<uint32_t>(texturesAmount), transferFamily, graphicsFamily);
+        m_vkState.registerTransferImageOwnership(outTexture.m_textureImage);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-        // transferQueueSupportsCompute() guarantees this queue family is the graphics-capable one,
-        // so no cross-family ownership transfer is needed and the image is already left in
-        // SHADER_READ_ONLY_OPTIMAL by VulkanGenerateMipmapsGPGPU.
+        // The async compute queue leaves the image in TRANSFER_DST_OPTIMAL and releases
+        // ownership; the graphics queue acquires it and transitions it for sampling.
         return res;
     }
 #endif

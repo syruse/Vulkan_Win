@@ -275,33 +275,38 @@ void VulkanCore::selectPhysicalDevice() {
         --(*pQueueFamilyCount);  // reduce queue count by one since we will use one queue for main thread
     }
 
-    // Look for a dedicated DMA/transfer-only queue family (no GRAPHICS/COMPUTE bit) so model
-    // uploads can run on real DMA hardware in parallel with the graphics queue.
+    // Look for a dedicated DMA/transfer-only queue family (no GRAPHICS/COMPUTE bit) 
+    // or a dedicated TRANSFER+COMPUTE queue family (no GRAPHICS bit) available on AMD GPUs,
+    // so model uploads can run on real DMA hardware in parallel with the graphics queue.
+
+    // AMD has the family (TRANSFER + COMPUTE, no GRAPHICS)
+    // First, we look for a queue family that supports both compute and transfer operations,
+    // rather than a pure DMA-only family.
+    // That lets GPGPU mip generation unlike the pure DMA-only family.
     for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
         VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
         VkQueueFlags flags = QFamilyProp.queueFlags;
 
-        if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_COMPUTE_BIT) &&
+        if ((flags & VK_QUEUE_TRANSFER_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) &&
             QFamilyProp.queueCount > 0) {
             m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex = static_cast<int>(j);
             --QFamilyProp.queueCount;
-            INFO_FORMAT("Dedicated Transfer(DMA) queue found: family %d\n", static_cast<int>(j));
+            INFO_FORMAT("Dedicated Transfer+Compute (async) queue found: family %d\n", static_cast<int>(j));
             break;
         }
     }
+    // Look for a dedicated DMA/transfer-only queue family (no GRAPHICS/COMPUTE bit) so model
+    // uploads can run on real DMA hardware in parallel with the graphics queue.
     if (m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex == -1) {
-        // No pure DMA-only family: some iGPUs (e.g. Intel) instead expose a dedicated async-compute
-        // family (TRANSFER + COMPUTE, no GRAPHICS). That still lets GPGPU mip generation run there,
-        // unlike the pure DMA-only family above.
         for (size_t j = 0; j < m_physDevices.m_qFamilyProps[m_gfxDevIndex].size(); ++j) {
             VkQueueFamilyProperties& QFamilyProp = m_physDevices.m_qFamilyProps[m_gfxDevIndex][j];
             VkQueueFlags flags = QFamilyProp.queueFlags;
 
-            if ((flags & VK_QUEUE_TRANSFER_BIT) && (flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) &&
+            if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_COMPUTE_BIT) &&
                 QFamilyProp.queueCount > 0) {
                 m_queues.at(Queue_family::TRANSFER_QUEUE_FAMILY).familyIndex = static_cast<int>(j);
                 --QFamilyProp.queueCount;
-                INFO_FORMAT("Dedicated Transfer+Compute (async) queue found: family %d\n", static_cast<int>(j));
+                INFO_FORMAT("Dedicated Transfer(DMA) queue found: family %d\n", static_cast<int>(j));
                 break;
             }
         }
