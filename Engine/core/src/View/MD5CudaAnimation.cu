@@ -711,8 +711,14 @@ __global__ void updateAnimationChunk(uint32_t* cuda_interpolatedSkeletonMutex, m
             swapYandZ(gpuVertex.normal);
         }
 
-        memcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + (subset.vertOffset + globalThreadIndx) * cuda_MD5Model->vertBytes,
-               &subset.gpuVertices[globalThreadIndx], cuda_MD5Model->vertBytes);
+        // Direct write instead of 
+        // memcpy(cuda_extrVkMappedBuffer + verticesBufferOffset + (subset.vertOffset + globalThreadIndx) * cuda_MD5Model->vertBytes,
+        // &subset.gpuVertices[globalThreadIndx], cuda_MD5Model->vertBytes);
+        //: vertBytes is a runtime value (read from device memory), so
+        // memcpy's size argument isn't a compile-time constant here and the call can't be optimized away.
+        // subset.vertOffset = lastVertsSize; This is the vertex index (how many vertices preceded this subset in the general buffer).
+        *reinterpret_cast<VertexData*>(cuda_extrVkMappedBuffer + verticesBufferOffset +
+                                       (subset.vertOffset + globalThreadIndx) * cuda_MD5Model->vertBytes) = gpuVertex;
     } 
     
     __syncthreads();
@@ -929,9 +935,9 @@ __global__ void cuda_copy_filtered_instances(uint32_t* out_activeInstancesCount,
     int globalThreadIndx = threadIdx.x + blockDim.x * blockIdx.x;
     // Copy the filtered instances to the mapped buffer
     if (globalThreadIndx < *out_activeInstancesCount) {
-        // Copy the filtered instance to the mapped buffer
-        memcpy((char*)cuda_extrVkMappedBuffer + cuda_instancesBufferOffset + globalThreadIndx * sizeof(Instance),
-               &cuda_instances_filtered[globalThreadIndx], sizeof(Instance));
+        // Direct write instead of memcpy() to skip the runtime call for this simple fixed-size store.
+        *reinterpret_cast<Instance*>(cuda_extrVkMappedBuffer + cuda_instancesBufferOffset +
+                                     globalThreadIndx * sizeof(Instance)) = cuda_instances_filtered[globalThreadIndx];
     }
 }
 
@@ -940,7 +946,9 @@ uint32_t MD5CudaAnimation::update(float deltaTimeMS, uint64_t cuda_signalVkValue
     assert(cuda_MD5Model != nullptr && cuda_interpolatedSkeleton != nullptr && cuda_maxJointsPerSkeleton > 0u &&
            cpu_MD5Model.animations.size() > animationID);
 
-    static int threadsPerBlock = cuda_warpSize;
+    // 128 threads/block (4 warps): a single warp (cuda_warpSize=32) launches too many small blocks for
+    // these kernels, increasing launch overhead and limiting SM occupancy for otherwise compute-bound work.
+    static int threadsPerBlock = cuda_warpSize * 4;
     static int blocksPerGrid = cuda_SMs;
 
     uint32_t activeInstancesCount = 1u;
