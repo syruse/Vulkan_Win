@@ -1,0 +1,29 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(rgba8, binding = 0) uniform readonly image2D colorImage;
+#ifdef BLOOM_RGBA32F
+layout(rgba32f, binding = 1) uniform readonly image2D bloomImage;
+#else
+layout(rgba16f, binding = 1) uniform readonly image2D bloomImage;
+#endif
+layout(rgba8, binding = 2) uniform writeonly image2D outputImage;
+
+const float exposure = 4.5;
+const float gamma = 2.2;
+
+void main()
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outputImage);
+    if (any(greaterThanEqual(pixel, size))) {
+        return;
+    }
+
+    vec3 bloom = imageLoad(bloomImage, pixel).rgb;
+    // tone mapping : HDR to LDR  in range [0.0, 1.0]
+    bloom = vec3(1.0) - exp(-bloom * exposure);
+    // gamma correction: linear color to non-linear
+    bloom = pow(bloom, vec3(1.0 / gamma));
+    imageStore(outputImage, pixel, imageLoad(colorImage, pixel) + vec4(bloom, 0.0));
+}

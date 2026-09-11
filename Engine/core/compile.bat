@@ -38,6 +38,13 @@ SET OptimizationFlag=%PerfOptimizationFlag%
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/bloom.vert -o shaders/vert_bloom.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/bloom.frag -o shaders/frag_bloom.spv
 
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/gaussXBlur.comp -o shaders/comp_gaussXBlur.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/gaussYBlur.comp -o shaders/comp_gaussYBlur.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/bloom.comp -o shaders/comp_bloom.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -DBLOOM_RGBA32F shadersSRC/gaussXBlur.comp -o shaders/comp_gaussXBlur_rgba32f.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -DBLOOM_RGBA32F shadersSRC/gaussYBlur.comp -o shaders/comp_gaussYBlur_rgba32f.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -DBLOOM_RGBA32F shadersSRC/bloom.comp -o shaders/comp_bloom_rgba32f.spv
+
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/depthWriter.vert -o shaders/vert_depthWriter.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/depthWriter.frag -o shaders/frag_depthWriter.spv
 

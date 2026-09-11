@@ -121,6 +121,8 @@ private:
     void createDescriptorPool();
     void createFramebuffer();
     void createPipeline();
+    void createGpgpuBloomResources();
+    void destroyGpgpuBloomResources();
         void InitializeBulletPhysicsBodies();
     void recordCommandBuffers(uint32_t currentImage, bool hmiRenderData);
     void createSemaphores();
@@ -249,6 +251,16 @@ private:
 
     VkRenderPass m_renderPassBloom{nullptr};
     std::vector<VkFramebuffer> m_fbsBloom{};
+
+#if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+    VkDescriptorSetLayout m_gpgpuBloomDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorPool m_gpgpuBloomDescriptorPool{VK_NULL_HANDLE};
+    VkPipelineLayout m_gpgpuBloomPipelineLayout{VK_NULL_HANDLE};
+    VkPipeline m_gpgpuGaussXPipeline{VK_NULL_HANDLE};
+    VkPipeline m_gpgpuGaussYPipeline{VK_NULL_HANDLE};
+    VkPipeline m_gpgpuBloomPipeline{VK_NULL_HANDLE};
+    std::vector<VkDescriptorSet> m_gpgpuBloomDescriptorSets{};
+#endif
 
     VkRenderPass m_renderPassDepth{nullptr};
     std::vector<VkFramebuffer> m_fbsDepth{};

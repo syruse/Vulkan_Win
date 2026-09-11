@@ -403,6 +403,8 @@ void VulkanRenderer::cleanupSwapChain() {
     // Wait until no actions being run on device before destroying
     vkDeviceWaitIdle(_core.getDevice());
 
+    destroyGpgpuBloomResources();
+
     // Clear tracking of images-in-flight to avoid stale fences pointing to destroyed resources
     m_imagesInFlight.clear();
 
@@ -576,6 +578,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
         createCommandBuffer();
         createDepthResources();
         createColorBufferImage();
+        createGpgpuBloomResources();
         allocateDynamicBufferTransferSpace();
         createUniformBuffers();
         createDescriptorPool();
@@ -1463,6 +1466,77 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
 
     //---------------------------------------------------------------------------------------------//
+    // Bloom extraction and Gaussian blur
+#if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[0].colorBufferImage[currentImage],
+                                    _bloomBuffer[0].colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[1].colorBufferImage[currentImage],
+                                    _bloomBuffer[1].colorFormat, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
+                                    _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    const uint32_t groupsX = (static_cast<uint32_t>(_offscreenWidth) + 7u) / 8u;
+    const uint32_t groupsY = (static_cast<uint32_t>(_offscreenHeight) + 7u) / 8u;
+    for (int32_t t = 0; t < 3; ++t) {
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE, m_gpgpuGaussXPipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_gpgpuBloomPipelineLayout, 0u, 1u,
+                                &m_gpgpuBloomDescriptorSets[currentImage], 0u, nullptr);
+        vkCmdDispatch(_cmdBufs[currentImage], groupsX, groupsY, 1u);
+        Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[1].colorBufferImage[currentImage],
+                                        _bloomBuffer[1].colorFormat, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                        VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_SHADER_WRITE_BIT,
+                                        VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+        vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE, m_gpgpuGaussYPipeline);
+        vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_gpgpuBloomPipelineLayout, 0u, 1u,
+                                &m_gpgpuBloomDescriptorSets[_swapchainImageCount + currentImage], 0u, nullptr);
+        vkCmdDispatch(_cmdBufs[currentImage], groupsX, groupsY, 1u);
+        if (t != 2) {
+            Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[0].colorBufferImage[currentImage],
+                                            _bloomBuffer[0].colorFormat, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                            VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U, VK_ACCESS_SHADER_WRITE_BIT,
+                                            VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        }
+    }
+
+    vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE, m_gpgpuBloomPipeline);
+    vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_COMPUTE,
+                            m_gpgpuBloomPipelineLayout, 0u, 1u,
+                            &m_gpgpuBloomDescriptorSets[2u * _swapchainImageCount + currentImage], 0u, nullptr);
+    vkCmdDispatch(_cmdBufs[currentImage], groupsX, groupsY, 1u);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[0].colorBufferImage[currentImage],
+                                    _bloomBuffer[0].colorFormat, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _bloomBuffer[1].colorBufferImage[currentImage],
+                                    _bloomBuffer[1].colorFormat, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    Utils::VulkanImageMemoryBarrier(_cmdBufs[currentImage], _colorBuffer.colorBufferImage[currentImage],
+                                    _colorBuffer.colorFormat, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+#else
     // 3 times gauss blurring
     for (int32_t t = 0; t < 3; ++t) {
         /// GAUSS X Bloom render pass
@@ -1545,6 +1619,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdDraw(_cmdBufs[currentImage], 6, 1, 0, 0);
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
+
+#endif
 
     //---------------------------------------------------------------------------------------------//
     /// SEMI-TRANSPARENT OBJECTS render pass
@@ -1803,8 +1879,12 @@ void VulkanRenderer::createColorBufferImage() {
         // Create Color Buffer Image
         Utils::VulkanCreateImage(
             _core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
-                                 _colorBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                _colorBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                    #if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+                                    | VK_IMAGE_USAGE_STORAGE_BIT
+                    #endif
+                                ,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             _colorBuffer.colorBufferImage[i], _colorBuffer.colorBufferImageMemory[i]);
 
@@ -1848,7 +1928,11 @@ void VulkanRenderer::createColorBufferImage() {
             Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight, buf.colorFormat,
                                      VK_IMAGE_TILING_OPTIMAL,
                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-                                         VK_IMAGE_USAGE_SAMPLED_BIT,
+                                         VK_IMAGE_USAGE_SAMPLED_BIT
+#if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+                                         | VK_IMAGE_USAGE_STORAGE_BIT
+#endif
+                                     ,
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buf.colorBufferImage[i], buf.colorBufferImageMemory[i]);
 
             Utils::VulkanCreateImageView(_core.getDevice(), buf.colorBufferImage[i], buf.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -4337,6 +4421,124 @@ void VulkanRenderer::createPipeline() {
     }
 }
 
+void VulkanRenderer::createGpgpuBloomResources() {
+#if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+    VkDescriptorSetLayoutBinding bindings[3]{};
+    for (uint32_t binding = 0u; binding < 3u; ++binding) {
+        bindings[binding].binding = binding;
+        bindings[binding].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[binding].descriptorCount = 1u;
+        bindings[binding].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layoutInfo.bindingCount = 3u;
+    layoutInfo.pBindings = bindings;
+    CHECK_VULKAN_ERROR("vkCreateDescriptorSetLayout (GPGPU bloom) error %d\n",
+                       vkCreateDescriptorSetLayout(_core.getDevice(), &layoutInfo, nullptr,
+                                                   &m_gpgpuBloomDescriptorSetLayout));
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pipelineLayoutInfo.setLayoutCount = 1u;
+    pipelineLayoutInfo.pSetLayouts = &m_gpgpuBloomDescriptorSetLayout;
+    CHECK_VULKAN_ERROR("vkCreatePipelineLayout (GPGPU bloom) error %d\n",
+                       vkCreatePipelineLayout(_core.getDevice(), &pipelineLayoutInfo, nullptr,
+                                              &m_gpgpuBloomPipelineLayout));
+
+    const auto createComputePipeline = [&](std::string_view shaderName, VkPipeline& pipeline) {
+        VkShaderModule shader = Utils::VulkanCreateShaderModule(_core.getDevice(), shaderName);
+        VkPipelineShaderStageCreateInfo stage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stage.module = shader;
+        stage.pName = "main";
+
+        VkComputePipelineCreateInfo createInfo{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        createInfo.stage = stage;
+        createInfo.layout = m_gpgpuBloomPipelineLayout;
+        CHECK_VULKAN_ERROR("vkCreateComputePipelines (GPGPU bloom) error %d\n",
+                           vkCreateComputePipelines(_core.getDevice(), VK_NULL_HANDLE, 1u, &createInfo,
+                                                    nullptr, &pipeline));
+        vkDestroyShaderModule(_core.getDevice(), shader, nullptr);
+    };
+
+    const bool useRgba32f = _bloomBuffer[0].colorFormat == VK_FORMAT_R32G32B32A32_SFLOAT;
+    const std::string_view formatSuffix = useRgba32f ? "_rgba32f" : "";
+    createComputePipeline(std::string("comp_gaussXBlur") + std::string(formatSuffix) + ".spv", m_gpgpuGaussXPipeline);
+    createComputePipeline(std::string("comp_gaussYBlur") + std::string(formatSuffix) + ".spv", m_gpgpuGaussYPipeline);
+    createComputePipeline(std::string("comp_bloom") + std::string(formatSuffix) + ".spv", m_gpgpuBloomPipeline);
+
+    std::array<VkDescriptorPoolSize, 1> poolSizes{{{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                                     3u * _swapchainImageCount}}};
+    VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    poolInfo.maxSets = 3u * _swapchainImageCount;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    CHECK_VULKAN_ERROR("vkCreateDescriptorPool (GPGPU bloom) error %d\n",
+                       vkCreateDescriptorPool(_core.getDevice(), &poolInfo, nullptr,
+                                              &m_gpgpuBloomDescriptorPool));
+
+    std::vector<VkDescriptorSetLayout> layouts(3u * _swapchainImageCount, m_gpgpuBloomDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocateInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    allocateInfo.descriptorPool = m_gpgpuBloomDescriptorPool;
+    allocateInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+    allocateInfo.pSetLayouts = layouts.data();
+    m_gpgpuBloomDescriptorSets.resize(layouts.size());
+    CHECK_VULKAN_ERROR("vkAllocateDescriptorSets (GPGPU bloom) error %d\n",
+                       vkAllocateDescriptorSets(_core.getDevice(), &allocateInfo,
+                                                m_gpgpuBloomDescriptorSets.data()));
+
+    for (uint32_t imageIndex = 0u; imageIndex < _swapchainImageCount; ++imageIndex) {
+        const VkDescriptorImageInfo gaussInput{VK_NULL_HANDLE, _bloomBuffer[0].colorBufferImageView[imageIndex],
+                                                VK_IMAGE_LAYOUT_GENERAL};
+        const VkDescriptorImageInfo gaussOutput{VK_NULL_HANDLE, _bloomBuffer[1].colorBufferImageView[imageIndex],
+                                                 VK_IMAGE_LAYOUT_GENERAL};
+        const VkDescriptorImageInfo color{VK_NULL_HANDLE, _colorBuffer.colorBufferImageView[imageIndex],
+                                          VK_IMAGE_LAYOUT_GENERAL};
+        const VkDescriptorImageInfo bloom{VK_NULL_HANDLE, _bloomBuffer[0].colorBufferImageView[imageIndex],
+                                          VK_IMAGE_LAYOUT_GENERAL};
+
+        std::array<VkDescriptorImageInfo, 3> xImages{gaussInput, gaussOutput, gaussOutput};
+        std::array<VkDescriptorImageInfo, 3> yImages{gaussOutput, gaussInput, gaussInput};
+        std::array<VkDescriptorImageInfo, 3> bloomImages{color, bloom, color};
+        const std::array<std::array<VkDescriptorImageInfo, 3>*, 3> allImages{&xImages, &yImages, &bloomImages};
+
+        for (uint32_t pass = 0u; pass < 3u; ++pass) {
+            std::array<VkWriteDescriptorSet, 3> writes{};
+            for (uint32_t binding = 0u; binding < 3u; ++binding) {
+                writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[binding].dstSet = m_gpgpuBloomDescriptorSets[pass * _swapchainImageCount + imageIndex];
+                writes[binding].dstBinding = binding;
+                writes[binding].descriptorCount = 1u;
+                writes[binding].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                writes[binding].pImageInfo = &(*allImages[pass])[binding];
+            }
+            vkUpdateDescriptorSets(_core.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0u, nullptr);
+        }
+    }
+#endif
+}
+
+void VulkanRenderer::destroyGpgpuBloomResources() {
+#if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+    if (!_core.getDevice()) {
+        return;
+    }
+    vkDestroyPipeline(_core.getDevice(), m_gpgpuGaussXPipeline, nullptr);
+    vkDestroyPipeline(_core.getDevice(), m_gpgpuGaussYPipeline, nullptr);
+    vkDestroyPipeline(_core.getDevice(), m_gpgpuBloomPipeline, nullptr);
+    vkDestroyPipelineLayout(_core.getDevice(), m_gpgpuBloomPipelineLayout, nullptr);
+    vkDestroyDescriptorPool(_core.getDevice(), m_gpgpuBloomDescriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(_core.getDevice(), m_gpgpuBloomDescriptorSetLayout, nullptr);
+    m_gpgpuGaussXPipeline = VK_NULL_HANDLE;
+    m_gpgpuGaussYPipeline = VK_NULL_HANDLE;
+    m_gpgpuBloomPipeline = VK_NULL_HANDLE;
+    m_gpgpuBloomPipelineLayout = VK_NULL_HANDLE;
+    m_gpgpuBloomDescriptorPool = VK_NULL_HANDLE;
+    m_gpgpuBloomDescriptorSetLayout = VK_NULL_HANDLE;
+    m_gpgpuBloomDescriptorSets.clear();
+#endif
+}
+
 void VulkanRenderer::createDepthResources() {
     // 32bits depth is preferable
     if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT},
@@ -4689,6 +4891,7 @@ void VulkanRenderer::init() {
     createCommandBuffer();
     createDepthResources();
     createColorBufferImage();
+    createGpgpuBloomResources();
     allocateDynamicBufferTransferSpace();
     createUniformBuffers();
     createDescriptorPool();
