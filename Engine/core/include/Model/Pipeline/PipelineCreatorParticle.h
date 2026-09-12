@@ -11,6 +11,7 @@ public:
         std::weak_ptr<TextureFactory::Texture> textureGradient;
         VkSampler samplerGradient;
         Particle::UBOParticle* uboParticle{nullptr};
+        Particle* particle{nullptr};
         VkDescriptorSetLayout descriptorSetLayout;
         std::vector<VkDescriptorSet> descriptorSets{};
     };
@@ -24,7 +25,7 @@ public:
 
     uint32_t createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture, VkSampler particleSampler,
                               std::weak_ptr<TextureFactory::Texture> gradientTexture, VkSampler gradientSampler,
-                              Particle::UBOParticle* uboParticle);
+                              Particle::UBOParticle* uboParticle, Particle* particle);
 
     void createDescriptorPool() override;
     void recreateDescriptors() override;
@@ -41,7 +42,11 @@ private:
     void createDescriptorSetLayout() override;
     uint32_t createDescriptorWithId(std::weak_ptr<TextureFactory::Texture> particleTexture, VkSampler particleSampler,
                                     std::weak_ptr<TextureFactory::Texture> gradientTexture, VkSampler gradientSampler,
-                                    Particle::UBOParticle* uboParticle, uint32_t materialId);
+                                    Particle::UBOParticle* uboParticle,
+                                    Particle* particle,
+                                    uint32_t materialId);
+
+    VkDescriptorSetLayout getDescriptorSetLayout() const { return *m_descriptorSetLayout; }
 
 private:
     std::unordered_map<uint32_t, Material> m_descriptorSets{};

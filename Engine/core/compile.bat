@@ -28,6 +28,9 @@ SET OptimizationFlag=%PerfOptimizationFlag%
 
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/particle.vert -o shaders/vert_particle.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/particle.frag -o shaders/frag_particle.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/particle_gpgpu.vert -o shaders/vert_particle_gpgpu.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/particle_gpgpu.frag -o shaders/frag_particle_gpgpu.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/particle_gpgpu.comp -o shaders/comp_particle_gpgpu.spv
 
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/gaussXBlur.vert -o shaders/vert_gaussXBlur.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/gaussXBlur.frag -o shaders/frag_gaussXBlur.spv

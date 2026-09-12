@@ -78,13 +78,21 @@ void PipelineCreatorParticle::createDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding UBOParticleLayoutBinding = UBOLayoutBinding;
     UBOParticleLayoutBinding.binding = 3;
 
-    std::array<VkDescriptorSetLayoutBinding, 4u> inputBindings{UBOLayoutBinding, samplerLayoutBinding,
-                                                               samplerGradientLayoutBinding, UBOParticleLayoutBinding};
+    VkDescriptorSetLayoutBinding instanceBufferLayoutBinding{};
+    instanceBufferLayoutBinding.binding = 4u;
+    instanceBufferLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    instanceBufferLayoutBinding.descriptorCount = 1u;
+    instanceBufferLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+    // instanceBufferLayoutBinding will be ignored 
+    // when creating the descriptor set layout for non-GHOST_GPGPU particle modes
+    std::array<VkDescriptorSetLayoutBinding, 5u> inputBindings{
+        UBOLayoutBinding, samplerLayoutBinding, samplerGradientLayoutBinding,
+        UBOParticleLayoutBinding, instanceBufferLayoutBinding};
 
     // Create a descriptor set layout for input attachments
     VkDescriptorSetLayoutCreateInfo inputLayoutCreateInfo = {};
     inputLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    inputLayoutCreateInfo.bindingCount = inputBindings.size();
+    inputLayoutCreateInfo.bindingCount = static_cast<uint32_t>(inputBindings.size());
     inputLayoutCreateInfo.pBindings = inputBindings.data();
 
     // Create Descriptor Set Layout
@@ -110,12 +118,15 @@ void PipelineCreatorParticle::createDescriptorPool() {
 
     VkDescriptorPoolSize uboParticlePoolSize = uboPoolSize;
 
-    std::array<VkDescriptorPoolSize, 4u> poolSize{uboPoolSize, texturePoolSize, textureGradientPoolSize, uboParticlePoolSize};
+    VkDescriptorPoolSize instanceBufferPoolSize = uboPoolSize;
+    instanceBufferPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    std::array<VkDescriptorPoolSize, 5u> poolSize{uboPoolSize, texturePoolSize, textureGradientPoolSize,
+                                                  uboParticlePoolSize, instanceBufferPoolSize};
 
     VkDescriptorPoolCreateInfo inputPoolCreateInfo = {};
     inputPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     inputPoolCreateInfo.maxSets = descriptorCount;
-    inputPoolCreateInfo.poolSizeCount = poolSize.size();
+    inputPoolCreateInfo.poolSizeCount = static_cast<uint32_t>(poolSize.size());
     inputPoolCreateInfo.pPoolSizes = poolSize.data();
 
     if (vkCreateDescriptorPool(m_vkState._core.getDevice(), &inputPoolCreateInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
@@ -127,18 +138,22 @@ void PipelineCreatorParticle::createDescriptorPool() {
 uint32_t PipelineCreatorParticle::createDescriptor(std::weak_ptr<TextureFactory::Texture> particleTexture,
                                                    VkSampler particleSampler,
                                                    std::weak_ptr<TextureFactory::Texture> gradientTexture,
-                                                   VkSampler gradientSampler, Particle::UBOParticle* uboParticle) {
-    return createDescriptorWithId(particleTexture, particleSampler, gradientTexture, gradientSampler, uboParticle, 0u);
+                                                   VkSampler gradientSampler, Particle::UBOParticle* uboParticle,
+                                                   Particle* particle) {
+    return createDescriptorWithId(particleTexture, particleSampler, gradientTexture, gradientSampler, uboParticle,
+                                  particle, 0u);
 }
 
 uint32_t PipelineCreatorParticle::createDescriptorWithId(std::weak_ptr<TextureFactory::Texture> particleTexture,
                                                          VkSampler particleSampler,
                                                          std::weak_ptr<TextureFactory::Texture> gradientTexture,
                                                          VkSampler gradientSampler, Particle::UBOParticle* uboParticle,
+                                                         Particle* particle,
                                                          uint32_t materialId) {
     assert(m_vkState._core.getDevice());
     assert(m_descriptorSetLayout);
     assert(uboParticle);
+    assert(particle);
     auto sharedPtrTexture = particleTexture.lock();
     auto sharedPtrTextureGradient = gradientTexture.lock();
     assert(sharedPtrTexture && sharedPtrTextureGradient);
@@ -159,6 +174,7 @@ uint32_t PipelineCreatorParticle::createDescriptorWithId(std::weak_ptr<TextureFa
     material.textureGradient = gradientTexture;
     material.samplerGradient = gradientSampler;
     material.uboParticle = uboParticle;
+    material.particle = particle;
     material.descriptorSetLayout = *m_descriptorSetLayout.get();
     material.descriptorSets.resize(m_vkState._swapchainImageCount);
 
@@ -227,11 +243,28 @@ uint32_t PipelineCreatorParticle::createDescriptorWithId(std::weak_ptr<TextureFa
         uboParticleDescriptorWrite.descriptorCount = 1;
         uboParticleDescriptorWrite.pBufferInfo = &bufferParticleInfo;
 
-        std::array<VkWriteDescriptorSet, 4u> descriptorSets{uboDescriptorWrite, textureSetWrite, textureGradientSetWrite,
-                                                            uboParticleDescriptorWrite};
+        std::vector<VkWriteDescriptorSet> descriptorSets{uboDescriptorWrite, textureSetWrite, textureGradientSetWrite,
+                                                         uboParticleDescriptorWrite};
+        descriptorSets.reserve(5u);
+        VkDescriptorBufferInfo instanceBufferInfo{};
+        // we need it only for GHOST_GPGPU particle mode
+        if (material.particle->getParticleMode() == Particle::ParticleMode::GHOST_GPGPU) {
+            instanceBufferInfo.buffer = material.particle->getInstanceBuffer(i);
+            instanceBufferInfo.range = VK_WHOLE_SIZE;
+
+            VkWriteDescriptorSet instanceBufferWrite{};
+            instanceBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            instanceBufferWrite.dstSet = material.descriptorSets[i];
+            instanceBufferWrite.dstBinding = 4u;
+            instanceBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            instanceBufferWrite.descriptorCount = 1u;
+            instanceBufferWrite.pBufferInfo = &instanceBufferInfo;
+            descriptorSets.push_back(instanceBufferWrite);
+        }
 
         // Update descriptor sets
-        vkUpdateDescriptorSets(m_vkState._core.getDevice(), descriptorSets.size(), descriptorSets.data(), 0, nullptr);
+        vkUpdateDescriptorSets(m_vkState._core.getDevice(), static_cast<uint32_t>(descriptorSets.size()),
+                               descriptorSets.data(), 0, nullptr);
     }
 
     if (resolvedMaterialId > m_curMaterialId) {
@@ -257,6 +290,6 @@ void PipelineCreatorParticle::recreateDescriptors() {
     for (auto& material : descriptorSets) {
         createDescriptorWithId(material.second.textureParticle, material.second.samplerParticle,
                                material.second.textureGradient, material.second.samplerGradient,
-                               material.second.uboParticle, material.first);
+                               material.second.uboParticle, material.second.particle, material.first);
     }
 }

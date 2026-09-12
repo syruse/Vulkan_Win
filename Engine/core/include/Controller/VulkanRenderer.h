@@ -84,6 +84,7 @@ public:
         POST_LIGHTING,
         POST_FXAA,
         PARTICLE,
+        PARTICLE_GPGPU,
         SEMI_TRANSPARENT,
         OIT_RESOLVE,
         GAUSS_X_BLUR,

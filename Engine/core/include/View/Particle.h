@@ -15,6 +15,7 @@ public:
         STATIC = 0,
         ANCHORED = 1,
         GHOST = 2,
+        GHOST_GPGPU = 3,
     };
     struct alignas(16) Origin {
         glm::vec3 pos{0.0f};
@@ -28,6 +29,11 @@ public:
         float lifeDuration{1.0f};  // ms allocated for life of particle
         float alphaK{1.0f};
         float birthTimeMs{0.0f};
+        // Written by the compute shader for GPGPU particles: previous position, fading factor, and render alpha.
+        glm::vec3 previousPos{0.0f};
+        float fading{0.0f};
+        float renderAlpha{1.0f};
+        glm::vec3 spawnPos{0.0f};
     };
 
     struct UBOParticle {
@@ -52,8 +58,8 @@ public:
         return bindingDescriptions;
     }
 
-    static const std::array<VkVertexInputAttributeDescription, 9u>& getAttributeDescription() {
-        static std::array<VkVertexInputAttributeDescription, 9u> attributeDescriptions{};
+    static const std::array<VkVertexInputAttributeDescription, 12u>& getAttributeDescription() {
+        static std::array<VkVertexInputAttributeDescription, 12u> attributeDescriptions{};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -91,13 +97,28 @@ public:
         attributeDescriptions[8].location = 8;
         attributeDescriptions[8].format = VK_FORMAT_R32_SFLOAT;
         attributeDescriptions[8].offset = offsetof(Instance, birthTimeMs);
+        attributeDescriptions[9].binding = 1;
+        attributeDescriptions[9].location = 9;
+        attributeDescriptions[9].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions[9].offset = offsetof(Instance, previousPos);
+        attributeDescriptions[10].binding = 1;
+        attributeDescriptions[10].location = 10;
+        attributeDescriptions[10].format = VK_FORMAT_R32_SFLOAT;
+        attributeDescriptions[10].offset = offsetof(Instance, fading);
+        attributeDescriptions[11].binding = 1;
+        attributeDescriptions[11].location = 11;
+        attributeDescriptions[11].format = VK_FORMAT_R32_SFLOAT;
+        attributeDescriptions[11].offset = offsetof(Instance, renderAlpha);
         return attributeDescriptions;
     }
 
     virtual ~Particle();
 
+    // Called from VulkanRenderer::updateUniformBuffer() to update CPU-side particle parameters.
     virtual void update(uint32_t currentImage, float deltaMS = 0.0f, const glm::vec4& offsetPosition = glm::vec4(0.0f),
                         const glm::vec4& velocity = glm::vec4(0.0f)) = 0;
+    // Called after vkBeginCommandBuffer() to record particle compute commands.
+    virtual void recordCompute(VkCommandBuffer, uint32_t) const {}
 
 protected:
 
@@ -116,6 +137,8 @@ protected:
 public:
     void init(bool useTransferQueue = false) override;
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset = 0u) const override;
+    VkBuffer getInstanceBuffer(uint32_t index) const { return m_instanceBuffers.at(index); }
+    ParticleMode getParticleMode() const { return m_mode; }
 
 protected:
     uint32_t mMaterialId{0u};
@@ -178,4 +201,34 @@ public:
 
 private:
     bool m_isFirstGhostUpdate{true};
+};
+
+class GhostParticleGPGPU final : public Particle {
+public:
+    GhostParticleGPGPU(const VulkanState& vulkanState, TextureFactory& textureFactory,
+                       std::string_view particleTextureFileName, std::string_view particleGradientTextureFileName,
+                       PipelineCreatorParticle* pipelineCreator, uint32_t instancesAmount,
+                       const glm::vec3& positionOrigin = glm::vec3(0.0f),
+                       const glm::vec3& velocity = glm::vec3(0.0f),
+                       const glm::vec3& minScale = glm::vec3(1.0f),
+                       const glm::vec3& maxScale = glm::vec3(1.0f),
+                       float lifeDurationMinMs = 2000.0f,
+                       float lifeDurationMaxMs = 3000.0f) noexcept(true);
+    ~GhostParticleGPGPU() override;
+
+    void init(bool useTransferQueue = false) override;
+    void update(uint32_t currentImage, float deltaMS, const glm::vec4& offsetPosition,
+                const glm::vec4& velocity) override;
+    void recordCompute(VkCommandBuffer commandBuffer, uint32_t currentImage) const override;
+
+private:
+    struct alignas(64) ComputeParams {
+        alignas(16) glm::vec4 position{0.0f};
+        alignas(16) glm::vec4 velocity{0.0f};
+        alignas(16) glm::vec4 time{0.0f};
+    };
+    static_assert(sizeof(ComputeParams) == 64u);
+
+    VkPipeline m_computePipeline{VK_NULL_HANDLE};
+    ComputeParams m_computeParams{};
 };

@@ -1,0 +1,113 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+layout(set = 0, binding = 4, std430) buffer ParticleInstances {
+    float values[];
+} particles;
+
+layout(push_constant) uniform ParticleComputePush {
+    vec4 emitterPosition;
+    vec4 emitterVelocity;
+    vec4 timing; // x: elapsed milliseconds, y: frame delta milliseconds
+} pushData;
+
+const uint PARTICLE_FLOAT_COUNT = 20u;
+const uint POS_VEC3_OFFSET = 0u;
+const uint VELOCITY_VEC3_OFFSET = 3u;
+const uint ACCELERATION_VEC3_OFFSET = 6u;
+const uint LIFE_DURATION_FLOAT_OFFSET = 9u;
+const uint ALPHA_FLOAT_OFFSET = 10u;
+const uint BIRTH_TIME_FLOAT_OFFSET = 11u;
+const uint PREVIOUS_POS_VEC3_OFFSET = 12u;
+const uint FADING_FLOAT_OFFSET = 15u;
+const uint RENDER_ALPHA_FLOAT_OFFSET = 16u;
+const uint SPAWN_POS_VEC3_OFFSET = 17u;
+
+float hash(float value)
+{
+    return fract(sin(value * 91.173) * 43758.5453);
+}
+
+vec3 particleVariation(float particleId)
+{
+    return vec3(hash(particleId) * 2.0 - 1.0, hash(particleId + 17.0) * 2.0 - 1.0,
+                hash(particleId + 43.0) * 2.0 - 1.0);
+}
+
+vec3 calculateGhostParticlePosition(uint base, uint particleId, float elapsedTimeMS, out float calculatedFading)
+{
+    const float fadingMultiplier = 5.0;
+    float lifeDuration = max(particles.values[base + LIFE_DURATION_FLOAT_OFFSET], 1.0);
+    float birthTimeMs = particles.values[base + BIRTH_TIME_FLOAT_OFFSET];
+    calculatedFading = clamp((elapsedTimeMS - birthTimeMs) / lifeDuration, 0.0, 1.0);
+    float time = fadingMultiplier * calculatedFading;
+    vec3 variation = particleVariation(float(particleId));
+    vec3 spawnOffset = variation * vec3(0.7, 0.2, 0.7);
+    vec3 drift = variation * vec3(0.22, 0.1, 0.22) * time;
+    float sway = sin(time * 2.3 + variation.x * 6.2831853) * 0.15;
+    vec3 spawnPos = vec3(particles.values[base + SPAWN_POS_VEC3_OFFSET],
+                         particles.values[base + SPAWN_POS_VEC3_OFFSET + 1u],
+                         particles.values[base + SPAWN_POS_VEC3_OFFSET + 2u]);
+    vec3 inVelocity = vec3(particles.values[base + VELOCITY_VEC3_OFFSET], particles.values[base + VELOCITY_VEC3_OFFSET + 1u],
+                           particles.values[base + VELOCITY_VEC3_OFFSET + 2u]);
+    vec3 acceleration = vec3(particles.values[base + ACCELERATION_VEC3_OFFSET], particles.values[base + ACCELERATION_VEC3_OFFSET + 1u],
+                             particles.values[base + ACCELERATION_VEC3_OFFSET + 2u]);
+
+    return spawnPos + spawnOffset + time * (inVelocity + drift) +
+           time * time * acceleration + vec3(sway, 0.0, -sway);
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    // Update this particle instance with values that will be consumed by the vertex shader.
+    uint base = index * PARTICLE_FLOAT_COUNT;
+    if (base + PARTICLE_FLOAT_COUNT - 1u >= particles.values.length()) {
+        return;
+    }
+
+    float elapsed = pushData.timing.x;
+    float life = max(particles.values[base + LIFE_DURATION_FLOAT_OFFSET], 1.0);
+    float birth = particles.values[base + BIRTH_TIME_FLOAT_OFFSET];
+    vec3 variation = particleVariation(float(index));
+
+    // The particle lifetime has expired. Preserve the old position for motion vectors,
+    // then respawn the particle at the current emitter position and restart its lifetime
+    // by setting birthTimeMs to the current elapsed time below.
+    // timing.z = 1.0 allows particles to respawn; timing.z = 0.0 disables new spawns,
+    // while already alive particles continue their lifetime and fade out naturally.
+    if (elapsed - birth >= life && pushData.timing.z > 0.5) {
+        vec3 spawnOffset = variation * vec3(0.7, 0.2, 0.7);
+        vec3 spawnPosition = pushData.emitterPosition.xyz + spawnOffset;
+        particles.values[base + SPAWN_POS_VEC3_OFFSET] = spawnPosition.x;
+        particles.values[base + SPAWN_POS_VEC3_OFFSET + 1u] = spawnPosition.y;
+        particles.values[base + SPAWN_POS_VEC3_OFFSET + 2u] = spawnPosition.z;
+        particles.values[base + POS_VEC3_OFFSET] = spawnPosition.x;
+        particles.values[base + POS_VEC3_OFFSET + 1u] = spawnPosition.y;
+        particles.values[base + POS_VEC3_OFFSET + 2u] = spawnPosition.z;
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET] = spawnPosition.x;
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET + 1u] = spawnPosition.y;
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET + 2u] = spawnPosition.z;
+        particles.values[base + VELOCITY_VEC3_OFFSET] = pushData.emitterVelocity.x;
+        particles.values[base + VELOCITY_VEC3_OFFSET + 1u] = pushData.emitterVelocity.y;
+        particles.values[base + VELOCITY_VEC3_OFFSET + 2u] = pushData.emitterVelocity.z;
+        // A new birth time starts a fresh lifetime cycle; lifeDuration remains the particle's configured lifetime.
+        particles.values[base + BIRTH_TIME_FLOAT_OFFSET] = elapsed;
+        particles.values[base + FADING_FLOAT_OFFSET] = 0.0;
+        particles.values[base + RENDER_ALPHA_FLOAT_OFFSET] = particles.values[base + ALPHA_FLOAT_OFFSET];
+    } else {
+        // The particle is still alive: preserve its current position, calculate its Mode 2 state,
+        // and advance it using the compute-produced velocity and acceleration.
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET] = particles.values[base + POS_VEC3_OFFSET];
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET + 1u] = particles.values[base + POS_VEC3_OFFSET + 1u];
+        particles.values[base + PREVIOUS_POS_VEC3_OFFSET + 2u] = particles.values[base + POS_VEC3_OFFSET + 2u];
+        float fading;
+        vec3 calculatedPosition = calculateGhostParticlePosition(base, index, elapsed, fading);
+        float time = 5.0 * fading;
+        particles.values[base + FADING_FLOAT_OFFSET] = fading;
+        particles.values[base + RENDER_ALPHA_FLOAT_OFFSET] = particles.values[base + ALPHA_FLOAT_OFFSET];
+        particles.values[base + POS_VEC3_OFFSET] = calculatedPosition.x;
+        particles.values[base + POS_VEC3_OFFSET + 1u] = calculatedPosition.y;
+        particles.values[base + POS_VEC3_OFFSET + 2u] = calculatedPosition.z;
+    }
+}

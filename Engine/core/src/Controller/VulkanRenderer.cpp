@@ -107,6 +107,9 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     // subpass of SEMI_TRANSPARENT
     m_pipelineCreators[PARTICLE].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans, "vert_particle.spv",
                                                                    "frag_particle.spv", 1u, m_pushConstantRange));
+    m_pipelineCreators[PARTICLE_GPGPU].reset(new PipelineCreatorParticle(*this, m_renderPassSemiTrans,
+                                                                          "vert_particle_gpgpu.spv", "frag_particle_gpgpu.spv",
+                                                                          1u, m_pushConstantRange));
     m_pipelineCreators[SEMI_TRANSPARENT].reset(new PipelineCreatorSemiTransparent(
         *this, m_renderPassSemiTrans, "vert_semi_transparent.spv", "frag_semi_transparent.spv", 0u, m_pushConstantRange));
     m_pipelineCreators[OIT_RESOLVE].reset(
@@ -246,20 +249,20 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                                         static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()),
                                                         2000u, 0.85 * Z_FAR, glm::vec3(7.0f, 10.0f, 7.0f));
     m_particles[3] =
-        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
+        std::make_unique<GhostParticleGPGPU>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 60u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f), 
                                    300.0f, 800.0f);
     m_particles[4] =
-        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
+        std::make_unique<GhostParticleGPGPU>(*this, *mTextureFactory, "smoke.png", "smoke_gradient.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 60u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f),
                                    300.0f, 800.0f);
-    m_particles[5] =
-        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient2.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 300u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.05f, 0.0f), glm::vec3(1.0f), glm::vec3(33.0f),
-                                   300.0f, 2400.0f);
+        m_particles[5] =
+            std::make_unique<GhostParticleGPGPU>(*this, *mTextureFactory, "smoke.png", "smoke_gradient2.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 40u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.01f, 0.0f), glm::vec3(1.0f), glm::vec3(30.0f),
+                                   300.0f, 3400.0f);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -760,10 +763,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
             glm::vec4(4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
         m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
     }
-    if (m_barrelSmokeActive && m_particles[5]->isReady()) {
-        if (std::chrono::steady_clock::now() >= m_barrelSmokeDeadline) {
+    if (m_particles[5]->isReady()) {
+        if (m_barrelSmokeActive && std::chrono::steady_clock::now() >= m_barrelSmokeDeadline) {
             m_barrelSmokeActive = false;
-        } else {
+        }
+        if (m_barrelSmokeActive) {
             const glm::mat4 barrelRotation = glm::mat4(glm::mat3(mCamera.barrelModelMat()));
             const glm::vec3 barrelForward = glm::normalize(
                 glm::vec3(barrelRotation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
@@ -771,9 +775,10 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
                 barrelRotation * glm::vec4(0.0f, 20.0f,
                                             m_models[0]->radius() + PROJECTILE_RADIUS + 6.0f, 0.0f));
             m_barrelSmokeVelocity = barrelForward * 1.65f;
-            m_particles[5]->update(currentImage, deltaMS, glm::vec4(m_barrelSmokePosition, 1.0f),
-                                   glm::vec4(m_barrelSmokeVelocity, 0.0f));
         }
+        m_particles[5]->update(currentImage, deltaMS,
+                               glm::vec4(m_barrelSmokePosition, m_barrelSmokeActive ? 1.0f : 0.0f),
+                               glm::vec4(m_barrelSmokeVelocity, 0.0f));
     }
 
     const auto objectsAmount = m_models.size();
@@ -1284,6 +1289,12 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     renderPassdepthWriterInfo.clearValueCount = static_cast<uint32_t>(depthWriterClearValues.size());
     renderPassdepthWriterInfo.pClearValues = depthWriterClearValues.data();
     renderPassdepthWriterInfo.framebuffer = m_fbsDepth[currentImage];
+
+    for (auto& particle : m_particles) {
+        if (particle->isReady()) {
+            particle->recordCompute(_cmdBufs[currentImage], currentImage);
+        }
+    }
 
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassdepthWriterInfo, VK_SUBPASS_CONTENTS_INLINE);
 

@@ -129,23 +129,21 @@ void Particle::init(bool useTransferQueue) {
     }
 
     auto texture = m_textureFactory.create2DTexture(m_textureFileName, true, true, useTransferQueue).lock();
-    if (m_mode != ParticleMode::STATIC) {
-        auto textureGradient =
-            m_textureFactory.create2DTexture(m_textureGradientFileName, false, true, useTransferQueue).lock();  // without mip levels
-        mMaterialId = m_pipelineCreatorTextured->createDescriptor(
-            texture, m_textureFactory.getTextureSampler(texture->mipLevels), textureGradient,
-            m_textureFactory.getTextureSampler(textureGradient->mipLevels), &m_uboParticle);
-    } else {  // without gradient for bushes ...
-        mMaterialId =
-            m_pipelineCreatorTextured->createDescriptor(texture, m_textureFactory.getTextureSampler(texture->mipLevels), texture,
-                                                        m_textureFactory.getTextureSampler(0u), &m_uboParticle);
-    }
 
     if (m_verticesPreparedFuture.get()) {
+        // STATIC: (general buffer: vertices + instances)
+        //     binding 0 -> m_generalBuffer + offset 0
+        //     binding 1 -> m_generalBuffer + m_verticesBufferOffset
+        // 
+        // GHOST / ANCHORED / GHOST_GPGPU:
+        //     binding 0 -> m_generalBuffer
+        //     binding 1 -> m_instanceBuffers[image]
+
         const VkDeviceSize vertexAtributesSize = sizeof(m_vertices[0]) * m_vertices.size();
         m_verticesBufferOffset = vertexAtributesSize;
         const VkDeviceSize instancesSize = sizeof(m_instances[0]) * m_instances.size();
-        const VkDeviceSize bufferSize = instancesSize + vertexAtributesSize;
+        const VkDeviceSize bufferSize = vertexAtributesSize +
+                        (m_mode == ParticleMode::STATIC ? instancesSize : 0u);
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -156,7 +154,9 @@ void Particle::init(bool useTransferQueue) {
         void* data;
         vkMapMemory(p_devide, stagingBufferMemory, 0, bufferSize, 0, &data);
         memcpy(data, m_vertices.data(), (size_t)vertexAtributesSize);
-        memcpy(static_cast<char*>(data) + m_verticesBufferOffset, m_instances.data(), instancesSize);
+        if (m_mode == ParticleMode::STATIC) {
+            memcpy(static_cast<char*>(data) + m_verticesBufferOffset, m_instances.data(), instancesSize);
+        }
         vkUnmapMemory(p_devide, stagingBufferMemory);
 
         Utils::VulkanCreateBuffer(
@@ -179,15 +179,48 @@ void Particle::init(bool useTransferQueue) {
         const VkDeviceSize instanceBufferSize = sizeof(m_instances[0]) * m_instances.size();
         m_instanceBuffers.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
         m_instanceBuffersMemory.assign(m_vkState._swapchainImageCount, VK_NULL_HANDLE);
+        const VkMemoryPropertyFlags instanceMemoryProperties =
+            m_mode == ParticleMode::GHOST_GPGPU
+                ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+                : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
             Utils::VulkanCreateBuffer(p_devide, m_vkState._core.getPhysDevice(), instanceBufferSize,
-                                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                      instanceMemoryProperties,
                                       m_instanceBuffers[i], m_instanceBuffersMemory[i]);
-            vkMapMemory(p_devide, m_instanceBuffersMemory[i], 0, instanceBufferSize, 0, &data);
-            memcpy(data, m_instances.data(), instanceBufferSize);
-            vkUnmapMemory(p_devide, m_instanceBuffersMemory[i]);
+            if (m_mode == ParticleMode::GHOST_GPGPU) {
+                VkBuffer instanceStagingBuffer = VK_NULL_HANDLE;
+                VkDeviceMemory instanceStagingMemory = VK_NULL_HANDLE;
+                Utils::VulkanCreateBuffer(
+                    p_devide, m_vkState._core.getPhysDevice(), instanceBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    instanceStagingBuffer, instanceStagingMemory);
+                vkMapMemory(p_devide, instanceStagingMemory, 0, instanceBufferSize, 0, &data);
+                memcpy(data, m_instances.data(), instanceBufferSize);
+                vkUnmapMemory(p_devide, instanceStagingMemory);
+                Utils::VulkanCopyBuffer(p_devide, queue, commandPool, instanceStagingBuffer,
+                                        m_instanceBuffers[i], instanceBufferSize);
+                vkDestroyBuffer(p_devide, instanceStagingBuffer, nullptr);
+                vkFreeMemory(p_devide, instanceStagingMemory, nullptr);
+            } else {
+                vkMapMemory(p_devide, m_instanceBuffersMemory[i], 0, instanceBufferSize, 0, &data);
+                memcpy(data, m_instances.data(), instanceBufferSize);
+                vkUnmapMemory(p_devide, m_instanceBuffersMemory[i]);
+            }
         }
+    }
+
+    if (m_mode != ParticleMode::STATIC) {
+        auto textureGradient =
+            m_textureFactory.create2DTexture(m_textureGradientFileName, false, true, useTransferQueue).lock();
+        mMaterialId = m_pipelineCreatorTextured->createDescriptor(
+            texture, m_textureFactory.getTextureSampler(texture->mipLevels), textureGradient,
+            m_textureFactory.getTextureSampler(textureGradient->mipLevels), &m_uboParticle, this);
+    } else { // without gradient for bushes
+        mMaterialId = m_pipelineCreatorTextured->createDescriptor(
+            texture, m_textureFactory.getTextureSampler(texture->mipLevels), texture,
+            m_textureFactory.getTextureSampler(0u), &m_uboParticle, this);
     }
 
     publishReadyAfterTransfer(useTransferQueue);
@@ -204,7 +237,12 @@ void Particle::draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe
     static VkDeviceSize offsetsVertexAttributes[] = {0u};
     static VkDeviceSize offsetsInstances[] = {0u};
     vkCmdBindVertexBuffers(cmdBuf, 0, 1, vertexBuffers, offsetsVertexAttributes);
-    vkCmdBindVertexBuffers(cmdBuf, 1, 1, &vertexBuffers[1], offsetsInstances);
+    if (m_mode == ParticleMode::STATIC) {
+        const VkDeviceSize staticInstanceOffset = m_verticesBufferOffset;
+        vkCmdBindVertexBuffers(cmdBuf, 1, 1, &m_generalBuffer, &staticInstanceOffset);
+    } else {
+        vkCmdBindVertexBuffers(cmdBuf, 1, 1, &vertexBuffers[1], offsetsInstances);
+    }
 
     vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_pipelineCreatorTextured->getPipeline().get()->pipelineLayout, 0, 1,
@@ -293,4 +331,87 @@ void GhostParticle::update(uint32_t currentImage, float deltaMS, const glm::vec4
     vkMapMemory(m_vkState._core.getDevice(), m_instanceBuffersMemory[currentImage], 0, instancesSize, 0, &data);
     memcpy(data, m_instances.data(), instancesSize);
     vkUnmapMemory(m_vkState._core.getDevice(), m_instanceBuffersMemory[currentImage]);
+}
+
+GhostParticleGPGPU::GhostParticleGPGPU(const VulkanState& vulkanState, TextureFactory& textureFactory,
+                                       std::string_view particleTextureFileName,
+                                       std::string_view particleGradientTextureFileName,
+                                       PipelineCreatorParticle* pipelineCreatorTextured, uint32_t instancesAmount,
+                                       const glm::vec3& positionOrigin, const glm::vec3& velocity,
+                                       const glm::vec3& minScale, const glm::vec3& maxScale,
+                                       float lifeDurationMinMs, float lifeDurationMaxMs) noexcept(true)
+    : Particle(vulkanState, textureFactory, particleTextureFileName, particleGradientTextureFileName,
+               pipelineCreatorTextured, instancesAmount, positionOrigin, velocity, minScale, maxScale,
+               lifeDurationMinMs, lifeDurationMaxMs) {
+    m_mode = ParticleMode::GHOST_GPGPU;
+
+    m_computeParams.position = glm::vec4(positionOrigin, 1.0f);
+    m_computeParams.velocity = glm::vec4(velocity, 0.0f);
+}
+
+GhostParticleGPGPU::~GhostParticleGPGPU() {
+    if (m_computePipeline != VK_NULL_HANDLE && m_vkState._core.getDevice() != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_vkState._core.getDevice(), m_computePipeline, nullptr);
+    }
+}
+
+void GhostParticleGPGPU::init(bool useTransferQueue) {
+    assert(m_pipelineCreatorTextured);
+    assert(m_pipelineCreatorTextured->getPipeline());
+
+    const VkPipelineLayout layout = m_pipelineCreatorTextured->getPipeline()->pipelineLayout;
+    const VkShaderModule shader = Utils::VulkanCreateShaderModule(m_vkState._core.getDevice(), "comp_particle_gpgpu.spv");
+    VkPipelineShaderStageCreateInfo stage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = shader;
+    stage.pName = "main";
+    VkComputePipelineCreateInfo pipelineInfo{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    pipelineInfo.stage = stage;
+    pipelineInfo.layout = layout;
+    CHECK_VULKAN_ERROR("vkCreateComputePipelines (particle GPGPU) error %d\n",
+                       vkCreateComputePipelines(m_vkState._core.getDevice(), VK_NULL_HANDLE, 1u,
+                                                &pipelineInfo, nullptr, &m_computePipeline));
+    vkDestroyShaderModule(m_vkState._core.getDevice(), shader, nullptr);
+
+    Particle::init(useTransferQueue);
+}
+
+void GhostParticleGPGPU::update(uint32_t, float deltaMS, const glm::vec4& offsetPosition,
+                                const glm::vec4& velocity) {
+    m_computeParams.position = offsetPosition;
+    m_computeParams.velocity = velocity;
+    m_computeParams.time.x = m_vkState._pushConstant.windDirElapsedTimeMS.w;
+    m_computeParams.time.y = deltaMS;
+    m_computeParams.time.z = offsetPosition.w;
+}
+
+void GhostParticleGPGPU::recordCompute(VkCommandBuffer commandBuffer, uint32_t currentImage) const {
+    if (!isReady() || m_computePipeline == VK_NULL_HANDLE || m_instanceBuffers.empty()) {
+        return;
+    }
+    const auto* particlePipeline = static_cast<const PipelineCreatorParticle*>(m_pipelineCreatorTextured);
+    const VkPipelineLayout layout = particlePipeline->getPipeline()->pipelineLayout;
+    const VkDescriptorSet* descriptorSet = particlePipeline->getDescriptorSet(currentImage, mMaterialId);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0u, 1u, descriptorSet, 0u, nullptr);
+    vkCmdPushConstants(commandBuffer, layout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+                           VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
+                       0u, sizeof(ComputeParams), &m_computeParams);
+    // 60 particles -> 1 workgroup
+    // 64 particles -> 1 workgroup
+    // 65 particles -> 2 workgroups
+    // 150 particles -> 3 workgroups
+    // 300 particles -> 5 workgroups
+    // (m_instanceCount + 63u) / 64u this is integer rounding up:
+    vkCmdDispatch(commandBuffer, (m_instanceCount + 63u) / 64u, 1u, 1u);
+
+    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    barrier.buffer = m_instanceBuffers[currentImage];
+    barrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                         0u, 0u, nullptr, 1u, &barrier, 0u, nullptr);
 }
