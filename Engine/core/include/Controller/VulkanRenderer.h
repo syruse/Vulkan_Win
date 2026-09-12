@@ -137,7 +137,7 @@ private:
     void syncProjectileVisualFromPhysics();
     /// Sync dynamic interior cube positions from Bullet bodies into their render instances.
     void syncInteriorCubesVisualFromPhysics();
-    /// Spawn/launch projectile from tank muzzle if no active projectile exists.
+    /// Spawn/launch projectile from tank barrel if no active projectile exists.
     void tryFireProjectile();
     void createNpcTankPhysicsBodiesIfReady();
     void updateNpcTanks(float deltaTimeSeconds);
@@ -169,7 +169,11 @@ private:
     VkPhysicalDeviceProperties mDeviceProperties;
     std::array<std::unique_ptr<PipelineCreatorBase>, Pipelines::MAX> m_pipelineCreators{nullptr};
     std::vector<std::unique_ptr<I3DModel>> m_models{};
-    std::array<std::unique_ptr<Particle>, 5u> m_particles;
+    std::array<std::unique_ptr<Particle>, 6u> m_particles;
+    bool m_barrelSmokeActive{false};
+    std::chrono::steady_clock::time_point m_barrelSmokeDeadline{};
+    glm::vec3 m_barrelSmokePosition{0.0f};
+    glm::vec3 m_barrelSmokeVelocity{0.0f};
     std::vector<I3DModel::InteractionImpactAnimation> m_semiTransparentAnimations{TREES_COUNT};
     std::vector<std::unique_ptr<I3DModel>> m_semiTransparentModels{};
 

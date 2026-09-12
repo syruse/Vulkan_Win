@@ -255,6 +255,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 60u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f),
                                    300.0f, 800.0f);
+    m_particles[5] =
+        std::make_unique<GhostParticle>(*this, *mTextureFactory, "smoke.png", "smoke_gradient2.png",
+                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE].get()), 300u,
+                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.05f, 0.0f), glm::vec3(1.0f), glm::vec3(33.0f),
+                                   300.0f, 2400.0f);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -754,6 +759,21 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
             mCamera.targetModelMat() *
             glm::vec4(4.0f, 18.0f, -30.0f, 1.0f);  // Note: here we use hardcoded position of pipe in our model!!!
         m_particles[4]->update(currentImage, deltaMS, exhaustPipePos2, exhaustVelocity);
+    }
+    if (m_barrelSmokeActive && m_particles[5]->isReady()) {
+        if (std::chrono::steady_clock::now() >= m_barrelSmokeDeadline) {
+            m_barrelSmokeActive = false;
+        } else {
+            const glm::mat4 barrelRotation = glm::mat4(glm::mat3(mCamera.barrelModelMat()));
+            const glm::vec3 barrelForward = glm::normalize(
+                glm::vec3(barrelRotation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+            m_barrelSmokePosition = mCamera.targetPos() + glm::vec3(
+                barrelRotation * glm::vec4(0.0f, 20.0f,
+                                            m_models[0]->radius() + PROJECTILE_RADIUS + 6.0f, 0.0f));
+            m_barrelSmokeVelocity = barrelForward * 1.65f;
+            m_particles[5]->update(currentImage, deltaMS, glm::vec4(m_barrelSmokePosition, 1.0f),
+                                   glm::vec4(m_barrelSmokeVelocity, 0.0f));
+        }
     }
 
     const auto objectsAmount = m_models.size();
@@ -2614,6 +2634,11 @@ void VulkanRenderer::tryFireProjectile() {
     const glm::vec3 spawnPos = tankPos + forward * (m_models[0]->radius() * 0.7f + PROJECTILE_RADIUS + 6.0f) +
                                glm::vec3(0.0f, 18.0f, 0.0f);
 
+    m_barrelSmokePosition = spawnPos;
+    m_barrelSmokeVelocity = forward * 1.65f;
+    m_barrelSmokeDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    m_barrelSmokeActive = true;
+
     btTransform t;
     t.setIdentity();
     t.setOrigin(btVector3(spawnPos.x, spawnPos.y, spawnPos.z));
@@ -2622,7 +2647,7 @@ void VulkanRenderer::tryFireProjectile() {
     }
     m_btProjectileBody->setWorldTransform(t);
     m_btProjectileBody->setInterpolationWorldTransform(t);
-    // Re-seed body state at muzzle and launch with configured speed.
+    // Re-seed body state at barrel and launch with configured speed.
     m_btProjectileBody->setLinearVelocity(btVector3(forward.x * PROJECTILE_SPEED, forward.y * PROJECTILE_SPEED,
                                                     forward.z * PROJECTILE_SPEED));
     const glm::vec3 rollingAxis = glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f));
