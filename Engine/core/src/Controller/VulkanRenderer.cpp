@@ -4459,6 +4459,11 @@ void VulkanRenderer::createPipeline() {
 
 void VulkanRenderer::createGpgpuBloomResources() {
 #if defined(USE_GPGPU_BLOOM_GAUSSIAN_BLUR) && USE_GPGPU_BLOOM_GAUSSIAN_BLUR
+    if (_swapchainImageCount == 0u) {
+        Utils::printLog(INFO_PARAM, "GPGPU bloom skipped: swapchain has 0 images");
+        return;
+    }
+
     VkDescriptorSetLayoutBinding bindings[3]{};
     for (uint32_t binding = 0u; binding < 3u; ++binding) {
         bindings[binding].binding = binding;
@@ -4471,15 +4476,13 @@ void VulkanRenderer::createGpgpuBloomResources() {
     layoutInfo.bindingCount = 3u;
     layoutInfo.pBindings = bindings;
     CHECK_VULKAN_ERROR("vkCreateDescriptorSetLayout (GPGPU bloom) error %d\n",
-                       vkCreateDescriptorSetLayout(_core.getDevice(), &layoutInfo, nullptr,
-                                                   &m_gpgpuBloomDescriptorSetLayout));
+                       vkCreateDescriptorSetLayout(_core.getDevice(), &layoutInfo, nullptr, &m_gpgpuBloomDescriptorSetLayout));
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipelineLayoutInfo.setLayoutCount = 1u;
     pipelineLayoutInfo.pSetLayouts = &m_gpgpuBloomDescriptorSetLayout;
     CHECK_VULKAN_ERROR("vkCreatePipelineLayout (GPGPU bloom) error %d\n",
-                       vkCreatePipelineLayout(_core.getDevice(), &pipelineLayoutInfo, nullptr,
-                                              &m_gpgpuBloomPipelineLayout));
+                       vkCreatePipelineLayout(_core.getDevice(), &pipelineLayoutInfo, nullptr, &m_gpgpuBloomPipelineLayout));
 
     const auto createComputePipeline = [&](std::string_view shaderName, VkPipeline& pipeline) {
         VkShaderModule shader = Utils::VulkanCreateShaderModule(_core.getDevice(), shaderName);
@@ -4492,8 +4495,7 @@ void VulkanRenderer::createGpgpuBloomResources() {
         createInfo.stage = stage;
         createInfo.layout = m_gpgpuBloomPipelineLayout;
         CHECK_VULKAN_ERROR("vkCreateComputePipelines (GPGPU bloom) error %d\n",
-                           vkCreateComputePipelines(_core.getDevice(), VK_NULL_HANDLE, 1u, &createInfo,
-                                                    nullptr, &pipeline));
+                           vkCreateComputePipelines(_core.getDevice(), VK_NULL_HANDLE, 1u, &createInfo, nullptr, &pipeline));
         vkDestroyShaderModule(_core.getDevice(), shader, nullptr);
     };
 
@@ -4503,33 +4505,37 @@ void VulkanRenderer::createGpgpuBloomResources() {
     createComputePipeline(std::string("comp_gaussYBlur") + std::string(formatSuffix) + ".spv", m_gpgpuGaussYPipeline);
     createComputePipeline(std::string("comp_bloom") + std::string(formatSuffix) + ".spv", m_gpgpuBloomPipeline);
 
-    std::array<VkDescriptorPoolSize, 1> poolSizes{{{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                                                     3u * _swapchainImageCount}}};
+    // We allocate 3 descriptor sets per swapchain image (one for Gauss X, one for Gauss Y, one for Bloom).
+    // Each descriptor set contains 3 storage images => total storage image descriptors = 3 * (3 * _swapchainImageCount) = 9 *
+    // _swapchainImageCount.
+    const uint32_t setsPerImage = 3u;
+    const uint32_t descriptorSetsCount = setsPerImage * static_cast<uint32_t>(_swapchainImageCount);
+    const uint32_t storageImagesPerSet = 3u;
+    const uint32_t totalStorageImages = descriptorSetsCount * storageImagesPerSet;
+
+    std::array<VkDescriptorPoolSize, 1> poolSizes{{{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, totalStorageImages}}};
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    poolInfo.maxSets = 3u * _swapchainImageCount;
+    poolInfo.maxSets = descriptorSetsCount;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
     CHECK_VULKAN_ERROR("vkCreateDescriptorPool (GPGPU bloom) error %d\n",
-                       vkCreateDescriptorPool(_core.getDevice(), &poolInfo, nullptr,
-                                              &m_gpgpuBloomDescriptorPool));
+                       vkCreateDescriptorPool(_core.getDevice(), &poolInfo, nullptr, &m_gpgpuBloomDescriptorPool));
 
-    std::vector<VkDescriptorSetLayout> layouts(3u * _swapchainImageCount, m_gpgpuBloomDescriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(descriptorSetsCount, m_gpgpuBloomDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocateInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     allocateInfo.descriptorPool = m_gpgpuBloomDescriptorPool;
     allocateInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
     allocateInfo.pSetLayouts = layouts.data();
     m_gpgpuBloomDescriptorSets.resize(layouts.size());
     CHECK_VULKAN_ERROR("vkAllocateDescriptorSets (GPGPU bloom) error %d\n",
-                       vkAllocateDescriptorSets(_core.getDevice(), &allocateInfo,
-                                                m_gpgpuBloomDescriptorSets.data()));
+                       vkAllocateDescriptorSets(_core.getDevice(), &allocateInfo, m_gpgpuBloomDescriptorSets.data()));
 
     for (uint32_t imageIndex = 0u; imageIndex < _swapchainImageCount; ++imageIndex) {
         const VkDescriptorImageInfo gaussInput{VK_NULL_HANDLE, _bloomBuffer[0].colorBufferImageView[imageIndex],
-                                                VK_IMAGE_LAYOUT_GENERAL};
+                                               VK_IMAGE_LAYOUT_GENERAL};
         const VkDescriptorImageInfo gaussOutput{VK_NULL_HANDLE, _bloomBuffer[1].colorBufferImageView[imageIndex],
-                                                 VK_IMAGE_LAYOUT_GENERAL};
-        const VkDescriptorImageInfo color{VK_NULL_HANDLE, _colorBuffer.colorBufferImageView[imageIndex],
-                                          VK_IMAGE_LAYOUT_GENERAL};
+                                                VK_IMAGE_LAYOUT_GENERAL};
+        const VkDescriptorImageInfo color{VK_NULL_HANDLE, _colorBuffer.colorBufferImageView[imageIndex], VK_IMAGE_LAYOUT_GENERAL};
         const VkDescriptorImageInfo bloom{VK_NULL_HANDLE, _bloomBuffer[0].colorBufferImageView[imageIndex],
                                           VK_IMAGE_LAYOUT_GENERAL};
 
