@@ -2298,9 +2298,96 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
 
     constexpr float moveSpeed = 35.0f;
     constexpr float turnSpeed = 1.6f;
+    constexpr float turretTurnSpeed = 0.75f;
     const auto squaredDistance = [](const glm::vec3& first, const glm::vec3& second) {
         const glm::vec3 delta = first - second;
         return glm::dot(delta, delta);
+    };
+    const auto findBlockingCube = [](const glm::vec3& from, const glm::vec3& to,
+                                     const std::vector<btRigidBody*>& cubeBodies, float cubeHalfExtent,
+                                     glm::vec3& blockingCubePosition) {
+        const glm::vec2 start(from.x, from.z);
+        const glm::vec2 end(to.x, to.z);
+        const glm::vec2 segment = end - start;
+        const float segmentLengthSquared = glm::dot(segment, segment);
+        if (segmentLengthSquared < 0.0001f) {
+            return false;
+        }
+
+        bool foundNearestBlockingCube = false;
+        float nearestHit = std::numeric_limits<float>::max();
+        for (const auto* cubeBody : cubeBodies) {
+            if (!cubeBody) {
+                continue;
+            }
+            const btVector3& cubeOrigin = cubeBody->getWorldTransform().getOrigin();
+            const glm::vec2 cubeCenter(cubeOrigin.x(), cubeOrigin.z());
+            const glm::vec2 boundsMin = cubeCenter - glm::vec2(cubeHalfExtent);
+            const glm::vec2 boundsMax = cubeCenter + glm::vec2(cubeHalfExtent);
+
+            // Segment/AABB intersection on the XZ plane. The segment is the line from the NPC tank
+            // to the player tank: point(t) = start + segment * t, where t=0 is NPC and t=1 is player.
+            // enter/exit store the interval of t values where this line is inside the cube bounds.
+            // If the final interval is valid (enter <= exit), the cube blocks the line of sight/fire.
+            float enter = 0.0f;
+            float exit = 1.0f;
+            for (uint32_t axis = 0u; axis < 2u; ++axis) {
+                // segment[axis] is NOT the distance to the cube. It is the NPC->player direction
+                // along one axis: axis 0 = world X, axis 1 = world Z. If it is almost zero, the
+                // line is almost parallel to this axis and division by it would be unstable.
+                if (std::abs(segment[axis]) < 0.0001f) {
+                    // Since the line does not move along this axis, start[axis] stays constant for
+                    // the whole NPC->player segment. If that constant coordinate is outside the cube
+                    // bounds, the segment can never enter the cube on this axis, so there is no hit.
+                    if (start[axis] < boundsMin[axis] || start[axis] > boundsMax[axis]) {
+                        enter = 1.0f;
+                        exit = 0.0f;
+                        break;
+                    }
+                    // Otherwise the whole segment is already inside the cube range on this axis,
+                    // so this axis does not restrict enter/exit. The other axis will decide the hit.
+                    continue;
+                }
+
+                // Find where the NPC->player segment crosses the two cube sides for this axis.
+                // Example for X: boundsMin.x is the left cube side, boundsMax.x is the right side.
+                // nearHit/farHit are t values in [0..1] when the side lies between NPC and player.
+                const float invDirection = 1.0f / segment[axis];
+                float nearHit = (boundsMin[axis] - start[axis]) * invDirection;
+                float farHit = (boundsMax[axis] - start[axis]) * invDirection;
+                // If the line goes in the negative direction on this axis, the far side is reached
+                // before the near side. Swap them so nearHit always means entering the cube slab.
+                if (nearHit > farHit) {
+                    std::swap(nearHit, farHit);
+                }
+                // Intersect this axis interval with the current interval from previous axes.
+                // The segment is inside the cube only where it is inside BOTH X and Z ranges.
+                enter = std::max(enter, nearHit);
+                exit = std::min(exit, farHit);
+            }
+
+            if (enter <= exit && enter >= 0.0f && enter < nearestHit) {
+                nearestHit = enter;
+                blockingCubePosition = glm::vec3(cubeOrigin.x(), cubeOrigin.y(), cubeOrigin.z());
+                foundNearestBlockingCube = true;
+            }
+        }
+        return foundNearestBlockingCube;
+    };
+    const auto intersectsInteriorCube = [](const glm::vec3& position, float radius,
+                                           const std::vector<btRigidBody*>& cubeBodies) {
+        const float expandedHalfExtent = INTERIOR_CUBE_HALF_EXTENT + radius;
+        for (const auto* cubeBody : cubeBodies) {
+            if (!cubeBody) {
+                continue;
+            }
+            const btVector3& cubeOrigin = cubeBody->getWorldTransform().getOrigin();
+            if (std::abs(position.x - cubeOrigin.x()) <= expandedHalfExtent &&
+                std::abs(position.z - cubeOrigin.z()) <= expandedHalfExtent) {
+                return true;
+            }
+        }
+        return false;
     };
     // std::sin(angle) and std::cos(angle) convert the angle into a point on the unit circle.
     // std::atan2(y, x) reconstructs the angle from that point.
@@ -2323,27 +2410,67 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
 
         glm::vec3 targetPosition = playerPosition;
         float nearestDistanceSquared = squaredDistance(npc.position, playerPosition);
-        for (uint32_t otherIndex = 0u; otherIndex < NPC_TANK_COUNT; ++otherIndex) {
-            if (otherIndex == npcIndex || !m_npcTanks[otherIndex].alive) {
-                continue;
+
+        const float tankCollisionRadius = m_models[0]->radius() * 0.4f;
+        glm::vec3 blockingCubePosition{};
+        const bool isPlayerBlockedByCube = findBlockingCube(
+            npc.position, playerPosition, m_btInteriorCubeBodies, INTERIOR_CUBE_HALF_EXTENT + PROJECTILE_RADIUS,
+            blockingCubePosition);
+        if (isPlayerBlockedByCube) {
+            // Work only on the ground plane here. playerDirection.x is world X, and playerDirection.y is world Z.
+            // We ignore world Y because tanks drive around obstacles horizontally, not above or below them.
+            const glm::vec2 playerDirection = glm::normalize(glm::vec2(playerPosition.x - npc.position.x,
+                                                                       playerPosition.z - npc.position.z));
+            // Rotate the NPC->player direction by 90 degrees on the XZ plane. This gives a sideways direction
+            // around the blocking cube, so the NPC can try going around the obstacle instead of driving into it.
+            const glm::vec2 sideDirection(-playerDirection.y, playerDirection.x);
+            // Keep the waypoint outside the cube: cube half size + tank collision radius + extra clearance.
+            // The extra 70 units reduce the chance that the NPC clips the cube corner while turning.
+            const float bypassDistance = INTERIOR_CUBE_HALF_EXTENT + tankCollisionRadius + 70.0f;
+            // Try two possible waypoints, one on each side of the blocking cube. The Y coordinate stays at the
+            // NPC height because only X/Z changes matter for driving around an obstacle on the ground.
+            const glm::vec3 bypassA(blockingCubePosition.x + sideDirection.x * bypassDistance, npc.position.y,
+                                    blockingCubePosition.z + sideDirection.y * bypassDistance);
+            const glm::vec3 bypassB(blockingCubePosition.x - sideDirection.x * bypassDistance, npc.position.y,
+                                    blockingCubePosition.z - sideDirection.y * bypassDistance);
+            // Reject waypoint candidates outside the playable area. Cube collision is still checked before each
+            // movement step below, but the boundary can be filtered immediately here.
+            const bool canUseA = !intersectsBoundary(bypassA, tankCollisionRadius);
+            const bool canUseB = !intersectsBoundary(bypassB, tankCollisionRadius);
+            // Prefer the valid bypass point that leaves the NPC closer to the player after going around the cube.
+            // If only one side is valid, use that side. If neither side is valid, targetPosition stays as playerPosition
+            // and the movement collision checks below will prevent driving through geometry.
+            if (canUseA && (!canUseB || squaredDistance(bypassA, playerPosition) < squaredDistance(bypassB, playerPosition))) {
+                targetPosition = bypassA;
+            } else if (canUseB) {
+                targetPosition = bypassB;
             }
-            const float distanceSquared = squaredDistance(npc.position, m_npcTanks[otherIndex].position);
-            if (distanceSquared < nearestDistanceSquared) {
-                nearestDistanceSquared = distanceSquared;
-                targetPosition = m_npcTanks[otherIndex].position;
-            }
+            // From this point, movement uses the selected bypass waypoint as the current target instead of the player.
+            nearestDistanceSquared = squaredDistance(npc.position, targetPosition);
         }
 
         const glm::vec2 targetOffset(targetPosition.x - npc.position.x, targetPosition.z - npc.position.z);
-        const float targetYaw = std::atan2(targetOffset.x, targetOffset.y);
-        const float yawDelta = wrapAngle(targetYaw - npc.hullYaw);
+        const float moveTargetYaw = std::atan2(targetOffset.x, targetOffset.y);
+        const float yawDelta = wrapAngle(moveTargetYaw - npc.hullYaw);
         npc.hullYaw += glm::clamp(yawDelta, -turnSpeed * deltaTimeSeconds, turnSpeed * deltaTimeSeconds);
-        npc.turretYaw = wrapAngle(targetYaw - npc.hullYaw);
+
+        const glm::vec2 playerOffset(playerPosition.x - npc.position.x, playerPosition.z - npc.position.z);
+        const float playerYaw = std::atan2(playerOffset.x, playerOffset.y);
+        const float targetTurretYaw = wrapAngle(playerYaw - npc.hullYaw);
+        const float turretYawDelta = wrapAngle(targetTurretYaw - npc.turretYaw);
+        npc.turretYaw += glm::clamp(turretYawDelta, -turretTurnSpeed * deltaTimeSeconds,
+                        turretTurnSpeed * deltaTimeSeconds);
+        npc.turretYaw = wrapAngle(npc.turretYaw);
+        const bool isTurretAimedAtPlayer = std::abs(wrapAngle(targetTurretYaw - npc.turretYaw)) < glm::radians(6.0f);
 
         const glm::vec3 forward(std::sin(npc.hullYaw), 0.0f, std::cos(npc.hullYaw));
-        if (nearestDistanceSquared > 260.0f * 260.0f) {
+        // When blocked, the target is a bypass waypoint, so stop only when the NPC almost reaches it.
+        // Otherwise, the target is the player, so stop at combat distance and shoot from there.
+        const float stopDistance = isPlayerBlockedByCube ? 20.0f : 260.0f;
+        if (nearestDistanceSquared > stopDistance * stopDistance) {
             const glm::vec3 nextPosition = npc.position + forward * moveSpeed * deltaTimeSeconds;
-            if (!intersectsBoundary(nextPosition, m_models[0]->radius() * 0.4f)) {
+            if (!intersectsBoundary(nextPosition, tankCollisionRadius) &&
+                !intersectsInteriorCube(nextPosition, tankCollisionRadius, m_btInteriorCubeBodies)) {
                 npc.position = nextPosition;
             }
         }
@@ -2358,7 +2485,8 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
 
         ProjectileState& projectile = m_projectiles[npcIndex];
         const auto now = std::chrono::steady_clock::now();
-        if (projectile.body && npc.shellCount > 0u && now >= npc.reloadDeadline && !projectile.active) {
+        if (!isPlayerBlockedByCube && isTurretAimedAtPlayer && projectile.body && npc.shellCount > 0u &&
+            now >= npc.reloadDeadline && !projectile.active) {
             const glm::vec3 barrelForward(std::sin(npc.hullYaw + npc.turretYaw), 0.0f,
                                           std::cos(npc.hullYaw + npc.turretYaw));
             const glm::vec3 spawnPosition = npc.position + barrelForward *
@@ -2377,7 +2505,8 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
             projectile.expiry = now + PROJECTILE_TIMEOUT;
             projectile.active = true;
             npc.reloadDeadline = now + PROJECTILE_TIMEOUT;
-            --npc.shellCount;
+            // NPC can always fire 
+            // --npc.shellCount;
         }
     }
 }
