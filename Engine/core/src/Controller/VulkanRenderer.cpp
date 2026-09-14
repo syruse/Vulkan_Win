@@ -1779,7 +1779,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
                 renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
 
                 vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-                _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
+                _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this, hmiRenderData]() {
+                    if (!hmiRenderData) {
+                        drawNpcHealthBars();
+                    }
+                });
                 vkCmdEndRenderPass(_cmdBufs[currentImage]);
             }
         }
@@ -1797,7 +1801,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             renderPassUIInfo.renderArea.extent = {_windowWidth, _windowHeight};
             renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
             vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this, hmiRenderData]() {
+                if (!hmiRenderData) {
+                    drawNpcHealthBars();
+                }
+            });
             vkCmdEndRenderPass(_cmdBufs[currentImage]);
         }
     }
@@ -1858,7 +1866,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
             renderPassUIInfo.framebuffer = m_fbsUIOverlay[currentImage];
 
             vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassUIInfo, VK_SUBPASS_CONTENTS_INLINE);
-            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this]() { drawNpcHealthBars(); });
+            _core.getWinController()->imGuiNewFrame(_cmdBufs[currentImage], [this, hmiRenderData]() {
+                if (!hmiRenderData) {
+                    drawNpcHealthBars();
+                }
+            });
             vkCmdEndRenderPass(_cmdBufs[currentImage]);
         }
     }
@@ -3030,6 +3042,17 @@ bool VulkanRenderer::renderScene() {
 
         const float sign = (dir == Camera::EDirection::Back) ? -1.0f : 1.0f;
         const glm::vec3 tentativePos = currentPos + Camera::GAIN_MOVEMENT * sign * forward;
+        const float tankBlockDistance = tankCollisionRadius * 2.0f;
+        for (const NpcTankState& npc : m_npcTanks) {
+            if (!npc.alive) {
+                continue;
+            }
+            const glm::vec2 tankOffset(tentativePos.x - npc.position.x, tentativePos.z - npc.position.z);
+            if (glm::dot(tankOffset, tankOffset) < tankBlockDistance * tankBlockDistance) {
+                return false;
+            }
+        }
+
         return !intersectsBoundary(tentativePos, tankCollisionRadius);
     };
 
