@@ -73,6 +73,7 @@ static bool _oneOffClearingFootPrint = true;
 // lastFootPrintPos allows us to draw original print of wheels without noisy messy effect caused by constant redrawing with
 // footprint texture overlapping
 static glm::vec3 _lastFootPrintPos = glm::vec3(0.0f, -1000.0f, 0.0f);
+static glm::quat _lastFootPrintRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 // if the traveled distance exceeds 70 percentage of panzer lenght then we draw new footprint
 float _footPrintRedrawingK = 0.7f;
 
@@ -235,8 +236,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline,
                                         INTERIOR_CUBE_HALF_EXTENT, m_interiorCubeInstances));
     m_projectileModelIndex = static_cast<uint32_t>(m_models.size());
+    Instance hiddenProjectileInstance{};
+    hiddenProjectileInstance.posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
+    std::vector<Instance> projectileInstances(RESERVED_NPC_COUNT, hiddenProjectileInstance);
     m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline, PROJECTILE_RADIUS,
-                                          24u, 16u, std::vector<Instance>(m_npcTanks.size() + 1u)));
+                                          24u, 16u, projectileInstances));
 
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
@@ -1388,13 +1392,17 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         VkClearRect clearRect = {{{0u, 0u}, {_footprintBuffer.width, _footprintBuffer.height}}, 0u, 1u};
         vkCmdClearAttachments(_cmdBufs[currentImage], 1, &clearAttachment, 1u, &clearRect);
         _oneOffClearingFootPrint = false;
-    } else if (m_models[0u]->isReady() &&
-               glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius()) {
+        _lastFootPrintRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
+    } else if (allModelsReady() &&
+               (glm::distance(_lastFootPrintPos, mCamera.targetPos()) >= _footPrintRedrawingK * m_models[0]->radius() ||
+                glm::angle(glm::quat_cast(glm::mat3(mCamera.targetModelMat())) * glm::inverse(_lastFootPrintRot)) >=
+                    glm::radians(5.0f))) {
         // draw object tracks (the panzer will leave the footprint)
         uint32_t meshIndex = 0u;
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
         m_models[meshIndex]->drawFootprints(_cmdBufs[currentImage], currentImage, dynamicOffset);
         _lastFootPrintPos = mCamera.targetPos();
+        _lastFootPrintRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
     }
 
     vkCmdEndRenderPass(_cmdBufs[currentImage]);
@@ -3217,9 +3225,11 @@ bool VulkanRenderer::renderScene() {
             const float tankRadius = m_models[0]->radius() / 2.0f;
             glm::vec3 spawnPosition{};
             bool hasValidSpawnPosition = false;
+            static std::mt19937 spawnGenerator(std::random_device{}());
+            static std::uniform_int_distribution<size_t> spawnIndexDistribution(0u, NPC_SPAWN_X_POSITIONS.size() - 1u);
             for (size_t positionOffset = 0u; positionOffset < NPC_SPAWN_X_POSITIONS.size(); ++positionOffset) {
-                const float spawnX = NPC_SPAWN_X_POSITIONS[(npcIndex + positionOffset) % NPC_SPAWN_X_POSITIONS.size()];
-                const glm::vec3 candidatePosition(spawnX, 0.0f, spawnZ);
+                const size_t spawnPositionIndex = spawnIndexDistribution(spawnGenerator);
+                const glm::vec3 candidatePosition(NPC_SPAWN_X_POSITIONS[spawnPositionIndex], 0.0f, spawnZ);
                 if (intersectsBoundary(candidatePosition, tankRadius)) {
                     continue;
                 }
