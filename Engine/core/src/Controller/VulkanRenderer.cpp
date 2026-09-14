@@ -258,11 +258,11 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                    static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 60u,
                                    glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(2.5f), glm::vec3(4.0f),
                                    300.0f, 800.0f);
-        m_particles[5] =
-            std::make_unique<GhostParticleGPGPU>(*this, *mTextureFactory, "smoke.png", "smoke_gradient2.png",
-                                   static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 40u,
-                                   glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.01f, 0.0f), glm::vec3(1.0f), glm::vec3(30.0f),
-                                   300.0f, 3400.0f);
+    m_particles[5] =
+        std::make_unique<GhostParticleGPGPU>(*this, *mTextureFactory, "smoke.png", "smoke_gradient2.png",
+                               static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 40u,
+                               glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.01f, 0.0f), glm::vec3(1.0f), glm::vec3(30.0f),
+                               300.0f, 3400.0f);
 }
 
 VulkanRenderer::~VulkanRenderer() {

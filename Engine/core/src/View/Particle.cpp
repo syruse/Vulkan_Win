@@ -18,10 +18,18 @@ Particle::~Particle() {
         }
     }
     for (size_t i = 0u; i < m_instanceBuffers.size(); ++i) {
-        if (m_instanceBuffers[i] != VK_NULL_HANDLE) {
+        // GPGPU particles use one shared instance buffer for smooth simulation, not three independent
+        // swapchain states; each next compute update continues from the previous buffer result.
+        bool ownsBuffer = m_instanceBuffers[i] != VK_NULL_HANDLE;
+        bool ownsMemory = m_instanceBuffersMemory[i] != VK_NULL_HANDLE;
+        for (size_t j = 0u; j < i; ++j) {
+            ownsBuffer = ownsBuffer && m_instanceBuffers[j] != m_instanceBuffers[i];
+            ownsMemory = ownsMemory && m_instanceBuffersMemory[j] != m_instanceBuffersMemory[i];
+        }
+        if (ownsBuffer) {
             vkDestroyBuffer(m_vkState._core.getDevice(), m_instanceBuffers[i], nullptr);
         }
-        if (m_instanceBuffersMemory[i] != VK_NULL_HANDLE) {
+        if (ownsMemory) {
             vkFreeMemory(m_vkState._core.getDevice(), m_instanceBuffersMemory[i], nullptr);
         }
     }
@@ -183,11 +191,14 @@ void Particle::init(bool useTransferQueue) {
             m_mode == ParticleMode::GHOST_GPGPU
                 ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
                 : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        for (uint32_t i = 0u; i < m_vkState._swapchainImageCount; ++i) {
+        const uint32_t instanceBufferCopies = m_mode == ParticleMode::GHOST_GPGPU ? 1u : m_vkState._swapchainImageCount;
+        for (uint32_t i = 0u; i < instanceBufferCopies; ++i) {
+            VkBufferUsageFlags instanceBufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            if (m_mode == ParticleMode::GHOST_GPGPU) {
+                instanceBufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            }
             Utils::VulkanCreateBuffer(p_devide, m_vkState._core.getPhysDevice(), instanceBufferSize,
-                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                      instanceMemoryProperties,
+                                      instanceBufferUsage, instanceMemoryProperties,
                                       m_instanceBuffers[i], m_instanceBuffersMemory[i]);
             if (m_mode == ParticleMode::GHOST_GPGPU) {
                 VkBuffer instanceStagingBuffer = VK_NULL_HANDLE;
@@ -207,6 +218,12 @@ void Particle::init(bool useTransferQueue) {
                 vkMapMemory(p_devide, m_instanceBuffersMemory[i], 0, instanceBufferSize, 0, &data);
                 memcpy(data, m_instances.data(), instanceBufferSize);
                 vkUnmapMemory(p_devide, m_instanceBuffersMemory[i]);
+            }
+        }
+        if (m_mode == ParticleMode::GHOST_GPGPU) {
+            for (uint32_t i = 1u; i < m_vkState._swapchainImageCount; ++i) {
+                m_instanceBuffers[i] = m_instanceBuffers[0];
+                m_instanceBuffersMemory[i] = m_instanceBuffersMemory[0];
             }
         }
     }
@@ -378,17 +395,62 @@ void GhostParticleGPGPU::init(bool useTransferQueue) {
 
 void GhostParticleGPGPU::update(uint32_t, float deltaMS, const glm::vec4& offsetPosition,
                                 const glm::vec4& velocity) {
+    if (m_isFirstSmoothedEmitterUpdate) {
+        m_smoothedEmitterVelocity = velocity;
+        m_isFirstSmoothedEmitterUpdate = false;
+    } else {
+        // smoothing factor for emitter velocity
+        // s = 1 − e^(−Δt/180)
+        //100% |                                                *
+        // 95% |                                      *
+        // 86% |                            *
+        // 63% |                  *
+        // 43% |          *
+        // 31% |      *
+        // 17% |   *
+        //  0% |*
+        //     +------------------------------------------------
+        //      0     33     66     100    180    360    540 ms
+        // deltaMS = 33.33 ms 30FPS
+        // s = 1 - exp(-33.33 / 180) ≈ 0.169
+        // deltaMS = 5.56 ms 180 FPS
+        // s = 1 - exp(-5.56 / 180) ≈ 0.030
+        const float smoothing = 1.0f - std::exp(-deltaMS / 180.0f);
+        m_smoothedEmitterVelocity = glm::mix(m_smoothedEmitterVelocity, velocity, smoothing);
+    }
+
     m_computeParams.position = offsetPosition;
-    m_computeParams.velocity = velocity;
+    m_computeParams.velocity = m_smoothedEmitterVelocity;
     m_computeParams.time.x = m_vkState._pushConstant.windDirElapsedTimeMS.w;
     m_computeParams.time.y = deltaMS;
     m_computeParams.time.z = offsetPosition.w;
 }
 
 void GhostParticleGPGPU::recordCompute(VkCommandBuffer commandBuffer, uint32_t currentImage) const {
-    if (!isReady() || m_computePipeline == VK_NULL_HANDLE || m_instanceBuffers.empty()) {
+    if (!isReady() || m_computePipeline == VK_NULL_HANDLE || currentImage >= m_instanceBuffers.size()) {
         return;
     }
+    // using 3 independant buffers
+    // frame 1: same state -> +33 ms
+    // frame 2: same state -> +33 ms
+    // frame 3: same state -> +33 ms
+    // using 1 shared buffer
+    // frame 1: same state -> +33 ms
+    // frame 2: same state -> +66 ms
+    // frame 3: same state -> +99 ms
+
+    // GPGPU particles use one shared instance buffer for smooth simulation, not three independent
+    // swapchain states; each next compute update continues from the previous buffer result.
+    VkBufferMemoryBarrier readyForComputeBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    readyForComputeBarrier.srcAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    readyForComputeBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    readyForComputeBarrier.buffer = m_instanceBuffers[currentImage];
+    readyForComputeBarrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u, 0u, nullptr, 1u, &readyForComputeBarrier, 0u,
+                         nullptr);
+
     const auto* particlePipeline = static_cast<const PipelineCreatorParticle*>(m_pipelineCreatorTextured);
     const VkPipelineLayout layout = particlePipeline->getPipeline()->pipelineLayout;
     const VkDescriptorSet* descriptorSet = particlePipeline->getDescriptorSet(currentImage, mMaterialId);
