@@ -54,6 +54,7 @@ struct TreeFallState {
     float axisZ = 0.0f;
     float angle  = 0.0f;      // current tipping angle [0 .. PI/2]
     bool  falling = false;
+    bool  collisionActive = true;
 };
 
 struct NpcTankState {
@@ -145,6 +146,7 @@ private:
     void syncNpcTankVisuals();
     void drawNpcHealthBars();
     void resolveProjectileHits();
+    void startTreeFall(size_t treeIndex, const glm::vec3& impactSourcePosition);
     /// Check if a sphere at position/radius intersects any static boundary cube.
     bool intersectsBoundary(const glm::vec3& position, float radius) const;
     /// Creates the tank's kinematic Bullet body once its mesh has finished streaming in (needs radius()).

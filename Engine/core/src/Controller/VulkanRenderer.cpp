@@ -274,8 +274,11 @@ VulkanRenderer::~VulkanRenderer() {
     Pipeliner::getInstance().saveCache();
 
     if (m_btDynamicsWorld) {
-        for (auto* body : m_btTreeBodies) {
-            m_btDynamicsWorld->removeRigidBody(body);
+        for (size_t treeIndex = 0u; treeIndex < m_btTreeBodies.size(); ++treeIndex) {
+            auto* body = m_btTreeBodies[treeIndex];
+            if (treeIndex >= m_btTreeFallStates.size() || m_btTreeFallStates[treeIndex].collisionActive) {
+                m_btDynamicsWorld->removeRigidBody(body);
+            }
             delete body->getMotionState();
             delete body;
         }
@@ -2589,6 +2592,39 @@ void VulkanRenderer::drawNpcHealthBars() {
     }
 }
 
+void VulkanRenderer::startTreeFall(size_t treeIndex, const glm::vec3& impactSourcePosition) {
+    if (treeIndex >= m_btTreeFallStates.size() || treeIndex >= m_btTreeBodies.size()) {
+        return;
+    }
+
+    TreeFallState& treeState = m_btTreeFallStates[treeIndex];
+    if (treeState.collisionActive && m_btDynamicsWorld && m_btTreeBodies[treeIndex]) {
+        m_btDynamicsWorld->removeRigidBody(m_btTreeBodies[treeIndex]);
+        treeState.collisionActive = false;
+    }
+
+    if (treeState.falling) {
+        return;
+    }
+
+    treeState.falling = true;
+    if (m_audioManager) {
+        m_audioManager->playOneShot(AudioManager::Sound::TreeBreak);
+    }
+
+    // Fall direction = away from tank (i.e. in the direction the tank is pushing).
+    // Use impact source (tank or projectile) to compute realistic fall direction.
+    const float sourceDx = impactSourcePosition.x - treeState.baseX;
+    const float sourceDz = impactSourcePosition.z - treeState.baseZ;
+    const float sourceDistance = std::sqrt(sourceDx * sourceDx + sourceDz * sourceDz);
+    const float fallDirX = sourceDistance > 1e-4f ? -sourceDx / sourceDistance : 1.0f;  // tree_base - hit_source_pos
+    const float fallDirZ = sourceDistance > 1e-4f ? -sourceDz / sourceDistance : 0.0f;
+    // Rotation axis = cross((0,1,0), (fdx,0,fdz)) = (fdz, 0, -fdx).
+    // This makes the tree top tip toward (fdx, 0, fdz) — away from tank.
+    treeState.axisX = fallDirZ;
+    treeState.axisZ = -fallDirX;
+}
+
 void VulkanRenderer::resolveProjectileHits() {
     const auto now = std::chrono::steady_clock::now();
     const auto manifoldHasContact = [](const btPersistentManifold* manifold) {
@@ -2618,6 +2654,15 @@ void VulkanRenderer::resolveProjectileHits() {
                                                                                            : manifold->getBody0();
             if (manifold->getBody0() != projectileBody && manifold->getBody1() != projectileBody) {
                 continue;
+            }
+
+            for (size_t treeIndex = 0u; treeIndex < m_btTreeBodies.size(); ++treeIndex) {
+                if (treeIndex < m_btTreeFallStates.size() && m_btTreeFallStates[treeIndex].collisionActive &&
+                    otherBody == m_btTreeBodies[treeIndex]) {
+                    const btVector3& projectilePosition = projectileBody->getWorldTransform().getOrigin();
+                    startTreeFall(treeIndex, glm::vec3(projectilePosition.x(), projectilePosition.y(), projectilePosition.z()));
+                    return;
+                }
             }
 
             // An NPC projectile hit the player's main tank.
@@ -3089,11 +3134,30 @@ bool VulkanRenderer::renderScene() {
     if (!isGamePaused && m_runtimeAssetsReady.load(std::memory_order_acquire) && m_btDynamicsWorld && deltaTime > 0.0f) {
         // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
         const glm::vec3 tankPos = mCamera.targetPos();
-        glm::vec3 projectilePos(0.0f);
+        const auto treeTriggerNow = std::chrono::steady_clock::now();
+        std::vector<glm::vec3> tankPositions;
+        tankPositions.reserve(NPC_TANK_COUNT + 1u);
+        tankPositions.push_back(tankPos);
+        for (const NpcTankState& npc : m_npcTanks) {
+            if (npc.alive) {
+                tankPositions.push_back(npc.position);
+            }
+        }
+        std::vector<glm::vec3> activeProjectilePositions;
+        // Player projectile (from the player's tank)
         if (m_btProjectileBody) {
             const btTransform& projectileTransform = m_btProjectileBody->getWorldTransform();
             const btVector3& projectileOrigin = projectileTransform.getOrigin();
-            projectilePos = glm::vec3(projectileOrigin.x(), projectileOrigin.y(), projectileOrigin.z());
+            if (treeTriggerNow < m_projectileTimeoutDeadline) {
+                activeProjectilePositions.emplace_back(projectileOrigin.x(), projectileOrigin.y(), projectileOrigin.z());
+            }
+        }
+        // NPC projectiles (from non-player characters)
+        for (const ProjectileState& projectile : m_projectiles) {
+            if (projectile.active && projectile.body) {
+                const btVector3& projectileOrigin = projectile.body->getWorldTransform().getOrigin();
+                activeProjectilePositions.emplace_back(projectileOrigin.x(), projectileOrigin.y(), projectileOrigin.z());
+            }
         }
         const float tankRadius  = m_models[0]->radius() / 2.0f;
         constexpr float kTreeRadius   = 2.0f;                        // matches btCylinderShape radius
@@ -3108,13 +3172,28 @@ bool VulkanRenderer::renderScene() {
             TreeFallState& s = m_btTreeFallStates[i];
 
             if (!s.falling) {
-                const float dx = tankPos.x - s.baseX;
-                const float dz = tankPos.z - s.baseZ;
-                const float dxProj = projectilePos.x - s.baseX;
-                const float dzProj = projectilePos.z - s.baseZ;
-                const bool tankHit = (dx * dx + dz * dz < triggerDist * triggerDist);
-                const bool projectileHit = (std::chrono::steady_clock::now() < m_projectileTimeoutDeadline) &&
-                                           (dxProj * dxProj + dzProj * dzProj < projectileTriggerDist * projectileTriggerDist);
+                glm::vec3 tankImpactPos{};
+                bool tankHit = false;
+                for (const glm::vec3& currentTankPos : tankPositions) {
+                    const float dx = currentTankPos.x - s.baseX;
+                    const float dz = currentTankPos.z - s.baseZ;
+                    if (dx * dx + dz * dz < triggerDist * triggerDist) {
+                        tankImpactPos = currentTankPos;
+                        tankHit = true;
+                        break;
+                    }
+                }
+                glm::vec3 projectileImpactPos{};
+                bool projectileHit = false;
+                for (const glm::vec3& projectilePos : activeProjectilePositions) {
+                    const float dxProj = projectilePos.x - s.baseX;
+                    const float dzProj = projectilePos.z - s.baseZ;
+                    if (dxProj * dxProj + dzProj * dzProj < projectileTriggerDist * projectileTriggerDist) {
+                        projectileImpactPos = projectilePos;
+                        projectileHit = true;
+                        break;
+                    }
+                }
                 glm::vec3 cubeImpactPos{};
                 bool cubeHit = false;
                 // calculates the distance from the center of a cube to its corner on the X/Z plane
@@ -3132,21 +3211,7 @@ bool VulkanRenderer::renderScene() {
                     }
                 }
                 if (tankHit || projectileHit || cubeHit) {
-                    s.falling = true;
-                    if (m_audioManager) {
-                        m_audioManager->playOneShot(AudioManager::Sound::TreeBreak);
-                    }
-                    // Fall direction = away from tank (i.e. in the direction the tank is pushing).
-                    // Use impact source (tank or projectile) to compute realistic fall direction.
-                    const float srcDx = projectileHit ? dxProj : (cubeHit ? cubeImpactPos.x - s.baseX : dx);
-                    const float srcDz = projectileHit ? dzProj : (cubeHit ? cubeImpactPos.z - s.baseZ : dz);
-                    float len = std::sqrt(srcDx * srcDx + srcDz * srcDz);
-                    float fdx = (len > 1e-4f) ? -srcDx / len : 1.0f;   // tree_base - hit_source_pos
-                    float fdz = (len > 1e-4f) ? -srcDz / len : 0.0f;
-                    // Rotation axis = cross((0,1,0), (fdx,0,fdz)) = (fdz, 0, -fdx).
-                    // This makes the tree top tip toward (fdx, 0, fdz) — away from tank.
-                    s.axisX =  fdz;
-                    s.axisZ = -fdx;
+                    startTreeFall(i, projectileHit ? projectileImpactPos : (cubeHit ? cubeImpactPos : tankImpactPos));
                 }
             }
 
