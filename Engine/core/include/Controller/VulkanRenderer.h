@@ -25,7 +25,7 @@
 
 inline constexpr uint32_t TREES_COUNT = 80;
 inline constexpr float BOUNDARY_CUBE_HALF_EXTENT = 18.0f;
-inline constexpr uint32_t INTERIOR_CUBE_COUNT = 18;
+inline constexpr uint32_t INTERIOR_CUBE_COUNT = 28;
 inline constexpr float INTERIOR_CUBE_HALF_EXTENT = 24.0f;
 // Projectile sphere radius used by both visual mesh and hit checks.
 inline constexpr float PROJECTILE_RADIUS = 18.0f;
@@ -35,8 +35,7 @@ inline constexpr float PROJECTILE_SPEED = 390.0f;
 inline constexpr std::chrono::seconds PROJECTILE_TIMEOUT{8};
 // Half-height of a tree's cylinder collider (also used to derive its visual base position).
 inline constexpr float TREE_HALF_HEIGHT = 60.0f;
-inline constexpr uint32_t NPC_TANK_COUNT = 3u;
-inline constexpr uint32_t NPC_SHELL_COUNT = 8u;
+inline constexpr uint32_t NPC_SHELL_COUNT = 20u;
 
 class btDefaultCollisionConfiguration;
 class btCollisionDispatcher;
@@ -191,7 +190,7 @@ private:
     btRigidBody* m_btTankBody{nullptr};
     // Dynamic rigid body of the fired sphere; reused between shots.
     btRigidBody* m_btProjectileBody{nullptr};
-    std::array<btRigidBody*, NPC_TANK_COUNT> m_btNpcTankBodies{};
+    std::vector<btRigidBody*> m_btNpcTankBodies{1u};
     // Static rigid bodies matching visual perimeter cubes.
     std::vector<btRigidBody*> m_btBoundaryBodies{};
     std::vector<btRigidBody*> m_btInteriorCubeBodies{};
@@ -208,8 +207,9 @@ private:
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
     float m_tankHealth{100.0f};
-    uint32_t m_shellCount{10u};
-    std::array<NpcTankState, NPC_TANK_COUNT> m_npcTanks{};
+    uint32_t m_shellCount{NPC_SHELL_COUNT};
+    std::vector<NpcTankState> m_npcTanks{1u};
+    std::chrono::steady_clock::time_point m_nextNpcTankSpawnTime{};
     std::vector<ProjectileState> m_projectiles{};
 
     // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this

@@ -49,6 +49,10 @@ static constexpr float CAMERA_Z_FAR = 2500.0f;
 static constexpr float FOV = 65.0f;
 static constexpr float XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA = 0.00001f;
 static constexpr float NPC_CORNER_OFFSET = 720.0f;
+static constexpr std::array<float, 3u> NPC_SPAWN_X_POSITIONS{-NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET};
+#define NPC_INDEX_OFFSET 1u
+#define RESERVED_NPC_COUNT 100u
+#define NPC_TANK_SPAWN_INTERVAL_SECONDS 25
 
 #if defined(USE_DLSS) && USE_DLSS
 namespace {
@@ -76,8 +80,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     : VulkanState(appName, windowWidth, windowHeight, UI::defaultResolution().width, UI::defaultResolution().height),
       mTextureFactory(new TextureFactory(*this)), /// this is not used imedially it's safe
       mCamera({FOV, static_cast<float>(windowWidth) / windowHeight, Z_NEAR, CAMERA_Z_FAR},
-                      {-NPC_CORNER_OFFSET, 55.0f, -NPC_CORNER_OFFSET - 130.0f},
-                      {-NPC_CORNER_OFFSET, 0.0f, -NPC_CORNER_OFFSET}) {
+                      {0, 55.0f, -NPC_CORNER_OFFSET - 130.0f},
+                      {0, 0.0f, -NPC_CORNER_OFFSET}) {
     assert(mTextureFactory);
     using namespace std::literals;
 
@@ -139,7 +143,12 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
         }
     }
 
-    const std::vector<Instance> tankInstances(NPC_TANK_COUNT + 1u);
+    m_npcTanks[0].position = glm::vec3(-NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET);
+    std::vector<Instance> tankInstances(RESERVED_NPC_COUNT);
+    tankInstances[0].posShift = mCamera.targetPos();
+    for (size_t instanceIndex = NPC_INDEX_OFFSET; instanceIndex < tankInstances.size(); ++instanceIndex) {
+        tankInstances[instanceIndex].posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
+    }
     m_models.emplace_back(new ObjModel(*this, *mTextureFactory, "TankHull.obj"sv,
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
@@ -152,10 +161,6 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                        static_cast<PipelineCreatorTextured*>(m_pipelineCreators[GPASS].get()),
                                        static_cast<PipelineCreatorFootprint*>(m_pipelineCreators[FOOTPRINT].get()), 95.0f,
                                        tankInstances, nullptr, false));
-
-    m_npcTanks[0].position = glm::vec3(-NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET);
-    m_npcTanks[1].position = glm::vec3(NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET);
-    m_npcTanks[2].position = glm::vec3(NPC_CORNER_OFFSET, 0.0f, -NPC_CORNER_OFFSET);
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<float> positionDistribution(-0.72f * Z_FAR, 0.72f * Z_FAR);
@@ -231,7 +236,7 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                         INTERIOR_CUBE_HALF_EXTENT, m_interiorCubeInstances));
     m_projectileModelIndex = static_cast<uint32_t>(m_models.size());
     m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline, PROJECTILE_RADIUS,
-                                          24u, 16u, std::vector<Instance>(NPC_TANK_COUNT + 1u)));
+                                          24u, 16u, std::vector<Instance>(m_npcTanks.size() + 1u)));
 
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
@@ -300,7 +305,7 @@ VulkanRenderer::~VulkanRenderer() {
             m_btProjectileBody = nullptr;
         }
 
-        for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+        for (uint32_t npcIndex = 0u; npcIndex < m_btNpcTankBodies.size(); ++npcIndex) {
             btRigidBody* body = m_btNpcTankBodies[npcIndex];
             if (!body) {
                 continue;
@@ -2171,8 +2176,8 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
         m_btProjectileBody->setActivationState(DISABLE_DEACTIVATION);
         m_btDynamicsWorld->addRigidBody(m_btProjectileBody);
 
-        m_projectiles.resize(NPC_TANK_COUNT);
-        for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+        m_projectiles.resize(m_npcTanks.size());
+        for (uint32_t npcIndex = 0u; npcIndex < m_npcTanks.size(); ++npcIndex) {
             btDefaultMotionState* npcMotionState = new btDefaultMotionState(startTransform);
             btRigidBody::btRigidBodyConstructionInfo npcBodyInfo(mass, npcMotionState, sphereShape, localInertia);
             btRigidBody* npcProjectile = new btRigidBody(npcBodyInfo);
@@ -2183,7 +2188,7 @@ void VulkanRenderer::InitializeBulletPhysicsBodies() {
             npcProjectile->setCcdSweptSphereRadius(PROJECTILE_RADIUS * 0.7f);
             npcProjectile->setActivationState(DISABLE_DEACTIVATION);
             m_btDynamicsWorld->addRigidBody(npcProjectile);
-            m_projectiles[npcIndex] = {npcProjectile, npcIndex + 1u, {}, false};
+            m_projectiles[npcIndex] = {npcProjectile, npcIndex + NPC_INDEX_OFFSET, {}, false};
         }
     }
 
@@ -2279,26 +2284,29 @@ void VulkanRenderer::createTankPhysicsBodyIfReady() {
 
 void VulkanRenderer::createNpcTankPhysicsBodiesIfReady() {
     if (!m_runtimeAssetsReady.load(std::memory_order_acquire) || m_npcTankPhysicsInitialized || !m_btDynamicsWorld ||
-        !m_models[0]->isReady() || m_projectiles.size() < NPC_TANK_COUNT) {
+        !m_models[0]->isReady() || m_projectiles.size() < m_npcTanks.size()) {
         return;
     }
 
     const btScalar halfWidth = m_models[0]->radius() / 2.0f;
     const btScalar halfHeight = m_models[0]->radius() / 4.0f;
-    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+    for (uint32_t npcIndex = 0u; npcIndex < m_btNpcTankBodies.size(); ++npcIndex) {
         btCollisionShape* shape = new btBoxShape(btVector3(halfWidth, halfHeight, halfWidth));
         m_btCollisionShapes.push_back(shape);
 
         btTransform transform;
         transform.setIdentity();
         const glm::vec3& position = m_npcTanks[npcIndex].position;
-        transform.setOrigin(btVector3(position.x, position.y, position.z));
+        const glm::vec3 bodyPosition = m_npcTanks[npcIndex].alive ? position : glm::vec3(0.0f, -2000.0f, 0.0f);
+        transform.setOrigin(btVector3(bodyPosition.x, bodyPosition.y, bodyPosition.z));
         btDefaultMotionState* motionState = new btDefaultMotionState(transform);
         btRigidBody::btRigidBodyConstructionInfo bodyInfo(0.0f, motionState, shape, btVector3(0.0f, 0.0f, 0.0f));
         btRigidBody* body = new btRigidBody(bodyInfo);
         body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
         body->setActivationState(DISABLE_DEACTIVATION);
-        m_btDynamicsWorld->addRigidBody(body);
+        if (m_npcTanks[npcIndex].alive) {
+            m_btDynamicsWorld->addRigidBody(body);
+        }
         m_btNpcTankBodies[npcIndex] = body;
         m_npcTanks[npcIndex].body = body;
     }
@@ -2308,7 +2316,7 @@ void VulkanRenderer::createNpcTankPhysicsBodiesIfReady() {
 }
 
 void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
-    if (!m_npcTankPhysicsInitialized || deltaTimeSeconds <= 0.0f || m_projectiles.size() < NPC_TANK_COUNT) {
+    if (!m_npcTankPhysicsInitialized || deltaTimeSeconds <= 0.0f || m_projectiles.size() < m_npcTanks.size()) {
         return;
     }
 
@@ -2419,7 +2427,7 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
         return std::atan2(std::sin(radians), std::cos(radians));
     };
     const glm::vec3 playerPosition = mCamera.targetPos();
-    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
+    for (uint32_t npcIndex = 0u; npcIndex < m_npcTanks.size(); ++npcIndex) {
         NpcTankState& npc = m_npcTanks[npcIndex];
         if (!npc.alive || !npc.body) {
             continue;
@@ -2438,7 +2446,8 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
                 return m_btInteriorCubeBodies[bodyIndex];
             }
             const size_t npcBodyIndex = bodyIndex - m_btInteriorCubeBodies.size();
-            if (npcBodyIndex == npcIndex || npcBodyIndex >= NPC_TANK_COUNT || !m_npcTanks[npcBodyIndex].alive) {
+            if (npcBodyIndex == npcIndex || npcBodyIndex >= m_npcTanks.size() ||
+                npcBodyIndex >= m_btNpcTankBodies.size() || !m_npcTanks[npcBodyIndex].alive) {
                 return nullptr;
             }
             return m_btNpcTankBodies[npcBodyIndex];
@@ -2550,8 +2559,8 @@ void VulkanRenderer::syncNpcTankVisuals() {
 
     auto& hullInstances = m_models[0]->instances();
     auto& barrelInstances = m_models[m_barrelModelIndex]->instances();
-    for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
-        const uint32_t instanceIndex = npcIndex + 1u;
+    for (uint32_t npcIndex = 0u; npcIndex < m_npcTanks.size(); ++npcIndex) {
+        const uint32_t instanceIndex = npcIndex + NPC_INDEX_OFFSET;
         const NpcTankState& npc = m_npcTanks[npcIndex];
         if (instanceIndex >= hullInstances.size() || instanceIndex >= barrelInstances.size()) {
             continue;
@@ -2700,12 +2709,13 @@ void VulkanRenderer::resolveProjectileHits() {
             } else {
                 // The player's or an NPC's projectile hit an NPC tank.
                 bool hitNpc = false;
-                for (uint32_t npcIndex = 0u; npcIndex < NPC_TANK_COUNT; ++npcIndex) {
-                    if (ownerTankIndex == npcIndex + 1u || otherBody != m_btNpcTankBodies[npcIndex] ||
+                for (uint32_t npcIndex = 0u; npcIndex < m_npcTanks.size(); ++npcIndex) {
+                    if (ownerTankIndex == npcIndex + NPC_INDEX_OFFSET || npcIndex >= m_btNpcTankBodies.size() ||
+                        otherBody != m_btNpcTankBodies[npcIndex] ||
                         !m_npcTanks[npcIndex].alive) {
                         continue;
                     }
-                    m_npcTanks[npcIndex].health = std::max(0.0f, m_npcTanks[npcIndex].health - 10.0f);
+                    m_npcTanks[npcIndex].health = std::max(0.0f, m_npcTanks[npcIndex].health - 50.0f);
                     m_npcTanks[npcIndex].alive = m_npcTanks[npcIndex].health > 0.0f;
                     if (!m_npcTanks[npcIndex].alive) {
                         m_btDynamicsWorld->removeRigidBody(m_btNpcTankBodies[npcIndex]);
@@ -2796,7 +2806,7 @@ void VulkanRenderer::syncProjectileVisualFromPhysics() {
             projectile.body->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
             projectile.body->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
         }
-        syncInstance(npcIndex + 1u, projectile.body, projectile.active);
+        syncInstance(npcIndex + NPC_INDEX_OFFSET, projectile.body, projectile.active);
     }
 
     /// NOTE: not needed right now
@@ -2907,6 +2917,11 @@ bool VulkanRenderer::renderScene() {
     const bool isGamePaused = windowQueueMSG.hmiRenderData;
 #endif
     const float sceneDeltaTime = isGamePaused ? 0.0f : deltaTime;
+
+    if (isGamePaused && m_nextNpcTankSpawnTime != std::chrono::steady_clock::time_point{} && deltaTime > 0.0f) {
+        m_nextNpcTankSpawnTime += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<float, std::milli>(deltaTime));
+    }
 
     mCamera.update(sceneDeltaTime, false);
 
@@ -3174,9 +3189,163 @@ bool VulkanRenderer::renderScene() {
     if (!isGamePaused && m_runtimeAssetsReady.load(std::memory_order_acquire) && m_btDynamicsWorld && deltaTime > 0.0f) {
         // --- Animate tree falls (kinematic bodies, no physics simulation needed) ---
         const glm::vec3 tankPos = mCamera.targetPos();
-        const auto treeTriggerNow = std::chrono::steady_clock::now();
+        const auto currentTime = std::chrono::steady_clock::now();
+        if (m_nextNpcTankSpawnTime == std::chrono::steady_clock::time_point{} && allModelsReady()) {
+            m_nextNpcTankSpawnTime = currentTime + std::chrono::seconds(NPC_TANK_SPAWN_INTERVAL_SECONDS);
+        }
+        const bool areAllNpcTanksDead = !m_npcTanks.empty() &&
+                                        std::none_of(m_npcTanks.begin(), m_npcTanks.end(), [](const NpcTankState& npc) {
+                                            return npc.alive;
+                                        });
+        if (areAllNpcTanksDead) {
+            m_nextNpcTankSpawnTime = currentTime;
+        }
+        size_t reusableNpcIndex = m_npcTanks.size();
+        const bool isNpcSpawnDue = m_nextNpcTankSpawnTime != std::chrono::steady_clock::time_point{} &&
+                                   currentTime >= m_nextNpcTankSpawnTime;
+        if (isNpcSpawnDue) {
+            for (size_t candidateIndex = 0u; candidateIndex < m_npcTanks.size(); ++candidateIndex) {
+                if (!m_npcTanks[candidateIndex].alive) {
+                    reusableNpcIndex = candidateIndex;
+                    break;
+                }
+            }
+        }
+        if (reusableNpcIndex < RESERVED_NPC_COUNT && isNpcSpawnDue) {
+            const uint32_t npcIndex = static_cast<uint32_t>(reusableNpcIndex);
+            const float spawnZ = tankPos.z >= 0.0f ? -NPC_CORNER_OFFSET : NPC_CORNER_OFFSET;
+            const float tankRadius = m_models[0]->radius() / 2.0f;
+            glm::vec3 spawnPosition{};
+            bool hasValidSpawnPosition = false;
+            for (size_t positionOffset = 0u; positionOffset < NPC_SPAWN_X_POSITIONS.size(); ++positionOffset) {
+                const float spawnX = NPC_SPAWN_X_POSITIONS[(npcIndex + positionOffset) % NPC_SPAWN_X_POSITIONS.size()];
+                const glm::vec3 candidatePosition(spawnX, 0.0f, spawnZ);
+                if (intersectsBoundary(candidatePosition, tankRadius)) {
+                    continue;
+                }
+
+                bool intersectsCube = false;
+                const float expandedCubeHalfExtent = INTERIOR_CUBE_HALF_EXTENT + tankRadius;
+                for (const auto* cubeBody : m_btInteriorCubeBodies) {
+                    if (!cubeBody) {
+                        continue;
+                    }
+                    const btVector3& cubePosition = cubeBody->getWorldTransform().getOrigin();
+                    if (std::abs(candidatePosition.x - cubePosition.x()) <= expandedCubeHalfExtent &&
+                        std::abs(candidatePosition.z - cubePosition.z()) <= expandedCubeHalfExtent) {
+                        intersectsCube = true;
+                        break;
+                    }
+                }
+                if (intersectsCube) {
+                    continue;
+                }
+
+                bool intersectsTank = false;
+                for (size_t otherNpcIndex = 0u; otherNpcIndex < m_npcTanks.size(); ++otherNpcIndex) {
+                    const NpcTankState& otherNpc = m_npcTanks[otherNpcIndex];
+                    if (!otherNpc.alive || otherNpcIndex == reusableNpcIndex) {
+                        continue;
+                    }
+                    const glm::vec2 offset(candidatePosition.x - otherNpc.position.x,
+                                           candidatePosition.z - otherNpc.position.z);
+                    if (glm::dot(offset, offset) < (tankRadius * 2.0f) * (tankRadius * 2.0f)) {
+                        intersectsTank = true;
+                        break;
+                    }
+                }
+                if (!intersectsTank) {
+                    spawnPosition = candidatePosition;
+                    hasValidSpawnPosition = true;
+                    break;
+                }
+            }
+            if (!hasValidSpawnPosition) {
+                m_nextNpcTankSpawnTime = currentTime;
+            } else {
+            NpcTankState npc{};
+            npc.position = spawnPosition;
+            npc.hullYaw = 0.0f;
+            npc.turretYaw = 0.0f;
+            npc.health = 100.0f;
+            npc.shellCount = NPC_SHELL_COUNT;
+            npc.reloadDeadline = {};
+            npc.alive = true;
+
+            btTransform transform;
+            transform.setIdentity();
+            transform.setOrigin(btVector3(npc.position.x, npc.position.y, npc.position.z));
+            btRigidBody* body = nullptr;
+            // reuse existing rigid body if available
+            if (npcIndex < m_btNpcTankBodies.size() && m_btNpcTankBodies[npcIndex]) {
+                body = m_btNpcTankBodies[npcIndex];
+                body->getMotionState()->setWorldTransform(transform);
+                body->setWorldTransform(transform);
+                m_btDynamicsWorld->addRigidBody(body);
+            } else {
+                const btScalar halfWidth = m_models[0]->radius() / 2.0f;
+                const btScalar halfHeight = m_models[0]->radius() / 4.0f;
+                btCollisionShape* shape = new btBoxShape(btVector3(halfWidth, halfHeight, halfWidth));
+                m_btCollisionShapes.push_back(shape);
+                btDefaultMotionState* motionState = new btDefaultMotionState(transform);
+                btRigidBody::btRigidBodyConstructionInfo bodyInfo(0.0f, motionState, shape,
+                                                                   btVector3(0.0f, 0.0f, 0.0f));
+                body = new btRigidBody(bodyInfo);
+                body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+                body->setActivationState(DISABLE_DEACTIVATION);
+                m_btDynamicsWorld->addRigidBody(body);
+                if (npcIndex == m_btNpcTankBodies.size()) {
+                    m_btNpcTankBodies.push_back(body);
+                } else {
+                    m_btNpcTankBodies[npcIndex] = body;
+                }
+            }
+            body->activate(true);
+            npc.body = body;
+            // reuse existing projectile rigid body if available
+            if (npcIndex < m_projectiles.size() && m_projectiles[npcIndex].body) {
+                ProjectileState& projectile = m_projectiles[npcIndex];
+                projectile.ownerTankIndex = npcIndex + NPC_INDEX_OFFSET;
+                projectile.active = false;
+                projectile.body->getMotionState()->setWorldTransform(transform);
+                projectile.body->setWorldTransform(transform);
+                projectile.body->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
+                projectile.body->activate(true);
+            } else if (m_btProjectileBody) {
+                btTransform projectileTransform;
+                projectileTransform.setIdentity();
+                projectileTransform.setOrigin(btVector3(0.0f, -2000.0f, 0.0f));
+                constexpr btScalar projectileMass = 150.0f;
+                btVector3 localInertia(0.0f, 0.0f, 0.0f);
+                btCollisionShape* projectileShape = m_btProjectileBody->getCollisionShape();
+                projectileShape->calculateLocalInertia(projectileMass, localInertia);
+                btDefaultMotionState* projectileMotionState = new btDefaultMotionState(projectileTransform);
+                btRigidBody::btRigidBodyConstructionInfo projectileBodyInfo(projectileMass, projectileMotionState,
+                                                                            projectileShape, localInertia);
+                btRigidBody* npcProjectile = new btRigidBody(projectileBodyInfo);
+                npcProjectile->setRestitution(0.95f);
+                npcProjectile->setFriction(0.4f);
+                npcProjectile->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
+                npcProjectile->setCcdMotionThreshold(0.01f);
+                npcProjectile->setCcdSweptSphereRadius(PROJECTILE_RADIUS * 0.7f);
+                npcProjectile->setActivationState(DISABLE_DEACTIVATION);
+                m_btDynamicsWorld->addRigidBody(npcProjectile);
+                m_projectiles.push_back({npcProjectile, npcIndex + NPC_INDEX_OFFSET, {}, false});
+            }
+
+            if (npcIndex == m_npcTanks.size()) {
+                m_npcTanks.push_back(npc);
+            } else {
+                // reuse existing NPC tank state if available
+                m_npcTanks[npcIndex] = npc;
+            }
+
+            m_nextNpcTankSpawnTime = currentTime + std::chrono::seconds(NPC_TANK_SPAWN_INTERVAL_SECONDS);
+            }
+        }
+
         std::vector<glm::vec3> tankPositions;
-        tankPositions.reserve(NPC_TANK_COUNT + 1u);
+        tankPositions.reserve(m_npcTanks.size() + 1u);
         tankPositions.push_back(tankPos);
         for (const NpcTankState& npc : m_npcTanks) {
             if (npc.alive) {
@@ -3188,7 +3357,7 @@ bool VulkanRenderer::renderScene() {
         if (m_btProjectileBody) {
             const btTransform& projectileTransform = m_btProjectileBody->getWorldTransform();
             const btVector3& projectileOrigin = projectileTransform.getOrigin();
-            if (treeTriggerNow < m_projectileTimeoutDeadline) {
+            if (currentTime < m_projectileTimeoutDeadline) {
                 activeProjectilePositions.emplace_back(projectileOrigin.x(), projectileOrigin.y(), projectileOrigin.z());
             }
         }
