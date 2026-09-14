@@ -26,6 +26,7 @@
 #include <limits>
 #include <random>
 #include <cmath>
+#include <ranges>
 
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
@@ -2306,8 +2307,9 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
         const glm::vec3 delta = first - second;
         return glm::dot(delta, delta);
     };
+
     const auto findBlockingCube = [](const glm::vec3& from, const glm::vec3& to,
-                                     const std::vector<btRigidBody*>& cubeBodies, float cubeHalfExtent,
+                                     auto& cubeBodies, float cubeHalfExtent,
                                      glm::vec3& blockingCubePosition) {
         const glm::vec2 start(from.x, from.z);
         const glm::vec2 end(to.x, to.z);
@@ -2378,7 +2380,7 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
         return foundNearestBlockingCube;
     };
     const auto intersectsInteriorCube = [](const glm::vec3& position, float radius,
-                                           const std::vector<btRigidBody*>& cubeBodies) {
+                                           auto& cubeBodies) {
         const float expandedHalfExtent = INTERIOR_CUBE_HALF_EXTENT + radius;
         for (const auto* cubeBody : cubeBodies) {
             if (!cubeBody) {
@@ -2415,9 +2417,24 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
         float nearestDistanceSquared = squaredDistance(npc.position, playerPosition);
 
         const float tankCollisionRadius = m_models[0]->radius() * 0.4f;
+        const auto blockingBodyIndices = std::views::iota(size_t{0}, m_btInteriorCubeBodies.size() + m_btNpcTankBodies.size());
+        // we merge them into view and don't create real container, we save memory and avoid unnecessary copies.
+        // at range for loop we extract the actual body pointers from the view without creating a new container.
+        // Invalid bodies become nullptr and are skipped by findBlockingCube/intersectsInteriorCube.
+        auto blockingBodies = blockingBodyIndices | std::views::transform([&](size_t bodyIndex) -> btRigidBody* {
+            if (bodyIndex < m_btInteriorCubeBodies.size()) {
+                return m_btInteriorCubeBodies[bodyIndex];
+            }
+            const size_t npcBodyIndex = bodyIndex - m_btInteriorCubeBodies.size();
+            if (npcBodyIndex == npcIndex || npcBodyIndex >= NPC_TANK_COUNT || !m_npcTanks[npcBodyIndex].alive) {
+                return nullptr;
+            }
+            return m_btNpcTankBodies[npcBodyIndex];
+        });
+
         glm::vec3 blockingCubePosition{};
         const bool isPlayerBlockedByCube = findBlockingCube(
-            npc.position, playerPosition, m_btInteriorCubeBodies, INTERIOR_CUBE_HALF_EXTENT + PROJECTILE_RADIUS,
+            npc.position, playerPosition, blockingBodies, INTERIOR_CUBE_HALF_EXTENT + PROJECTILE_RADIUS,
             blockingCubePosition);
         if (isPlayerBlockedByCube) {
             // Work only on the ground plane here. playerDirection.x is world X, and playerDirection.y is world Z.
@@ -2473,7 +2490,7 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
         if (nearestDistanceSquared > stopDistance * stopDistance) {
             const glm::vec3 nextPosition = npc.position + forward * moveSpeed * deltaTimeSeconds;
             if (!intersectsBoundary(nextPosition, tankCollisionRadius) &&
-                !intersectsInteriorCube(nextPosition, tankCollisionRadius, m_btInteriorCubeBodies)) {
+                !intersectsInteriorCube(nextPosition, tankCollisionRadius, blockingBodies)) {
                 npc.position = nextPosition;
             }
         }
