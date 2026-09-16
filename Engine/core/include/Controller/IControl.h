@@ -80,6 +80,10 @@ public:
         mUi.setUpscalerSupport(dlssSupported, xessSupported);
     }
 
+    void setGpuAnimationSupport(bool supported) {
+        mUi.setGpuAnimationSupport(supported);
+    }
+
     void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
         mUi.setCombatState(health, reloadProgress, shellCount);
     }

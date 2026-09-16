@@ -70,9 +70,11 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     ImGui::TextDisabled("PERFORMANCE");
     ImGui::TextUnformatted("GPU animation");
     ImGui::SameLine(300.0f);
+    if (!mGpuAnimationSupported) ImGui::BeginDisabled();
     if (drawToggle("gpuAnimation", mStates.gpuAnimationEnabled.second)) {
         mStates.gpuAnimationEnabled.second = !mStates.gpuAnimationEnabled.second;
     }
+    if (!mGpuAnimationSupported) ImGui::EndDisabled();
     ImGui::TextUnformatted("Foliage");
     ImGui::SameLine(300.0f);
     mStates.foliageQualityChanged = false;

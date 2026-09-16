@@ -62,6 +62,10 @@ public:
                 const glm::mat4& viewProj = glm::mat4(1.0f), float z_far = 1.0f,
                 const glm::vec3& camPos = glm::vec3(0.0f)) override;
 
+    bool hasCudaAnimationSupport() const {
+        return mCudaAnimator != nullptr;
+    }
+
 private:
     bool loadMD5Anim();
     bool loadMD5Model(std::vector<VertexData>& vertices, std::vector<uint32_t>& indices, bool useTransferQueue);

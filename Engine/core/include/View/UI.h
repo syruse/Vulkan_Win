@@ -64,6 +64,13 @@ public:
         mXessSupported = xessSupported;
     }
 
+    void setGpuAnimationSupport(bool supported) {
+        mGpuAnimationSupported = supported;
+        if (!supported) {
+            mStates.gpuAnimationEnabled.second = false;
+        }
+    }
+
     void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
         mHealth = health;
         mReloadProgress = reloadProgress;
@@ -78,6 +85,7 @@ private:
     bool mShowMenu = true;
     bool mDlssSupported = false;
     bool mXessSupported = false;
+    bool mGpuAnimationSupported = false;
     float mHealth = 1.0f;
     float mReloadProgress = 1.0f;
     uint32_t mShellCount = 10u;

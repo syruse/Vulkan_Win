@@ -1285,6 +1285,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     _core.getWinController()->setLoading(!allModelsReady());
     _core.getWinController()->setShowMenu(hmiRenderData);
     _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
+    const bool hasCudaAnimationSupport = static_cast<MD5Model*>(m_semiTransparentModels[0].get())->hasCudaAnimationSupport();
+    _core.getWinController()->setGpuAnimationSupport(hasCudaAnimationSupport);
     const auto now = std::chrono::steady_clock::now();
     const float reloadProgress = now < m_projectileTimeoutDeadline
         ? 1.0f - std::chrono::duration<float>(m_projectileTimeoutDeadline - now).count() /
