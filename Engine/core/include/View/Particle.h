@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <future>
 #include <glm/glm.hpp>
 #include "I3DModel.h"
@@ -139,6 +140,9 @@ public:
     void draw(VkCommandBuffer cmdBuf, uint32_t descriptorSetIndex, [[maybe_unused]] uint32_t dynamicOffset = 0u) const override;
     VkBuffer getInstanceBuffer(uint32_t index) const { return m_instanceBuffers.at(index); }
     ParticleMode getParticleMode() const { return m_mode; }
+    // Draws only the first `count` already-generated instances (clamped to the allocated buffer size).
+    // Cheaper than reallocating: no new buffer/texture work, just fewer instances submitted per draw.
+    void setActiveInstanceCount(uint32_t count) { m_instanceCount = std::min<uint32_t>(count, static_cast<uint32_t>(m_instances.size())); }
 
 protected:
     uint32_t mMaterialId{0u};

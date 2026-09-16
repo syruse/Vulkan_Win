@@ -293,6 +293,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 40u,
                                glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.01f, 0.0f), glm::vec3(1.0f), glm::vec3(30.0f),
                                300.0f, 3400.0f);
+
+    applyFoliageQuality(m_foliageQuality);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -1333,7 +1335,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     // depth writing for each object
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
-        if (!m_models[meshIndex]->isReady()) {
+        if (!m_models[meshIndex]->isReady() || (m_treesHidden && meshIndex == m_treeTrunkModelIndex)) {
             continue;  // still streaming in on the background loader thread
         }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
@@ -1370,7 +1372,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     // draw shadow of 3d mesh only (without ground and skybox)
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size() - 2u; ++meshIndex) {
-        if (!m_models[meshIndex]->isReady()) {
+        if (!m_models[meshIndex]->isReady() || (m_treesHidden && meshIndex == m_treeTrunkModelIndex)) {
             continue;  // still streaming in on the background loader thread
         }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
@@ -1379,7 +1381,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     }
 
     for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
-        if (!m_semiTransparentModels[meshIndex]->isReady()) {
+        if (m_treesHidden || !m_semiTransparentModels[meshIndex]->isReady()) {
             continue;  // still streaming in on the background loader thread
         }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * (meshIndex + m_models.size());
@@ -1460,7 +1462,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
 
     ///  SkyBox and 3D Models
     for (uint32_t meshIndex = 0u; meshIndex < m_models.size(); ++meshIndex) {
-        if (!m_models[meshIndex]->isReady()) {
+        if (!m_models[meshIndex]->isReady() || (m_treesHidden && meshIndex == m_treeTrunkModelIndex)) {
             continue;  // still streaming in on the background loader thread
         }
         const uint32_t dynamicOffset = static_cast<uint32_t>(_modelUniformAlignment) * meshIndex;
@@ -1722,7 +1724,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         // Foliage forward pass: depth-tested and depth-written directly to the scene color, so
         // particles behind it fail the depth test in the next subpass regardless of draw order.
         for (uint32_t meshIndex = 0u; meshIndex < m_semiTransparentModels.size(); ++meshIndex) {
-            if (!m_semiTransparentModels[meshIndex]->isReady()) {
+            if (m_treesHidden || !m_semiTransparentModels[meshIndex]->isReady()) {
                 continue;  // still streaming in on the background loader thread
             }
             const auto& pipelineCreator = m_pipelineCreators[SEMI_TRANSPARENT];
@@ -2691,6 +2693,56 @@ void VulkanRenderer::startTreeFall(size_t treeIndex, const glm::vec3& impactSour
     treeState.axisZ = -fallDirX;
 }
 
+void VulkanRenderer::applyFoliageQuality(FoliageQuality quality) {
+    m_foliageQuality = quality;
+    const bool wantTreesHidden = (quality != FoliageQuality::Maximum);
+    if (!m_btTreeBodies.empty()) {
+        for (size_t i = 0u; i < m_btTreeBodies.size(); ++i) {
+            btRigidBody* body = m_btTreeBodies[i];
+            TreeFallState& state = m_btTreeFallStates[i];
+            if (!body || !m_btDynamicsWorld) {
+                continue;
+            }
+            if (wantTreesHidden) {
+                if (state.collisionActive) {
+                    m_btDynamicsWorld->removeRigidBody(body);
+                    state.collisionActive = false;
+                }
+            } else if (!state.collisionActive) {
+                m_btDynamicsWorld->addRigidBody(body);
+                state.collisionActive = true;
+            }
+        }
+    }
+    m_treesHidden = wantTreesHidden;
+
+    uint32_t bushCount0 = 5000u, bushCount1 = 20000u, bushCount2 = 2000u;
+    switch (quality) {
+        case FoliageQuality::Minimum:
+            bushCount0 = 50u;
+            bushCount1 = 200u;
+            bushCount2 = 200u;
+            break;
+        case FoliageQuality::Medium:
+            bushCount0 = 500u;
+            bushCount1 = 2000u;
+            bushCount2 = 2000u;
+            break;
+        case FoliageQuality::Maximum:
+        default:
+            break;
+    }
+    if (m_particles[0]) {
+        m_particles[0]->setActiveInstanceCount(bushCount0);
+    }
+    if (m_particles[1]) {
+        m_particles[1]->setActiveInstanceCount(bushCount1);
+    }
+    if (m_particles[2]) {
+        m_particles[2]->setActiveInstanceCount(bushCount2);
+    }
+}
+
 void VulkanRenderer::resolveProjectileHits() {
     const auto now = std::chrono::steady_clock::now();
     const auto manifoldHasContact = [](const btPersistentManifold* manifold) {
@@ -3062,6 +3114,12 @@ bool VulkanRenderer::renderScene() {
         return ret_status;
     }
 
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->foliageQualityChanged) {
+        auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
+        hmiStates->foliageQualityChanged = false;
+        applyFoliageQuality(hmiStates->foliageQuality);
+    }
+
     // Tank input/collision needs its mesh's radius(); skip entirely until it's finished streaming in.
     createTankPhysicsBodyIfReady();
     createNpcTankPhysicsBodiesIfReady();
@@ -3220,6 +3278,9 @@ bool VulkanRenderer::renderScene() {
         const auto currentTime = std::chrono::steady_clock::now();
         if (m_nextNpcTankSpawnTime == std::chrono::steady_clock::time_point{} && allModelsReady()) {
             m_nextNpcTankSpawnTime = currentTime + std::chrono::seconds(NPC_TANK_SPAWN_INTERVAL_SECONDS);
+            // Default foliage quality is Minimum, so apply it once here to actually hide trees/reduce
+            // bush counts, since the UI only pushes this on user-triggered changes afterward.
+            applyFoliageQuality(m_foliageQuality);
         }
         const bool areAllNpcTanksDead = !m_npcTanks.empty() &&
                                         std::none_of(m_npcTanks.begin(), m_npcTanks.end(), [](const NpcTankState& npc) {
@@ -3390,7 +3451,8 @@ bool VulkanRenderer::renderScene() {
         // Projectile can knock trees down with its own trigger radius, same animation pipeline.
         const float     projectileTriggerDist = PROJECTILE_RADIUS + kTreeRadius;
 
-        for (size_t i = 0; i < m_btTreeBodies.size(); ++i) {
+        // Trees are removed from the physics world and hidden while the foliage preset excludes them.
+        for (size_t i = 0; !m_treesHidden && i < m_btTreeBodies.size(); ++i) {
             TreeFallState& s = m_btTreeFallStates[i];
 
             if (!s.falling) {

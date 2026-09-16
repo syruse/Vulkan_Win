@@ -21,6 +21,7 @@
 #include "CameraPanzer.h"
 #include "Particle.h"
 #include "PipelineCreatorBase.h"
+#include "UI.h"
 #include "VulkanState.h"
 
 inline constexpr uint32_t TREES_COUNT = 80;
@@ -146,6 +147,9 @@ private:
     void drawNpcHealthBars();
     void resolveProjectileHits();
     void startTreeFall(size_t treeIndex, const glm::vec3& impactSourcePosition);
+    /// Applies the UI-selected foliage quality: hides/shows tree draw calls and their Bullet bodies,
+    /// and scales down bush particle instance counts for lower presets.
+    void applyFoliageQuality(FoliageQuality quality);
     /// Check if a sphere at position/radius intersects any static boundary cube.
     bool intersectsBoundary(const glm::vec3& position, float radius) const;
     /// Creates the tank's kinematic Bullet body once its mesh has finished streaming in (needs radius()).
@@ -196,6 +200,9 @@ private:
     std::vector<btRigidBody*> m_btInteriorCubeBodies{};
     std::vector<btRigidBody*> m_btTreeBodies{};
     std::vector<TreeFallState>  m_btTreeFallStates{};
+    // True while tree rendering and collision bodies are disabled by a lower foliage quality preset.
+    bool m_treesHidden{false};
+    FoliageQuality m_foliageQuality{FoliageQuality::Minimum};
 
     // Gameplay props
     std::vector<Instance> m_interiorCubeInstances{};

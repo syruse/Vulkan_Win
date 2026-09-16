@@ -73,10 +73,21 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     if (drawToggle("gpuAnimation", mStates.gpuAnimationEnabled.second)) {
         mStates.gpuAnimationEnabled.second = !mStates.gpuAnimationEnabled.second;
     }
-    ImGui::TextUnformatted("Option slot 1");
+    ImGui::TextUnformatted("Foliage");
     ImGui::SameLine(300.0f);
-    if (drawToggle("optionOne", mStates.placeHolder1.second)) {
-        mStates.placeHolder1.second = !mStates.placeHolder1.second;
+    mStates.foliageQualityChanged = false;
+    {
+        int idx = static_cast<int>(mStates.foliageQuality);
+        bool changed = false;
+        if (ImGui::RadioButton("Min", &idx, 0)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Med", &idx, 1)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Max", &idx, 2)) changed = true;
+        if (changed) {
+            mStates.foliageQuality = static_cast<FoliageQuality>(idx);
+            mStates.foliageQualityChanged = true;
+        }
     }
     ImGui::TextUnformatted("Option slot 2");
     ImGui::SameLine(300.0f);

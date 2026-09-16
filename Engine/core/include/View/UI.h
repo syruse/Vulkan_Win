@@ -7,6 +7,7 @@
 
 enum class UpscalerType   : uint8_t { None = 0, DLSS, XESS };
 enum class UpscalerPreset : uint8_t { NativeAA = 0, UltraQuality, Quality, Balanced, Performance, UltraPerformance };
+enum class FoliageQuality : uint8_t { Minimum = 0, Medium, Maximum };
 
 struct ResolutionEntry {
     int16_t width;
@@ -30,7 +31,8 @@ public:
 
     struct States {
         std::pair<const char*, bool> gpuAnimationEnabled{"favor animation calculation on GPU", true};
-        std::pair<const char*, bool> placeHolder1{"placeHolder1", true};
+        FoliageQuality foliageQuality = FoliageQuality::Minimum;
+        bool foliageQualityChanged = false;
         std::pair<const char*, bool> placeHolder2{"placeHolder2", true};
         bool resolutionChanged = false;
         int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;
