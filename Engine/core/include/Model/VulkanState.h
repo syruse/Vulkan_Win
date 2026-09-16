@@ -63,7 +63,7 @@ struct VulkanState {
         alignas(16) glm::vec4 lightPos{1.0f};  //w is elapsedMS for previous frame
         alignas(16) glm::vec4 cameraPos{1.0f}; // w component is tesselation level
         alignas(16) glm::vec4 windDirElapsedTimeMS{0.0f}; // vec3 is velocity and w is elapsedTime
-        alignas(16) glm::uvec4 renderOptions{0u}; // x: SSAO enabled
+        alignas(16) glm::uvec4 renderOptions{0u}; // x: SSAO enabled, y: DLSS sky motion vectors enabled
     };
 
     struct DepthBuffer {

@@ -3129,6 +3129,7 @@ bool VulkanRenderer::renderScene() {
     if (windowQueueMSG.hmiStates) {
         _pushConstant.renderOptions.x = windowQueueMSG.hmiStates->ssaoEnabled.second ? 1u : 0u;
     }
+    _pushConstant.renderOptions.y = (m_isDlssEnabled && _core.isDlssSupported()) ? 1u : 0u;
 
     // Tank input/collision needs its mesh's radius(); skip entirely until it's finished streaming in.
     createTankPhysicsBodyIfReady();

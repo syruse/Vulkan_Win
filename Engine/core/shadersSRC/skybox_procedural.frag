@@ -37,7 +37,7 @@ float fbm(vec3 p, float t) {
         v += noise(p + t) * amp; 
         p *= 2.5; 
         amp *= 0.5;
-        t *= 1.2; // Morph faster at higher frequencies
+        t *= 1.5; // Morph faster at higher frequencies
     }
     return v;
 }
@@ -61,7 +61,7 @@ void main() {
     // 4. Cloud FBM with Morphing
     // We pass T * 0.2 as a "morph" factor to change the shape ("boiling")
     // Increased scale to [9.0:12.0] to make clouds smaller
-    float noise = fbm(sampleDir * 10.5, T * 1.1);
+    float noise = fbm(sampleDir * 10.5, T * 1.2);
 
     // 5. Colors and Finalizing
     vec3 skyColor = mix(vec3(0.4, 0.6, 0.9), vec3(0.1, 0.3, 0.7), clamp(skyY, 0.0, 1.0));
