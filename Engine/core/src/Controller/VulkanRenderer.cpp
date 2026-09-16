@@ -2757,9 +2757,13 @@ void VulkanRenderer::applyFoliageQuality(FoliageQuality quality) {
 
 void VulkanRenderer::resolveProjectileHits() {
     const auto now = std::chrono::steady_clock::now();
+    // High restitution + CCD produce speculative contacts with a small positive gap (the projectile
+    // bounces off before the manifold ever reports true penetration), so a strict "<= 0" distance
+    // check misses glancing hits near the tank's box-collider edges. Allow a small positive margin.
+    constexpr float CONTACT_DISTANCE_TOLERANCE = 2.0f;
     const auto manifoldHasContact = [](const btPersistentManifold* manifold) {
         for (int contactIndex = 0; contactIndex < manifold->getNumContacts(); ++contactIndex) {
-            if (manifold->getContactPoint(contactIndex).getDistance() <= 0.0f) {
+            if (manifold->getContactPoint(contactIndex).getDistance() <= CONTACT_DISTANCE_TOLERANCE) {
                 return true;
             }
         }
