@@ -165,10 +165,30 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<float> positionDistribution(-0.72f * Z_FAR, 0.72f * Z_FAR);
+    // Reserved spots that tank spawns always land on: every NPC_SPAWN_X_POSITIONS combined with both Z corners,
+    // plus the player start and the initial NPC[0] position. Cubes must never be generated on top of these,
+    // otherwise a tank spawns stuck inside a cube.
+    std::vector<glm::vec2> reservedSpawnPositions;
+    for (const float spawnX : NPC_SPAWN_X_POSITIONS) {
+        reservedSpawnPositions.emplace_back(spawnX, -NPC_CORNER_OFFSET);
+        reservedSpawnPositions.emplace_back(spawnX, NPC_CORNER_OFFSET);
+    }
+    reservedSpawnPositions.emplace_back(0.0f, -NPC_CORNER_OFFSET);
+    static constexpr float RESERVED_SPAWN_CLEARANCE = 180.0f;
     m_interiorCubeInstances.reserve(INTERIOR_CUBE_COUNT);
     while (m_interiorCubeInstances.size() < INTERIOR_CUBE_COUNT) {
         const glm::vec3 position(positionDistribution(gen), INTERIOR_CUBE_HALF_EXTENT, positionDistribution(gen));
         if (glm::length(glm::vec2(position.x, position.z)) < 180.0f) {
+            continue;
+        }
+        bool tooCloseToReservedSpawn = false;
+        for (const glm::vec2& reservedPosition : reservedSpawnPositions) {
+            if (glm::length(glm::vec2(position.x, position.z) - reservedPosition) < RESERVED_SPAWN_CLEARANCE) {
+                tooCloseToReservedSpawn = true;
+                break;
+            }
+        }
+        if (tooCloseToReservedSpawn) {
             continue;
         }
         bool overlapsExistingCube = false;
@@ -3231,23 +3251,6 @@ bool VulkanRenderer::renderScene() {
                 const size_t spawnPositionIndex = spawnIndexDistribution(spawnGenerator);
                 const glm::vec3 candidatePosition(NPC_SPAWN_X_POSITIONS[spawnPositionIndex], 0.0f, spawnZ);
                 if (intersectsBoundary(candidatePosition, tankRadius)) {
-                    continue;
-                }
-
-                bool intersectsCube = false;
-                const float expandedCubeHalfExtent = INTERIOR_CUBE_HALF_EXTENT + tankRadius;
-                for (const auto* cubeBody : m_btInteriorCubeBodies) {
-                    if (!cubeBody) {
-                        continue;
-                    }
-                    const btVector3& cubePosition = cubeBody->getWorldTransform().getOrigin();
-                    if (std::abs(candidatePosition.x - cubePosition.x()) <= expandedCubeHalfExtent &&
-                        std::abs(candidatePosition.z - cubePosition.z()) <= expandedCubeHalfExtent) {
-                        intersectsCube = true;
-                        break;
-                    }
-                }
-                if (intersectsCube) {
                     continue;
                 }
 
