@@ -22,7 +22,7 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     ImGui::ProgressBar(mHealth, ImVec2(184.0f, 16.0f), "");
     ImGui::PopStyleColor();
     ImGui::SameLine(246.0f);
-    ImGui::Text("%d%%", static_cast<int>(mHealth * 100.0f));
+    ImGui::Text(" %d%%", static_cast<int>(mHealth * 100.0f));
     ImGui::SameLine(312.0f);
     ImGui::Text("SHELLS  %u", mShellCount);
     ImGui::TextUnformatted("RELOAD");
@@ -31,6 +31,13 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
                                                                             : ImVec4(0.95f, 0.64f, 0.18f, 1.0f));
     ImGui::ProgressBar(mReloadProgress, ImVec2(184.0f, 16.0f), mReloadProgress >= 1.0f ? "READY" : "");
     ImGui::PopStyleColor();
+    ImGui::TextUnformatted("SPRINT");
+    ImGui::SameLine(64.0f);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.22f, 0.55f, 0.92f, 1.0f));
+    ImGui::ProgressBar(mSprintProgress, ImVec2(184.0f, 16.0f), "");
+    ImGui::PopStyleColor();
+    ImGui::SameLine(312.0f);
+    ImGui::Text("Shift to sprint");
     ImGui::End();
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(3);

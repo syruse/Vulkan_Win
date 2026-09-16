@@ -138,6 +138,9 @@ IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs() {
     if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::RIGHT;
     }
+    if (keyboardState[SDL_SCANCODE_LSHIFT] || keyboardState[SDL_SCANCODE_RSHIFT]) {
+        m_windowQueueMsg.buttonFlag |= WindowQueueMSG::SPRINT;
+    }
 
     int mouseX = 0;
     int mouseY = 0;

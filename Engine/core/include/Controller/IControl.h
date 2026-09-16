@@ -17,7 +17,8 @@ public:
             LOOK_LEFT = 16,  // Camera/barrel look left (Q).
             LOOK_RIGHT = 32, // Camera/barrel look right (E).
             FIRE = 64,       // Fire projectile on mouse press edge.
-            ENTER = 128      // Enter pressed on press edge (used to dismiss the welcome popup).
+            ENTER = 128,     // Enter pressed on press edge (used to dismiss the welcome popup).
+            SPRINT = 256     // Left Shift held (used for sprint, not edge-triggered).
         };
         bool isQuited = false;
         bool isResized = false;
@@ -90,8 +91,8 @@ public:
         mUi.setGpuAnimationSupport(supported);
     }
 
-    void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
-        mUi.setCombatState(health, reloadProgress, shellCount);
+    void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress) {
+        mUi.setCombatState(health, reloadProgress, shellCount, sprintProgress);
     }
 
 protected:

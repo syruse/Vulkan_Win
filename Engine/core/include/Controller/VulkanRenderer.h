@@ -37,6 +37,11 @@ inline constexpr std::chrono::seconds PROJECTILE_TIMEOUT{8};
 // Half-height of a tree's cylinder collider (also used to derive its visual base position).
 inline constexpr float TREE_HALF_HEIGHT = 60.0f;
 inline constexpr uint32_t NPC_SHELL_COUNT = 20u;
+// Seconds of sprint charge left; drains while sprinting, regenerates while not (see renderScene()).
+static constexpr float SPRINT_MAX_SECONDS = 10.0f;
+// Regeneration rate: 1 second of sprint charge is restored per 3 seconds of not sprinting.
+static constexpr float SPRINT_RECHARGE_PER_SECOND = 1.0f / 3.0f;
+static constexpr float SPRINT_SPEED_MULTIPLIER = 1.75f;
 
 class btDefaultCollisionConfiguration;
 class btCollisionDispatcher;
@@ -220,6 +225,7 @@ private:
     std::vector<ProjectileState> m_projectiles{};
     // Becomes true once the player dismisses the post-loading welcome popup by pressing Enter.
     bool m_gameStarted{false};
+    float m_sprintFuelSeconds{SPRINT_MAX_SECONDS};
 
     // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this
     // thread while the render loop starts immediately; joined in the destructor before teardown.

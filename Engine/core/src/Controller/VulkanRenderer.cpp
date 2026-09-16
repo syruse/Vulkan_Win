@@ -1297,7 +1297,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
         ? 1.0f - std::chrono::duration<float>(m_projectileTimeoutDeadline - now).count() /
                      std::chrono::duration<float>(PROJECTILE_TIMEOUT).count()
         : 1.0f;
-    _core.getWinController()->setCombatState(m_tankHealth / 100.0f, reloadProgress, m_shellCount);
+    _core.getWinController()->setCombatState(m_tankHealth / 100.0f, reloadProgress, m_shellCount,
+                                              m_sprintFuelSeconds / SPRINT_MAX_SECONDS);
 
     static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
@@ -2545,8 +2546,10 @@ void VulkanRenderer::updateNpcTanks(float deltaTimeSeconds) {
 
         const glm::vec3 forward(std::sin(npc.hullYaw), 0.0f, std::cos(npc.hullYaw));
         // When blocked, the target is a bypass waypoint, so stop only when the NPC almost reaches it.
-        // Otherwise, the target is the player, so stop at combat distance and shoot from there.
-        const float stopDistance = isPlayerBlockedByCube ? 20.0f : 260.0f;
+        // Otherwise, the target is the player, so stop well outside melee range and shoot from there;
+        // scaled off the collision radius so NPCs never stop close enough to visually clip the player.
+        const float minCombatDistance = std::max(400.0f, tankCollisionRadius * 3.0f);
+        const float stopDistance = isPlayerBlockedByCube ? 20.0f : minCombatDistance;
         if (nearestDistanceSquared > stopDistance * stopDistance) {
             const glm::vec3 nextPosition = npc.position + forward * moveSpeed * deltaTimeSeconds;
             if (!intersectsBoundary(nextPosition, tankCollisionRadius) &&
@@ -3148,7 +3151,11 @@ bool VulkanRenderer::renderScene() {
     const glm::vec3 upAxis(0.0f, 1.0f, 0.0f);
     const glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, 1.0f);
 
-    auto canMoveTank = [&](Camera::EDirection dir) {
+    auto canMoveTank = [&](Camera::EDirection dir, float moveDistance) {
+        if (moveDistance <= 0.0f) {
+            return true;
+        }
+
         const glm::vec3 currentPos = mCamera.targetPos();
         const glm::quat currentRot = glm::quat_cast(glm::mat3(mCamera.targetModelMat()));
 
@@ -3162,7 +3169,7 @@ bool VulkanRenderer::renderScene() {
         }
 
         const float sign = (dir == Camera::EDirection::Back) ? -1.0f : 1.0f;
-        const glm::vec3 tentativePos = currentPos + Camera::GAIN_MOVEMENT * sign * forward;
+        const glm::vec3 tentativePos = currentPos + moveDistance * sign * forward;
         const float tankBlockDistance = tankCollisionRadius * 2.0f;
         for (const NpcTankState& npc : m_npcTanks) {
             if (!npc.alive) {
@@ -3178,28 +3185,60 @@ bool VulkanRenderer::renderScene() {
     };
 
     // USER INPUT handling
-    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP)) {
+    const bool wantForward = !isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::UP);
+    const bool wantBack = !isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW);
+    const bool wantLeft = !isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT);
+    const bool wantRight = !isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT);
+    const bool wantAnyMove = wantForward || wantBack || wantLeft || wantRight;
+    const bool sprintHeld = !isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::SPRINT);
+    const bool isSprinting = sprintHeld && wantAnyMove && m_sprintFuelSeconds > 0.0f;
+    const float speedMultiplier = isSprinting ? SPRINT_SPEED_MULTIPLIER : 1.0f;
+
+    // Sprint fuel drains 1:1 with real time while sprinting, and regenerates 1s of charge per 3s idle.
+    if (!isGamePaused) {
+        const float deltaSeconds = deltaTime / 1000.0f;
+        if (isSprinting) {
+            m_sprintFuelSeconds = std::max(0.0f, m_sprintFuelSeconds - deltaSeconds);
+        } else {
+            m_sprintFuelSeconds = std::min(SPRINT_MAX_SECONDS, m_sprintFuelSeconds + deltaSeconds * SPRINT_RECHARGE_PER_SECOND);
+        }
+    }
+
+    // A/D also creep the tank forward while turning, but only once per frame: Forward/Back takes
+    // priority, and pressing A+D together must not translate twice (each would otherwise add its
+    // own forward creep even though their rotations cancel out).
+    bool forwardTranslationApplied = wantForward || wantBack;
+
+    if (wantForward) {
         _footPrintRedrawingK = 0.7f;
-        if (canMoveTank(Camera::EDirection::Forward)) {
-            mCamera.move(Camera::EDirection::Forward);
+        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier;
+        if (canMoveTank(Camera::EDirection::Forward, moveDistance)) {
+            mCamera.move(Camera::EDirection::Forward, speedMultiplier);
         }
     }
-    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LEFT)) {
+    if (wantLeft) {
         _footPrintRedrawingK = 0.03f;
-        if (canMoveTank(Camera::EDirection::Left)) {
-            mCamera.move(Camera::EDirection::Left);
+        const bool alsoTranslate = !forwardTranslationApplied;
+        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier : 0.0f;
+        if (canMoveTank(Camera::EDirection::Left, moveDistance)) {
+            mCamera.move(Camera::EDirection::Left, speedMultiplier, alsoTranslate);
         }
+        forwardTranslationApplied = forwardTranslationApplied || alsoTranslate;
     }
-    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::RIGHT)) {
+    if (wantRight) {
         _footPrintRedrawingK = 0.03f;
-        if (canMoveTank(Camera::EDirection::Right)) {
-            mCamera.move(Camera::EDirection::Right);
+        const bool alsoTranslate = !forwardTranslationApplied;
+        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier : 0.0f;
+        if (canMoveTank(Camera::EDirection::Right, moveDistance)) {
+            mCamera.move(Camera::EDirection::Right, speedMultiplier, alsoTranslate);
         }
+        forwardTranslationApplied = forwardTranslationApplied || alsoTranslate;
     }
-    if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::DONW)) {
+    if (wantBack) {
         _footPrintRedrawingK = 0.7f;
-        if (canMoveTank(Camera::EDirection::Back)) {
-            mCamera.move(Camera::EDirection::Back);
+        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier;
+        if (canMoveTank(Camera::EDirection::Back, moveDistance)) {
+            mCamera.move(Camera::EDirection::Back, speedMultiplier);
         }
     }
 

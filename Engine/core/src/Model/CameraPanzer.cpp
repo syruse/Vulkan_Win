@@ -17,8 +17,8 @@ void CameraPanzer::update(float deltaTime, bool withSmoothTransition) {
     rebuildViewWithYaw();
 }
 
-void CameraPanzer::move(EDirection dir) {
-    Camera::move(dir);
+void CameraPanzer::move(EDirection dir, float speedMultiplier, bool applyTranslation) {
+    Camera::move(dir, speedMultiplier, applyTranslation);
     rebuildViewWithYaw();
 }
 

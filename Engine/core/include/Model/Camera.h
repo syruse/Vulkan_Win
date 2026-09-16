@@ -48,7 +48,10 @@ public:
     }
 
     virtual void update(float deltaTime, bool withSmoothTransition = true);
-    virtual void move(EDirection dir);
+    // speedMultiplier scales the forward/back translation distance (used for sprint).
+    // applyTranslation=false performs a pure turn-in-place (no forward creep), used when
+    // Forward/Back is already translating the tank this frame to avoid stacking movement.
+    virtual void move(EDirection dir, float speedMultiplier = 1.0f, bool applyTranslation = true);
 
 private:
     Perstective m_Perstpective;

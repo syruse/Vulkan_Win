@@ -10,7 +10,7 @@ public:
     // Base camera update + additional view-only yaw offset (Q/E).
     void update(float deltaTime, bool withSmoothTransition = true) override;
     // Keep custom view offset in sync after movement updates base camera state.
-    void move(EDirection dir) override;
+    void move(EDirection dir, float speedMultiplier = 1.0f, bool applyTranslation = true) override;
     // Keep cached custom view/projection in sync with base perspective reset.
     void resetPerspective(const Perstective& perstective) override;
 

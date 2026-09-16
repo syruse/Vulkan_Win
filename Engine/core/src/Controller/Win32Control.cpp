@@ -165,6 +165,9 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
     if (tracker.pressed.Enter) {
         _windowQueueMsg.buttonFlag |= WindowQueueMSG::ENTER;
     }
+    if (kb.LeftShift || kb.RightShift) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::SPRINT;
+    }
 
     const auto mouseState = mMouse->GetState();
     if (mouseState.leftButton && !wasLmbPressed) {

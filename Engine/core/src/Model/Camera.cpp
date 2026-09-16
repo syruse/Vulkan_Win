@@ -49,7 +49,7 @@ void Camera::update(float deltaTime, bool withSmoothTransition) {
     mViewProj.view = glm::lookAt(mTarget + mCurrentFromTargetToEye, mTarget, _upDir);
 }
 
-void Camera::move(EDirection dir) {
+void Camera::move(EDirection dir, float speedMultiplier, bool applyTranslation) {
     static const glm::quat rotRight = glm::angleAxis(glm::radians((-1.0f * ANGLE_GAIN)), _upDir);
     static const glm::quat rotLeft = glm::angleAxis(glm::radians(ANGLE_GAIN), _upDir);
 
@@ -59,8 +59,10 @@ void Camera::move(EDirection dir) {
         mEndCameraRotation = ((dir == EDirection::Left) ? rotLeft : rotRight) * mEndCameraRotation;
     }
 
-    glm::vec3 rotDir = mEndCameraRotation * _forwardDir;
-    mTarget += GAIN_MOVEMENT * ((dir == EDirection::Back) ? (rotDir * -1.0f) : rotDir);
+    if (applyTranslation) {
+        glm::vec3 rotDir = mEndCameraRotation * _forwardDir;
+        mTarget += GAIN_MOVEMENT * speedMultiplier * ((dir == EDirection::Back) ? (rotDir * -1.0f) : rotDir);
+    }
 
     // fallback applying changes for Forward\Back direction if update called before move
     update(0.0f);

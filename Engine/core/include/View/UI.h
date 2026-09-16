@@ -76,10 +76,11 @@ public:
         }
     }
 
-    void setCombatState(float health, float reloadProgress, uint32_t shellCount) {
+    void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress) {
         mHealth = health;
         mReloadProgress = reloadProgress;
         mShellCount = shellCount;
+        mSprintProgress = sprintProgress;
     }
 
 private:
@@ -95,4 +96,5 @@ private:
     float mHealth = 1.0f;
     float mReloadProgress = 1.0f;
     uint32_t mShellCount = 10u;
+    float mSprintProgress = 1.0f;
 };
