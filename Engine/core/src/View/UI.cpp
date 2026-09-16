@@ -91,10 +91,10 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
             mStates.foliageQualityChanged = true;
         }
     }
-    ImGui::TextUnformatted("Option slot 2");
+    ImGui::TextUnformatted("SSAO");
     ImGui::SameLine(300.0f);
-    if (drawToggle("optionTwo", mStates.placeHolder2.second)) {
-        mStates.placeHolder2.second = !mStates.placeHolder2.second;
+    if (drawToggle("ssao", mStates.ssaoEnabled.second)) {
+        mStates.ssaoEnabled.second = !mStates.ssaoEnabled.second;
     }
 
     ImGui::Separator();

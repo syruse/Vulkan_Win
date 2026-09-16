@@ -27,6 +27,9 @@ layout(push_constant) uniform PushConstant {
     vec4 windowSize;
     vec3 lightPos;
     vec3 cameraPos;
+	vec4 windDirElapsedTimeMS;
+	// x stores the SSAO enable flag.
+	uvec4 renderOptions;
 } pushConstant;
 
 layout(location = 0) in vec2 in_uv;
@@ -40,6 +43,12 @@ const int contrastFactor = 7;
 
 void main()
 {
+	// SSAO enable flag: 0 means skip occlusion calculation.
+	if (pushConstant.renderOptions.x == 0) {
+		out_color = vec4(1.0);
+		return;
+	}
+
     vec3 normalRange_0_1 = subpassLoad(inputGPassNormal).xyz;
 	// Skybox/cleared pixels keep a zero normal; valid packed normals may legally contain 0.0 in one channel.
 	if (dot(normalRange_0_1, normalRange_0_1) > 0.0) {

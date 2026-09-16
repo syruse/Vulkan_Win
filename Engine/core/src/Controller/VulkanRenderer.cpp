@@ -135,7 +135,8 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                                                      "vert_footPrint.spv", "frag_footPrint.spv"));
     m_pipelineCreators[SSAO_BLUR].reset(new PipelineCreatorQuad(*this, m_renderPassSSAOblur, "vert_ssaoBlur.spv",
                                                                 "frag_ssaoBlur.spv", &this->_shadingBuffer,
-                                                                PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA));
+                                                                PipelineCreatorQuad::BLEND::SRC_ALPHA_AND_DST_ONE_MINUS_ALPHA,
+                                                                0u, m_pushConstantRange));
     // validation
     for (auto i = 0u; i < Pipelines::MAX; ++i) {
         if (m_pipelineCreators[i] == nullptr) {
@@ -1285,7 +1286,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     _core.getWinController()->setLoading(!allModelsReady());
     _core.getWinController()->setShowMenu(hmiRenderData);
     _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
-    const bool hasCudaAnimationSupport = static_cast<MD5Model*>(m_semiTransparentModels[0].get())->hasCudaAnimationSupport();
+    const bool hasCudaAnimationSupport = !m_semiTransparentModels.empty() &&
+        static_cast<MD5Model*>(m_semiTransparentModels[0].get())->hasCudaAnimationSupport();
     _core.getWinController()->setGpuAnimationSupport(hasCudaAnimationSupport);
     const auto now = std::chrono::steady_clock::now();
     const float reloadProgress = now < m_projectileTimeoutDeadline
@@ -1527,6 +1529,8 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     vkCmdBeginRenderPass(_cmdBufs[currentImage], &renderPassSSAOblurInfo, VK_SUBPASS_CONTENTS_INLINE);
     {
         const auto& pipelineCreator = m_pipelineCreators[SSAO_BLUR];
+        vkCmdPushConstants(_cmdBufs[currentImage], pipelineCreator->getPipeline()->pipelineLayout, PUSH_CONSTANT_STAGE_FLAGS, 0,
+                           sizeof(PushConstant), &_pushConstant);
         vkCmdBindPipeline(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineCreator->getPipeline()->pipeline);
         vkCmdBindDescriptorSets(_cmdBufs[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineCreator->getPipeline()->pipelineLayout, 0, 1,
@@ -3120,6 +3124,10 @@ bool VulkanRenderer::renderScene() {
         auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
         hmiStates->foliageQualityChanged = false;
         applyFoliageQuality(hmiStates->foliageQuality);
+    }
+
+    if (windowQueueMSG.hmiStates) {
+        _pushConstant.renderOptions.x = windowQueueMSG.hmiStates->ssaoEnabled.second ? 1u : 0u;
     }
 
     // Tank input/collision needs its mesh's radius(); skip entirely until it's finished streaming in.

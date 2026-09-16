@@ -33,7 +33,7 @@ public:
         std::pair<const char*, bool> gpuAnimationEnabled{"favor animation calculation on GPU", true};
         FoliageQuality foliageQuality = FoliageQuality::Minimum;
         bool foliageQualityChanged = false;
-        std::pair<const char*, bool> placeHolder2{"placeHolder2", true};
+        std::pair<const char*, bool> ssaoEnabled{"SSAO", false};
         bool resolutionChanged = false;
         int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;
         int16_t nextHeight = kResolutions[kDefaultResolutionIdx].height;
