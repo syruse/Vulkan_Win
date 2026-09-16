@@ -162,6 +162,9 @@ IControl::WindowQueueMSG Win32Control::processWindowQueueMSGs() {
         // Hold-to-rotate camera/turret placeholder right.
         _windowQueueMsg.buttonFlag |= WindowQueueMSG::LOOK_RIGHT;
     }
+    if (tracker.pressed.Enter) {
+        _windowQueueMsg.buttonFlag |= WindowQueueMSG::ENTER;
+    }
 
     const auto mouseState = mMouse->GetState();
     if (mouseState.leftButton && !wasLmbPressed) {

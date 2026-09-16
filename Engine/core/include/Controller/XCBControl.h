@@ -26,6 +26,7 @@ public:
 private:
     SDL_Window* m_window{nullptr};
     bool m_isUiVisible{false};
+    bool m_enterPressedEdge{false};
     IControl::WindowQueueMSG m_windowQueueMsg{};
 };
 

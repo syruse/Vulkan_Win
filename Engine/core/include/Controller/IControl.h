@@ -16,7 +16,8 @@ public:
             DONW = 8,        // Tank backward action (kept existing naming).
             LOOK_LEFT = 16,  // Camera/barrel look left (Q).
             LOOK_RIGHT = 32, // Camera/barrel look right (E).
-            FIRE = 64        // Fire projectile on mouse press edge.
+            FIRE = 64,       // Fire projectile on mouse press edge.
+            ENTER = 128      // Enter pressed on press edge (used to dismiss the welcome popup).
         };
         bool isQuited = false;
         bool isResized = false;
@@ -69,6 +70,11 @@ public:
     // Shown as a centered "Loading..." overlay by the UI while background model streaming is in progress.
     void setLoading(bool isLoading) {
         mUi.setLoading(isLoading);
+    }
+
+    // Shown as a centered welcome/briefing popup once loading finishes, until the player presses Enter.
+    void setWelcome(bool showWelcome) {
+        mUi.setWelcome(showWelcome);
     }
 
     // Controls whether the settings Menu window is drawn (independent of the Loading overlay).

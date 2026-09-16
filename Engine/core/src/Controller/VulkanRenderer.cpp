@@ -1283,7 +1283,10 @@ void VulkanRenderer::createCommandBuffer() {
 void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderData) {
     // Drives the ImGui "Loading..." overlay drawn by UI::updateAndDraw() while models stream in;
     // the settings Menu window itself stays gated on the pause-menu toggle (hmiRenderData).
-    _core.getWinController()->setLoading(!allModelsReady());
+    const bool modelsReady = allModelsReady();
+    _core.getWinController()->setLoading(!modelsReady);
+    // Shows the welcome/briefing popup once loading finishes, until the player presses Enter.
+    _core.getWinController()->setWelcome(modelsReady && !m_gameStarted);
     _core.getWinController()->setShowMenu(hmiRenderData);
     _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
     const bool hasCudaAnimationSupport = !m_semiTransparentModels.empty() &&
@@ -2997,10 +3000,16 @@ bool VulkanRenderer::renderScene() {
         return false;
     }
 
+    if (!m_gameStarted && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::ENTER) && allModelsReady()) {
+        m_gameStarted = true;
+    }
+    const bool isWelcomeGate = !m_gameStarted && allModelsReady();
 #if defined(_DEBUG)
-    const bool isGamePaused = false;
+    // Keep the game paused behind the welcome popup even in debug builds (Escape-pause stays bypassed).
+    const bool isGamePaused = isWelcomeGate;
 #else
-    const bool isGamePaused = windowQueueMSG.hmiRenderData;
+    // Keep the game paused behind the welcome popup until loading finishes and Enter is pressed.
+    const bool isGamePaused = windowQueueMSG.hmiRenderData || isWelcomeGate;
 #endif
     const float sceneDeltaTime = isGamePaused ? 0.0f : deltaTime;
 

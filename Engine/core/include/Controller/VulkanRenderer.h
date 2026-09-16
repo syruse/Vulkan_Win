@@ -218,6 +218,8 @@ private:
     std::vector<NpcTankState> m_npcTanks{1u};
     std::chrono::steady_clock::time_point m_nextNpcTankSpawnTime{};
     std::vector<ProjectileState> m_projectiles{};
+    // Becomes true once the player dismisses the post-loading welcome popup by pressing Enter.
+    bool m_gameStarted{false};
 
     // Trees + all other models (tank/terrain/skybox/...) upload via the transfer queue on this
     // thread while the render loop starts immediately; joined in the destructor before teardown.

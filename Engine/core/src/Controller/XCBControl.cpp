@@ -111,6 +111,9 @@ IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs() {
                     m_isUiVisible = !m_isUiVisible;
                     m_windowQueueMsg.hmiRenderData = m_isUiVisible;
                 }
+                if (event.key.keysym.sym == SDLK_RETURN && event.key.repeat == 0) {
+                    m_enterPressedEdge = true;
+                }
                 break;
             default:
                 break;
@@ -119,6 +122,10 @@ IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs() {
 
     const uint8_t* keyboardState = SDL_GetKeyboardState(nullptr);
     m_windowQueueMsg.buttonFlag = 0;
+    if (m_enterPressedEdge) {
+        m_windowQueueMsg.buttonFlag |= WindowQueueMSG::ENTER;
+        m_enterPressedEdge = false;
+    }
     if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::UP;
     }

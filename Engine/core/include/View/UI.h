@@ -53,6 +53,11 @@ public:
         mIsLoading = isLoading;
     }
 
+    // Toggles the centered welcome/briefing popup shown once loading finishes, until Enter is pressed.
+    void setWelcome(bool showWelcome) {
+        mShowWelcome = showWelcome;
+    }
+
     // Toggles the settings Menu window; independent of the Loading overlay so loading can be shown
     // even while the pause menu is closed.
     void setShowMenu(bool showMenu) {
@@ -82,6 +87,7 @@ private:
     std::array<ResolutionEntry, 4> m_resolutions;
     int m_selectedIdx = kDefaultResolutionIdx;
     bool mIsLoading = false;
+    bool mShowWelcome = false;
     bool mShowMenu = true;
     bool mDlssSupported = false;
     bool mXessSupported = false;

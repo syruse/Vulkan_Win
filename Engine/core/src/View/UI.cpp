@@ -190,6 +190,39 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
         ImGui::PopStyleVar(2);
     }
 
+    if (mShowWelcome) {
+        // Same style as the Loading overlay; shown once loading finishes, until the player presses Enter.
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                       viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
+                                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(36.0f, 24.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.06f, 0.08f, 0.94f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.27f, 0.54f, 0.57f, 0.90f));
+        ImGui::Begin("##WelcomeOverlay", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::SetWindowFontScale(2.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.98f, 0.93f, 1.0f));
+        ImGui::TextUnformatted("Welcome to the battle. Eliminate all enemy forces");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SetWindowFontScale(1.4f);
+        ImGui::TextUnformatted("Use W, A, S, D to move");
+        ImGui::TextUnformatted("Use Left Shift to sprint");
+        ImGui::TextUnformatted("Use Left Mouse Button to shoot");
+        ImGui::TextUnformatted("Use Esc to open the menu");
+        ImGui::Spacing();
+        ImGui::SetWindowFontScale(1.7f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.45f, 1.0f));
+        ImGui::TextUnformatted("Press Enter to start the game");
+        ImGui::PopStyleColor();
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
     if (drawOverlay) {
         drawOverlay();
     }
