@@ -1007,7 +1007,17 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // Stable light positioning (Texel Snapping)
     glm::vec3 tankPos = mCamera.targetPos();
-    glm::vec3 desiredLightPos = tankPos + _lightPos;
+    // The camera starts at z = -850 and looks toward z = -720; that is, its line of sight is along the +Z direction.
+    // Sunlight direction is along the -Z axis, that's why we need to invert dot product
+    const glm::vec3 tankForward =
+        glm::normalize(glm::vec3(mCamera.barrelModelMat() * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+    const glm::vec3 sunlightDirection = glm::normalize(glm::vec3(0.0f, -_lightPos.y, -_lightPos.z));
+    const float facingSunFactor = -glm::dot(tankForward, sunlightDirection);
+    // If looking towards the sun, a shadow bias/offset is needed 
+    // because the sun is above the objects in front of us, 
+    // preventing objects behind from receiving shadows
+    const glm::vec3 shadowFocusOffset = facingSunFactor < 0.0f ? tankForward * (0.5f * Z_FAR) : glm::vec3(0.0f);
+    glm::vec3 desiredLightPos = tankPos + _lightPos + shadowFocusOffset;
 
     // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
     const float shadowSide = Z_FAR * 1.1f;
@@ -1018,6 +1028,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // We "jump" the light source only when the projection moved to the next texel shadow map.
     // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
+    // let's use 10% of Z_FAR as the threshold for snapping the light position
+    // it avoids flickering of shadows due to minor camera movements
     if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
         const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
         _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
@@ -1025,7 +1037,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // We keep a constant direction vector: from -1000 to +1000 in Z (length 3500).
     // Normalizing the direction ensures that shadow angles remain perfectly static when the light moves.
-    glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f, -_lightPos.y, -_lightPos.z)) * (Z_FAR * 3.5f);
+    glm::vec3 lightDir = sunlightDirection * (Z_FAR * 3.5f);
     glm::vec3 target = glm::vec3(_pushConstant.lightPos) + lightDir;
 
     m_lightViewProj =
