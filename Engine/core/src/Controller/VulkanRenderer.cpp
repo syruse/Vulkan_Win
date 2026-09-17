@@ -3339,7 +3339,10 @@ bool VulkanRenderer::renderScene() {
         m_audioManager->update(deltaTime);
     }
 
-    _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), mDeviceProperties.limits.maxTessellationGenerationLevel);
+    const float tessellationLevel = windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->tessellationEnabled.second
+        ? mDeviceProperties.limits.maxTessellationGenerationLevel
+        : 1.0f;
+    _pushConstant.cameraPos = glm::vec4(mCamera.cameraPosition(), tessellationLevel);
     _pushConstant.lightPos.w = _pushConstant.windDirElapsedTimeMS.w;  // previous frame's elapsed time
     _pushConstant.windDirElapsedTimeMS.w += sceneDeltaTime;
 

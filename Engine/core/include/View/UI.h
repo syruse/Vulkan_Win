@@ -31,6 +31,7 @@ public:
 
     struct States {
         std::pair<const char*, bool> gpuAnimationEnabled{"favor animation calculation on GPU", true};
+        std::pair<const char*, bool> tessellationEnabled{"Tessellation", true};
         FoliageQuality foliageQuality = FoliageQuality::Minimum;
         bool foliageQualityChanged = false;
         std::pair<const char*, bool> ssaoEnabled{"SSAO", false};
@@ -69,10 +70,14 @@ public:
         mXessSupported = xessSupported;
     }
 
+    // Enable GPU animation by default when support becomes available, without overriding the user's toggle afterward.
     void setGpuAnimationSupport(bool supported) {
+        const bool supportBecameAvailable = supported && !mGpuAnimationSupported;
         mGpuAnimationSupported = supported;
         if (!supported) {
             mStates.gpuAnimationEnabled.second = false;
+        } else if (supportBecameAvailable) {
+            mStates.gpuAnimationEnabled.second = true;
         }
     }
 

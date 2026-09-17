@@ -88,6 +88,11 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
         mStates.gpuAnimationEnabled.second = !mStates.gpuAnimationEnabled.second;
     }
     if (!mGpuAnimationSupported) ImGui::EndDisabled();
+    ImGui::TextUnformatted("Tessellation");
+    ImGui::SameLine(300.0f);
+    if (drawToggle("tessellation", mStates.tessellationEnabled.second)) {
+        mStates.tessellationEnabled.second = !mStates.tessellationEnabled.second;
+    }
     ImGui::TextUnformatted("Foliage");
     ImGui::SameLine(300.0f);
     mStates.foliageQualityChanged = false;
