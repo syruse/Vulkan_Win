@@ -1016,7 +1016,8 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     // If looking towards the sun, a shadow bias/offset is needed 
     // because the sun is above the objects in front of us, 
     // preventing objects behind from receiving shadows
-    const glm::vec3 shadowFocusOffset = facingSunFactor < 0.0f ? tankForward * (0.5f * Z_FAR) : glm::vec3(0.0f);
+    const float shadowFocusFactor = glm::smoothstep(0.0f, 1.0f, glm::clamp(-facingSunFactor, 0.0f, 1.0f));
+    const glm::vec3 shadowFocusOffset = tankForward * (shadowFocusFactor * 0.5f * Z_FAR);
     glm::vec3 desiredLightPos = tankPos + _lightPos + shadowFocusOffset;
 
     // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
@@ -1026,14 +1027,15 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
     float texelSize = (shadowSide * 2.0f) / _shadowMapWidthAndHeight;
 
-    // We "jump" the light source only when the projection moved to the next texel shadow map.
-    // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
     // let's use 10% of Z_FAR as the threshold for snapping the light position
-    // it avoids flickering of shadows due to minor camera movements
-    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
-        const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
-        _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
-    }
+    //if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
+    //    const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
+    //    _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
+    //}
+    // Snap directly to the shadow-map texel grid. A large update threshold would make the
+    // shadow camera jump when the focus offset changes direction.
+    const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
+    _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
 
     // We keep a constant direction vector: from -1000 to +1000 in Z (length 3500).
     // Normalizing the direction ensures that shadow angles remain perfectly static when the light moves.
