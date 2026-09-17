@@ -63,7 +63,7 @@ struct VulkanState {
         alignas(16) glm::vec4 lightPos{1.0f};  //w is elapsedMS for previous frame
         alignas(16) glm::vec4 cameraPos{1.0f}; // w component is tesselation level
         alignas(16) glm::vec4 windDirElapsedTimeMS{0.0f}; // vec3 is velocity and w is elapsedTime
-        alignas(16) glm::uvec4 renderOptions{0u}; // x: SSAO enabled, y: DLSS sky motion vectors enabled
+        alignas(16) glm::uvec4 renderOptions{0u}; // x: SSAO, y: DLSS sky motion vectors, z: shadow quality
     };
 
     struct DepthBuffer {
@@ -115,7 +115,7 @@ struct VulkanState {
     uint16_t _offscreenWidth{0u};
     uint16_t _offscreenHeight{0u};
     uint16_t _footPrintWidthAndHeight{8000u};
-    uint16_t _shadowMapWidthAndHeight{8000u};
+    uint16_t _shadowMapWidthAndHeight{1024u};
     VulkanCore _core{nullptr};
     uint32_t _swapchainImageCount{0u};
     SwapChain _swapChain{};

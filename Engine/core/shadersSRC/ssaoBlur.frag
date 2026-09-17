@@ -15,8 +15,6 @@ layout(location = 0) in vec2 fragTexCoord;
 
 layout(location = 0) out vec4 out_color;
 
-const int blurFactor = 2;
-
 void main()
 {
     // let's keep it commented, that's not releated only SSAO (also shadows) and 
@@ -31,6 +29,7 @@ void main()
     vec2 texelSize = 1.0 / vec2(textureSize(inputSSAOTexture, 0));
     float result = 0.0;
 	vec2 offset = vec2(0.0);
+    const int blurFactor = 2 * int(pushConstant.renderOptions.z + 1);
     for (int x = -blurFactor; x < blurFactor; ++x) 
     {
         for (int y = -blurFactor; y < blurFactor; ++y) 
@@ -39,7 +38,7 @@ void main()
             result += texture(inputSSAOTexture, fragTexCoord + offset).r;
         }
     }
-	
+
     result /= pow(blurFactor + blurFactor, 2);
 
     out_color = vec4(vec3(0.0), 1.0 - result);

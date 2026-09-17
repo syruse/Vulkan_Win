@@ -458,6 +458,10 @@ void VulkanRenderer::cleanupSwapChain() {
     vkDestroyImage(_core.getDevice(), _depthBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _depthBuffer.depthImageMemory, nullptr);
 
+    vkDestroyImageView(_core.getDevice(), _shadowMapBuffer.depthImageView, nullptr);
+    vkDestroyImage(_core.getDevice(), _shadowMapBuffer.depthImage, nullptr);
+    vkFreeMemory(_core.getDevice(), _shadowMapBuffer.depthImageMemory, nullptr);
+
     vkDestroyImageView(_core.getDevice(), _depthTempBuffer.depthImageView, nullptr);
     vkDestroyImage(_core.getDevice(), _depthTempBuffer.depthImage, nullptr);
     vkFreeMemory(_core.getDevice(), _depthTempBuffer.depthImageMemory, nullptr);
@@ -585,7 +589,7 @@ void VulkanRenderer::cleanupSwapChain() {
 }
 
 void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth,
-                                       uint16_t offscreenHeight) {
+                                       uint16_t offscreenHeight, bool forceRecreate) {
     const uint16_t nextOffscreenWidth = offscreenWidth == 0u ? _offscreenWidth : offscreenWidth;
     const uint16_t nextOffscreenHeight = offscreenHeight == 0u ? _offscreenHeight : offscreenHeight;
     const uint16_t nextWindowWidth = windowWidth == 0u ? _windowWidth : windowWidth;
@@ -594,7 +598,7 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
     INFO_FORMAT(" new window width=%d; new window height=%d; new offscreen width=%d; new offscreen height=%d", windowWidth,
                 windowHeight, nextOffscreenWidth, nextOffscreenHeight);
     const bool windowSizeChanged = (_windowWidth != nextWindowWidth) || (_windowHeight != nextWindowHeight);
-    if (windowSizeChanged || _offscreenWidth != nextOffscreenWidth || _offscreenHeight != nextOffscreenHeight) {
+    if (forceRecreate || windowSizeChanged || _offscreenWidth != nextOffscreenWidth || _offscreenHeight != nextOffscreenHeight) {
         cleanupSwapChain();
         destroyPerFrameResources();
 
@@ -1022,7 +1026,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // A shadow side of 1.1 * Z_FAR provides extra padding to prevent shadow cutoff at screen corners.
     const float shadowSide = Z_FAR * 1.1f;
-    // Shadow map resolution is _shadowMapWidthAndHeight (8000x8000).
+    // Shadow map resolution is _shadowMapWidthAndHeight x _shadowMapWidthAndHeight.
     // Texel snapping aligns the light frustum to the shadow map grid to prevent sub-texel flickering.
     // The total orthographic width is 2.2 * Z_FAR (covering from -1.1 to 1.1).
     float texelSize = (shadowSide * 2.0f) / _shadowMapWidthAndHeight;
@@ -3199,8 +3203,18 @@ bool VulkanRenderer::renderScene() {
         applyFoliageQuality(hmiStates->foliageQuality);
     }
 
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->shadowQualityChanged) {
+        auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
+        hmiStates->shadowQualityChanged = false;
+        constexpr std::array<uint16_t, 3> shadowMapSizes{8000u, 8000u, 8000u};
+        _shadowMapWidthAndHeight = shadowMapSizes[static_cast<size_t>(hmiStates->shadowQuality)];
+        recreateSwapChain(_windowWidth, _windowHeight, 0u, 0u, true);
+        return ret_status;
+    }
+
     if (windowQueueMSG.hmiStates) {
         _pushConstant.renderOptions.x = windowQueueMSG.hmiStates->ssaoEnabled.second ? 1u : 0u;
+        _pushConstant.renderOptions.z = static_cast<uint32_t>(windowQueueMSG.hmiStates->shadowQuality);
     }
     _pushConstant.renderOptions.y = (m_isDlssEnabled && _core.isDlssSupported()) ? 1u : 0u;
 

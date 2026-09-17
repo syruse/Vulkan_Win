@@ -8,6 +8,7 @@
 enum class UpscalerType   : uint8_t { None = 0, DLSS, XESS };
 enum class UpscalerPreset : uint8_t { NativeAA = 0, UltraQuality, Quality, Balanced, Performance, UltraPerformance };
 enum class FoliageQuality : uint8_t { Minimum = 0, Medium, Maximum };
+enum class ShadowQuality : uint8_t { Minimum = 0, Medium, Maximum };
 
 struct ResolutionEntry {
     int16_t width;
@@ -34,6 +35,8 @@ public:
         std::pair<const char*, bool> tessellationEnabled{"Tessellation", true};
         FoliageQuality foliageQuality = FoliageQuality::Minimum;
         bool foliageQualityChanged = false;
+        ShadowQuality shadowQuality = ShadowQuality::Minimum;
+        bool shadowQualityChanged = false;
         std::pair<const char*, bool> ssaoEnabled{"SSAO", false};
         bool resolutionChanged = false;
         int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;

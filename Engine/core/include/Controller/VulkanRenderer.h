@@ -118,7 +118,7 @@ private:
     void destroyPerFrameResources();
     void cleanupSwapChain();
     void recreateSwapChain(uint16_t windowWidth, uint16_t windowHeight, uint16_t offscreenWidth = 0u,
-                           uint16_t offscreenHeight = 0u);
+                           uint16_t offscreenHeight = 0u, bool forceRecreate = false);
 
     VkSwapchainCreateInfoKHR createSwapChain();
     void createUniformBuffers();

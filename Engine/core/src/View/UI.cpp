@@ -93,10 +93,29 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     if (drawToggle("tessellation", mStates.tessellationEnabled.second)) {
         mStates.tessellationEnabled.second = !mStates.tessellationEnabled.second;
     }
+    ImGui::TextUnformatted("Shadows quality");
+    ImGui::SameLine(300.0f);
+    mStates.shadowQualityChanged = false;
+    {
+        ImGui::PushID("shadowQuality");
+        int idx = static_cast<int>(mStates.shadowQuality);
+        bool changed = false;
+        if (ImGui::RadioButton("Min", &idx, 0)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Med", &idx, 1)) changed = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Max", &idx, 2)) changed = true;
+        if (changed) {
+            mStates.shadowQuality = static_cast<ShadowQuality>(idx);
+            mStates.shadowQualityChanged = true;
+        }
+        ImGui::PopID();
+    }
     ImGui::TextUnformatted("Foliage");
     ImGui::SameLine(300.0f);
     mStates.foliageQualityChanged = false;
     {
+        ImGui::PushID("foliageQuality");
         int idx = static_cast<int>(mStates.foliageQuality);
         bool changed = false;
         if (ImGui::RadioButton("Min", &idx, 0)) changed = true;
@@ -108,6 +127,7 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
             mStates.foliageQuality = static_cast<FoliageQuality>(idx);
             mStates.foliageQualityChanged = true;
         }
+        ImGui::PopID();
     }
     ImGui::TextUnformatted("SSAO");
     ImGui::SameLine(300.0f);
