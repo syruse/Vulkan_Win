@@ -1298,7 +1298,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
                      std::chrono::duration<float>(PROJECTILE_TIMEOUT).count()
         : 1.0f;
     _core.getWinController()->setCombatState(m_tankHealth / 100.0f, reloadProgress, m_shellCount,
-                                              m_sprintFuelSeconds / SPRINT_MAX_SECONDS);
+                                              m_sprintFuelSeconds / SPRINT_MAX_SECONDS, m_score, m_isGameOver);
 
     static VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
                                               VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT, nullptr};
@@ -2802,6 +2802,7 @@ void VulkanRenderer::resolveProjectileHits() {
             // An NPC projectile hit the player's main tank.
             if (ownerTankIndex != 0u && otherBody == m_btTankBody) {
                 m_tankHealth = std::max(0.0f, m_tankHealth - 10.0f);
+                m_isGameOver = m_tankHealth <= 0.0f;
             } else {
                 // The player's or an NPC's projectile hit an NPC tank.
                 bool hitNpc = false;
@@ -2815,6 +2816,9 @@ void VulkanRenderer::resolveProjectileHits() {
                     m_npcTanks[npcIndex].alive = m_npcTanks[npcIndex].health > 0.0f;
                     if (!m_npcTanks[npcIndex].alive) {
                         m_btDynamicsWorld->removeRigidBody(m_btNpcTankBodies[npcIndex]);
+                        if (ownerTankIndex == 0u) {
+                            m_score += 100u;
+                        }
                     }
                     hitNpc = true;
                     break;
@@ -3007,16 +3011,23 @@ bool VulkanRenderer::renderScene() {
         return false;
     }
 
-    if (!m_gameStarted && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::ENTER) && allModelsReady()) {
+    if (m_isGameOver && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::ENTER)) {
+        m_tankHealth = 100.0f;
+        m_sprintFuelSeconds = SPRINT_MAX_SECONDS;
+        m_shellCount = NPC_SHELL_COUNT;
+        m_score = 0u;
+        m_projectileTimeoutDeadline = std::chrono::steady_clock::time_point{};
+        m_isGameOver = false;
+    } else if (!m_gameStarted && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::ENTER) && allModelsReady()) {
         m_gameStarted = true;
     }
     const bool isWelcomeGate = !m_gameStarted && allModelsReady();
 #if defined(_DEBUG)
     // Keep the game paused behind the welcome popup even in debug builds (Escape-pause stays bypassed).
-    const bool isGamePaused = isWelcomeGate;
+    const bool isGamePaused = m_isGameOver || isWelcomeGate;
 #else
     // Keep the game paused behind the welcome popup until loading finishes and Enter is pressed.
-    const bool isGamePaused = windowQueueMSG.hmiRenderData || isWelcomeGate;
+    const bool isGamePaused = m_isGameOver || windowQueueMSG.hmiRenderData || isWelcomeGate;
 #endif
     const float sceneDeltaTime = isGamePaused ? 0.0f : deltaTime;
 

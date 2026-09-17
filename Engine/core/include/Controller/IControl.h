@@ -91,8 +91,9 @@ public:
         mUi.setGpuAnimationSupport(supported);
     }
 
-    void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress) {
-        mUi.setCombatState(health, reloadProgress, shellCount, sprintProgress);
+        void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress, uint32_t score,
+                            bool isGameOver) {
+            mUi.setCombatState(health, reloadProgress, shellCount, sprintProgress, score, isGameOver);
     }
 
 protected:

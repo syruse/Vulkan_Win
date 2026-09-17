@@ -76,11 +76,14 @@ public:
         }
     }
 
-    void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress) {
+    void setCombatState(float health, float reloadProgress, uint32_t shellCount, float sprintProgress, uint32_t score,
+                        bool isGameOver) {
         mHealth = health;
         mReloadProgress = reloadProgress;
         mShellCount = shellCount;
         mSprintProgress = sprintProgress;
+        mScore = score;
+        mIsGameOver = isGameOver;
     }
 
 private:
@@ -97,4 +100,6 @@ private:
     float mReloadProgress = 1.0f;
     uint32_t mShellCount = 10u;
     float mSprintProgress = 1.0f;
+    uint32_t mScore = 0u;
+    bool mIsGameOver = false;
 };

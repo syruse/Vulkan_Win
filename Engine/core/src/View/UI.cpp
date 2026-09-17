@@ -1,4 +1,5 @@
 #include "UI.h"
+#include <cstdio>
 #include <imgui/imgui.h>
 
 const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
@@ -38,6 +39,11 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
     ImGui::PopStyleColor();
     ImGui::SameLine(312.0f);
     ImGui::Text("Shift to sprint");
+    char scoreText[32]{};
+    std::snprintf(scoreText, sizeof(scoreText), "Scores  %u", mScore);
+    const float scoreWidth = ImGui::CalcTextSize(scoreText).x;
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - scoreWidth) * 0.5f);
+    ImGui::TextUnformatted(scoreText);
     ImGui::End();
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(3);
@@ -225,6 +231,30 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.45f, 1.0f));
         ImGui::TextUnformatted("Press Enter to start the game");
         ImGui::PopStyleColor();
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
+    if (mIsGameOver) {
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                       viewport->WorkPos.y + viewport->WorkSize.y * 0.5f),
+                                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(36.0f, 24.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.06f, 0.08f, 0.94f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.80f, 0.26f, 0.20f, 0.90f));
+        ImGui::Begin("##GameOverOverlay", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::SetWindowFontScale(2.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.45f, 1.0f));
+        ImGui::Text("Scores  %u", mScore);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SetWindowFontScale(1.4f);
+        ImGui::TextUnformatted("Press Enter to try again");
         ImGui::End();
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(2);
