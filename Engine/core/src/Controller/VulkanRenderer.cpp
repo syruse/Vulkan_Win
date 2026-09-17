@@ -263,6 +263,17 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
     m_models.emplace_back(new SphereModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline, PROJECTILE_RADIUS,
                                           24u, 16u, projectileInstances));
 
+    Instance hiddenPickupInstance{};
+    hiddenPickupInstance.posShift = glm::vec3(0.0f, -2000.0f, 0.0f);
+    std::vector<Instance> pickupHealthInstances(m_pickups.size(), hiddenPickupInstance);
+    std::vector<Instance> pickupAmmoInstances(m_pickups.size(), hiddenPickupInstance);
+    m_pickupCubesModelIndices[0] = static_cast<uint32_t>(m_models.size());
+    m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline,
+                                        glm::vec3(10.0f), pickupHealthInstances));
+    m_pickupCubesModelIndices[1] = static_cast<uint32_t>(m_models.size());
+    m_models.emplace_back(new CubeModel(*this, *mTextureFactory, "tree.jpg", texturedPipeline,
+                                        glm::vec3(10.0f), pickupAmmoInstances));
+
     m_models.emplace_back(new Terrain(*this, *mTextureFactory, "noise.jpg", "grass1.jpg", "grass2.jpg",
                                       static_cast<PipelineCreatorTextured*>(m_pipelineCreators[TERRAIN].get()), Z_FAR));
     const std::array<std::string_view, 6> skyBoxTextures{"sky_ft.png", "sky_bk.png", "sky_dn.png",
@@ -294,7 +305,6 @@ VulkanRenderer::VulkanRenderer(std::string_view appName, uint16_t windowWidth, u
                                static_cast<PipelineCreatorParticle*>(m_pipelineCreators[PARTICLE_GPGPU].get()), 40u,
                                glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.01f, 0.0f), glm::vec3(1.0f), glm::vec3(30.0f),
                                300.0f, 3400.0f);
-
     applyFoliageQuality(m_foliageQuality);
 }
 
@@ -819,6 +829,18 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
         m_particles[5]->update(currentImage, deltaMS,
                                glm::vec4(m_barrelSmokePosition, m_barrelSmokeActive ? 1.0f : 0.0f),
                                glm::vec4(m_barrelSmokeVelocity, 0.0f));
+    }
+    for (uint32_t pickupIndex = 0u; pickupIndex < m_pickups.size(); ++pickupIndex) {
+        const PickupState& pickup = m_pickups[pickupIndex];
+        const glm::vec3 hiddenPosition(0.0f, -2000.0f, 0.0f);
+        if (m_pickupCubesModelIndices[0] < m_models.size()) {
+            m_models[m_pickupCubesModelIndices[0]]->instances()[pickupIndex].posShift =
+                pickup.restoresHealth && pickup.alive ? pickup.position : hiddenPosition;
+        }
+        if (m_pickupCubesModelIndices[1] < m_models.size()) {
+            m_models[m_pickupCubesModelIndices[1]]->instances()[pickupIndex].posShift =
+                !pickup.restoresHealth && pickup.alive ? pickup.position : hiddenPosition;
+        }
     }
 
     const auto objectsAmount = m_models.size();
@@ -2865,6 +2887,7 @@ void VulkanRenderer::resolveProjectileHits() {
                     m_npcTanks[npcIndex].alive = m_npcTanks[npcIndex].health > 0.0f;
                     if (!m_npcTanks[npcIndex].alive) {
                         m_btDynamicsWorld->removeRigidBody(m_btNpcTankBodies[npcIndex]);
+                        spawnPickup(m_npcTanks[npcIndex].position);
                         if (ownerTankIndex == 0u) {
                             m_score += 100u;
                         }
@@ -2896,6 +2919,53 @@ void VulkanRenderer::resolveProjectileHits() {
         }
     }
     syncNpcTankVisuals();
+}
+
+void VulkanRenderer::spawnPickup(const glm::vec3& position) {
+    static std::mt19937 pickupGenerator(std::random_device{}());
+    for (uint32_t pickupIndex = 0u; pickupIndex < m_pickups.size(); ++pickupIndex) {
+        PickupState& pickup = m_pickups[pickupIndex];
+        if (pickup.alive) {
+            continue;
+        }
+
+        pickup.position = position;
+        pickup.alive = true;
+        pickup.restoresHealth = (std::uniform_int_distribution<int>(0, 1)(pickupGenerator) == 0);
+        if (m_pickupCubesModelIndices[pickup.restoresHealth ? 0u : 1u] < m_models.size()) {
+            m_models[m_pickupCubesModelIndices[pickup.restoresHealth ? 0u : 1u]]->instances()[pickupIndex].posShift =
+                pickup.position;
+        }
+        return;
+    }
+}
+
+void VulkanRenderer::updatePickups() {
+    const glm::vec3 playerPosition = mCamera.targetPos();
+    for (uint32_t pickupIndex = 0u; pickupIndex < m_pickups.size(); ++pickupIndex) {
+        PickupState& pickup = m_pickups[pickupIndex];
+        if (!pickup.alive) {
+            continue;
+        }
+
+        const glm::vec2 offset(playerPosition.x - pickup.position.x, playerPosition.z - pickup.position.z);
+        const float pickupRadius = m_models[0]->radius() * 1.1f;
+        if (glm::dot(offset, offset) > pickupRadius * pickupRadius) {
+            continue;
+        }
+
+        if (pickup.restoresHealth) {
+            m_tankHealth = std::min(100.0f, m_tankHealth + 40.0f);
+        } else {
+            m_shellCount += 5u;
+        }
+        pickup.alive = false;
+        pickup.position = glm::vec3(0.0f, -2000.0f, 0.0f);
+        if (m_pickupCubesModelIndices[pickup.restoresHealth ? 0u : 1u] < m_models.size()) {
+            m_models[m_pickupCubesModelIndices[pickup.restoresHealth ? 0u : 1u]]->instances()[pickupIndex].posShift =
+                pickup.position;
+        }
+    }
 }
 
 bool VulkanRenderer::allModelsReady() const {
@@ -3667,6 +3737,7 @@ bool VulkanRenderer::renderScene() {
         updateNpcTanks(deltaSec);
         m_btDynamicsWorld->stepSimulation(deltaSec, 10, 1.0f / 60.0f);
         resolveProjectileHits();
+        updatePickups();
 
         // After Bullet step, propagate projectile body transform into render instance data.
         syncProjectileVisualFromPhysics();

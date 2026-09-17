@@ -115,7 +115,7 @@ struct VulkanState {
     uint16_t _offscreenWidth{0u};
     uint16_t _offscreenHeight{0u};
     uint16_t _footPrintWidthAndHeight{8000u};
-    uint16_t _shadowMapWidthAndHeight{1024u};
+    uint16_t _shadowMapWidthAndHeight{8000u};
     VulkanCore _core{nullptr};
     uint32_t _swapchainImageCount{0u};
     SwapChain _swapChain{};

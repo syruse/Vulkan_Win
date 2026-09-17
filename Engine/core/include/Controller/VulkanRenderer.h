@@ -83,6 +83,12 @@ struct ProjectileState {
     bool active{false};
 };
 
+struct PickupState {
+    glm::vec3 position{0.0f, -2000.0f, 0.0f};
+    bool alive{false};
+    bool restoresHealth{false};
+};
+
 class VulkanRenderer : public VulkanState {
 public:
     enum Pipelines {
@@ -155,6 +161,8 @@ private:
     void despawnAllNpcTanks();
     void drawNpcHealthBars();
     void resolveProjectileHits();
+    void spawnPickup(const glm::vec3& position);
+    void updatePickups();
     void startTreeFall(size_t treeIndex, const glm::vec3& impactSourcePosition);
     /// Applies the UI-selected foliage quality: hides/shows tree draw calls and their Bullet bodies,
     /// and scales down bush particle instance counts for lower presets.
@@ -220,6 +228,7 @@ private:
     uint32_t m_treeTrunkModelIndex{0u};
     uint32_t m_projectileModelIndex{0u};
     uint32_t m_interiorCubeModelIndex{0u};
+    std::array<uint32_t, 2u> m_pickupCubesModelIndices{};
     // Absolute time point after which an in-flight projectile is force-deactivated (set on fire).
     std::chrono::steady_clock::time_point m_projectileTimeoutDeadline{};
     float m_tankHealth{100.0f};
@@ -229,6 +238,7 @@ private:
     uint32_t m_spawnedNpcTankCount{0u};
     std::chrono::steady_clock::time_point m_nextNpcTankSpawnTime{};
     std::vector<ProjectileState> m_projectiles{};
+    std::array<PickupState, 100u> m_pickups{};
     // Becomes true once the player dismisses the post-loading welcome popup by pressing Enter.
     bool m_gameStarted{false};
     bool m_isGameOver{false};
