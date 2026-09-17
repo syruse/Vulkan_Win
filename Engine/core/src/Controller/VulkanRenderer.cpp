@@ -1018,7 +1018,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
 
     // We "jump" the light source only when the projection moved to the next texel shadow map.
     // This keeps static shadows (like trees) from flickering or shifting during micro-movements.
-    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.5f * texelSize) {
+    if (glm::distance(glm::vec3(_pushConstant.lightPos), desiredLightPos) > 0.1f * Z_FAR) {
         const glm::vec3 snappedLightPos = glm::floor(desiredLightPos / texelSize) * texelSize;
         _pushConstant.lightPos = glm::vec4(snappedLightPos, _pushConstant.lightPos.w);
     }
@@ -2608,8 +2608,11 @@ void VulkanRenderer::syncNpcTankVisuals() {
             continue;
         }
 
-        const glm::mat4 hullRotation = glm::rotate(npc.hullYaw, glm::vec3(0.0f, 1.0f, 0.0f));
-        const glm::mat4 barrelRotation = glm::rotate(npc.hullYaw + npc.turretYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::mat4 hullRotation = glm::scale(glm::rotate(npc.hullYaw, glm::vec3(0.0f, 1.0f, 0.0f)),
+                              glm::vec3(npc.scale));
+        const glm::mat4 barrelRotation = glm::scale(glm::rotate(npc.hullYaw + npc.turretYaw,
+                                      glm::vec3(0.0f, 1.0f, 0.0f)),
+                                glm::vec3(npc.scale));
         hullInstances[instanceIndex].posShift = npc.alive ? npc.position : glm::vec3(0.0f, -2000.0f, 0.0f);
         barrelInstances[instanceIndex].posShift = hullInstances[instanceIndex].posShift;
         hullInstances[instanceIndex].model_col0 = glm::packHalf4x16(hullRotation[0]);
@@ -2621,6 +2624,27 @@ void VulkanRenderer::syncNpcTankVisuals() {
         barrelInstances[instanceIndex].model_col2 = glm::packHalf4x16(barrelRotation[2]);
         barrelInstances[instanceIndex].model_col3 = glm::packHalf4x16(barrelRotation[3]);
     }
+}
+
+void VulkanRenderer::despawnAllNpcTanks() {
+    for (NpcTankState& npc : m_npcTanks) {
+        npc.alive = false;
+        if (npc.body) {
+            m_btDynamicsWorld->removeRigidBody(npc.body);
+        }
+    }
+
+    for (ProjectileState& projectile : m_projectiles) {
+        if (projectile.ownerTankIndex == 0u || !projectile.body) {
+            continue;
+        }
+        projectile.active = false;
+        projectile.body->setLinearVelocity(btVector3(0.0f, 0.0f, 0.0f));
+        projectile.body->setAngularVelocity(btVector3(0.0f, 0.0f, 0.0f));
+    }
+
+    syncNpcTankVisuals();
+    syncProjectileVisualFromPhysics();
 }
 
 void VulkanRenderer::drawNpcHealthBars() {
@@ -2654,7 +2678,7 @@ void VulkanRenderer::drawNpcHealthBars() {
                             (ndc.y * 0.5f + 0.5f) * static_cast<float>(_windowHeight));
         const ImVec2 barMin(center.x - barWidth * 0.5f, center.y - barHeight * 0.5f);
         const ImVec2 barMax(center.x + barWidth * 0.5f, center.y + barHeight * 0.5f);
-        const float healthK = glm::clamp(npc.health / 100.0f, 0.0f, 1.0f);
+        const float healthK = glm::clamp(npc.health / npc.maxHealth, 0.0f, 1.0f);
         const ImVec2 fillMax(barMin.x + barWidth * healthK, barMax.y);
 
         drawList->AddRectFilled(ImVec2(barMin.x - 1.0f, barMin.y - 1.0f), ImVec2(barMax.x + 1.0f, barMax.y + 1.0f),
@@ -2801,8 +2825,15 @@ void VulkanRenderer::resolveProjectileHits() {
 
             // An NPC projectile hit the player's main tank.
             if (ownerTankIndex != 0u && otherBody == m_btTankBody) {
-                m_tankHealth = std::max(0.0f, m_tankHealth - 10.0f);
-                m_isGameOver = m_tankHealth <= 0.0f;
+                const uint32_t npcIndex = ownerTankIndex - NPC_INDEX_OFFSET;
+                if (npcIndex >= m_npcTanks.size() || !m_npcTanks[npcIndex].alive) {
+                    continue;
+                }
+                m_tankHealth = std::max(0.0f, m_tankHealth - m_npcTanks[npcIndex].damage);
+                if (m_tankHealth <= 0.0f && !m_isGameOver) {
+                    m_isGameOver = true;
+                    despawnAllNpcTanks();
+                }
             } else {
                 // The player's or an NPC's projectile hit an NPC tank.
                 bool hitNpc = false;
@@ -3016,6 +3047,7 @@ bool VulkanRenderer::renderScene() {
         m_sprintFuelSeconds = SPRINT_MAX_SECONDS;
         m_shellCount = NPC_SHELL_COUNT;
         m_score = 0u;
+        m_spawnedNpcTankCount = 0u;
         m_projectileTimeoutDeadline = std::chrono::steady_clock::time_point{};
         m_isGameOver = false;
     } else if (!m_gameStarted && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::ENTER) && allModelsReady()) {
@@ -3415,7 +3447,11 @@ bool VulkanRenderer::renderScene() {
             npc.position = spawnPosition;
             npc.hullYaw = 0.0f;
             npc.turretYaw = 0.0f;
-            npc.health = 100.0f;
+            const bool isHeavyTank = ++m_spawnedNpcTankCount % 8u == 0u;
+            npc.maxHealth = isHeavyTank ? 200.0f : 100.0f;
+            npc.health = npc.maxHealth;
+            npc.scale = isHeavyTank ? 1.5f : 1.0f;
+            npc.damage = isHeavyTank ? 20.0f : 10.0f;
             npc.shellCount = NPC_SHELL_COUNT;
             npc.reloadDeadline = {};
             npc.alive = true;
@@ -3427,12 +3463,17 @@ bool VulkanRenderer::renderScene() {
             // reuse existing rigid body if available
             if (npcIndex < m_btNpcTankBodies.size() && m_btNpcTankBodies[npcIndex]) {
                 body = m_btNpcTankBodies[npcIndex];
+                const btScalar halfWidth = m_models[0]->radius() * npc.scale / 2.0f;
+                const btScalar halfHeight = m_models[0]->radius() * npc.scale / 4.0f;
+                btCollisionShape* shape = new btBoxShape(btVector3(halfWidth, halfHeight, halfWidth));
+                m_btCollisionShapes.push_back(shape);
+                body->setCollisionShape(shape);
                 body->getMotionState()->setWorldTransform(transform);
                 body->setWorldTransform(transform);
                 m_btDynamicsWorld->addRigidBody(body);
             } else {
-                const btScalar halfWidth = m_models[0]->radius() / 2.0f;
-                const btScalar halfHeight = m_models[0]->radius() / 4.0f;
+                const btScalar halfWidth = m_models[0]->radius() * npc.scale / 2.0f;
+                const btScalar halfHeight = m_models[0]->radius() * npc.scale / 4.0f;
                 btCollisionShape* shape = new btBoxShape(btVector3(halfWidth, halfHeight, halfWidth));
                 m_btCollisionShapes.push_back(shape);
                 btDefaultMotionState* motionState = new btDefaultMotionState(transform);

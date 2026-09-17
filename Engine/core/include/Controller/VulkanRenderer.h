@@ -67,6 +67,9 @@ struct NpcTankState {
     float hullYaw{0.0f};
     float turretYaw{0.0f};
     float health{100.0f};
+    float maxHealth{100.0f};
+    float scale{1.0f};
+    float damage{10.0f};
     uint32_t shellCount{NPC_SHELL_COUNT};
     std::chrono::steady_clock::time_point reloadDeadline{};
     btRigidBody* body{nullptr};
@@ -149,6 +152,7 @@ private:
     void createNpcTankPhysicsBodiesIfReady();
     void updateNpcTanks(float deltaTimeSeconds);
     void syncNpcTankVisuals();
+    void despawnAllNpcTanks();
     void drawNpcHealthBars();
     void resolveProjectileHits();
     void startTreeFall(size_t treeIndex, const glm::vec3& impactSourcePosition);
@@ -222,6 +226,7 @@ private:
     uint32_t m_shellCount{NPC_SHELL_COUNT};
     uint32_t m_score{0u};
     std::vector<NpcTankState> m_npcTanks{1u};
+    uint32_t m_spawnedNpcTankCount{0u};
     std::chrono::steady_clock::time_point m_nextNpcTankSpawnTime{};
     std::vector<ProjectileState> m_projectiles{};
     // Becomes true once the player dismisses the post-loading welcome popup by pressing Enter.
