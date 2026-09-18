@@ -17,8 +17,8 @@ void CameraPanzer::update(float deltaTime, bool withSmoothTransition) {
     rebuildViewWithYaw();
 }
 
-void CameraPanzer::move(EDirection dir, float speedMultiplier, bool applyTranslation) {
-    Camera::move(dir, speedMultiplier, applyTranslation);
+void CameraPanzer::move(EDirection dir, float deltaTimeMs, float speedMultiplier, bool applyTranslation) {
+    Camera::move(dir, deltaTimeMs, speedMultiplier, applyTranslation);
     rebuildViewWithYaw();
 }
 
@@ -27,8 +27,9 @@ void CameraPanzer::resetPerspective(const Perstective& perstective) {
     rebuildViewWithYaw();
 }
 
-void CameraPanzer::adjustViewYaw(float deltaDeg) {
-    mViewYawDeg += deltaDeg;
+void CameraPanzer::adjustViewYaw(float deltaDeg, float deltaTimeMs) {
+    const float frameScale = std::clamp(deltaTimeMs / REFERENCE_FRAME_MS, 0.0f, MAX_FRAME_SCALE);
+    mViewYawDeg += deltaDeg * frameScale;
     //mViewYawDeg = std::clamp(mViewYawDeg, -85.0f, 85.0f);
     rebuildViewWithYaw();
 }

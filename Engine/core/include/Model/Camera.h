@@ -5,8 +5,14 @@
 
 class Camera {
 public:
-    constexpr static float ANGLE_GAIN = 0.25f;
-    constexpr static float GAIN_MOVEMENT = 0.25f;
+    // Values are per-reference-frame (see REFERENCE_FRAME_MS); move() scales them by
+    // deltaTime so tank speed stays constant across frame rates.
+    // now that speed is frame-rate independent.
+    constexpr static float ANGLE_GAIN = 0.75f;
+    constexpr static float GAIN_MOVEMENT = 0.75f;
+    constexpr static float REFERENCE_FRAME_MS = 1000.0f / 60.0f;
+    // Cap the per-call scale so a stutter/lag spike can't teleport the tank through geometry.
+    constexpr static float MAX_FRAME_SCALE = 4.0f;
 
     enum class EDirection { Forward = 0, Left, Right, Back };
 
@@ -48,10 +54,11 @@ public:
     }
 
     virtual void update(float deltaTime, bool withSmoothTransition = true);
+    // deltaTimeMs makes the per-call rotation/translation frame-rate independent.
     // speedMultiplier scales the forward/back translation distance (used for sprint).
     // applyTranslation=false performs a pure turn-in-place (no forward creep), used when
     // Forward/Back is already translating the tank this frame to avoid stacking movement.
-    virtual void move(EDirection dir, float speedMultiplier = 1.0f, bool applyTranslation = true);
+    virtual void move(EDirection dir, float deltaTimeMs, float speedMultiplier = 1.0f, bool applyTranslation = true);
 
 private:
     Perstective m_Perstpective;

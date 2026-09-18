@@ -3370,45 +3370,50 @@ bool VulkanRenderer::renderScene() {
     // own forward creep even though their rotations cancel out).
     bool forwardTranslationApplied = wantForward || wantBack;
 
+    // Same normalization Camera::move() applies internally, so predicted collision distance
+    // matches the actual per-frame translation regardless of frame rate.
+    const float moveFrameScale = std::clamp(deltaTime / Camera::REFERENCE_FRAME_MS, 0.0f, Camera::MAX_FRAME_SCALE);
+
     if (wantForward) {
         _footPrintRedrawingK = 0.7f;
-        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier;
+        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier * moveFrameScale;
         if (canMoveTank(Camera::EDirection::Forward, moveDistance)) {
-            mCamera.move(Camera::EDirection::Forward, speedMultiplier);
+            mCamera.move(Camera::EDirection::Forward, deltaTime, speedMultiplier);
         }
     }
     if (wantLeft) {
         _footPrintRedrawingK = 0.03f;
         const bool alsoTranslate = !forwardTranslationApplied;
-        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier : 0.0f;
+        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier * moveFrameScale : 0.0f;
         if (canMoveTank(Camera::EDirection::Left, moveDistance)) {
-            mCamera.move(Camera::EDirection::Left, speedMultiplier, alsoTranslate);
+            mCamera.move(Camera::EDirection::Left, deltaTime, speedMultiplier, alsoTranslate);
         }
         forwardTranslationApplied = forwardTranslationApplied || alsoTranslate;
     }
     if (wantRight) {
         _footPrintRedrawingK = 0.03f;
         const bool alsoTranslate = !forwardTranslationApplied;
-        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier : 0.0f;
+        const float moveDistance = alsoTranslate ? Camera::GAIN_MOVEMENT * speedMultiplier * moveFrameScale : 0.0f;
         if (canMoveTank(Camera::EDirection::Right, moveDistance)) {
-            mCamera.move(Camera::EDirection::Right, speedMultiplier, alsoTranslate);
+            mCamera.move(Camera::EDirection::Right, deltaTime, speedMultiplier, alsoTranslate);
         }
         forwardTranslationApplied = forwardTranslationApplied || alsoTranslate;
     }
     if (wantBack) {
         _footPrintRedrawingK = 0.7f;
-        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier;
+        const float moveDistance = Camera::GAIN_MOVEMENT * speedMultiplier * moveFrameScale;
         if (canMoveTank(Camera::EDirection::Back, moveDistance)) {
-            mCamera.move(Camera::EDirection::Back, speedMultiplier);
+            mCamera.move(Camera::EDirection::Back, deltaTime, speedMultiplier);
         }
     }
 
     if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_LEFT)) {
         // Q/E affects only the CameraPanzer view/barrel yaw, not tank movement vector.
-        mCamera.adjustViewYaw(-0.35f);
+        // now that speed is frame-rate independent.
+        mCamera.adjustViewYaw(-1.05f, deltaTime);
     }
     if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::LOOK_RIGHT)) {
-        mCamera.adjustViewYaw(0.35f);
+        mCamera.adjustViewYaw(1.05f, deltaTime);
     }
 
     if (!isGamePaused && (windowQueueMSG.buttonFlag & IControl::WindowQueueMSG::FIRE)) {

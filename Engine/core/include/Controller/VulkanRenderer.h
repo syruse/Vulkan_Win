@@ -41,7 +41,7 @@ inline constexpr uint32_t NPC_SHELL_COUNT = 20u;
 static constexpr float SPRINT_MAX_SECONDS = 10.0f;
 // Regeneration rate: 1 second of sprint charge is restored per 3 seconds of not sprinting.
 static constexpr float SPRINT_RECHARGE_PER_SECOND = 1.0f / 3.0f;
-static constexpr float SPRINT_SPEED_MULTIPLIER = 1.75f;
+static constexpr float SPRINT_SPEED_MULTIPLIER = 3.0f;
 
 class btDefaultCollisionConfiguration;
 class btCollisionDispatcher;

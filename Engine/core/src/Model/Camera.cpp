@@ -1,5 +1,7 @@
 #include "Camera.h"
 
+#include <algorithm>
+
 namespace {
 glm::vec3 _forwardDir = glm::vec3(0.0f, 0.0f, 1.0f);
 glm::vec3 _leftDir = glm::vec3(-1.0f, 0.0f, 0.0f);
@@ -49,19 +51,21 @@ void Camera::update(float deltaTime, bool withSmoothTransition) {
     mViewProj.view = glm::lookAt(mTarget + mCurrentFromTargetToEye, mTarget, _upDir);
 }
 
-void Camera::move(EDirection dir, float speedMultiplier, bool applyTranslation) {
-    static const glm::quat rotRight = glm::angleAxis(glm::radians((-1.0f * ANGLE_GAIN)), _upDir);
-    static const glm::quat rotLeft = glm::angleAxis(glm::radians(ANGLE_GAIN), _upDir);
+void Camera::move(EDirection dir, float deltaTimeMs, float speedMultiplier, bool applyTranslation) {
+    // Normalize against the reference frame time so total speed (units/sec, deg/sec) stays
+    // constant whether move() is called at 30, 60 or 180 FPS.
+    const float frameScale = std::clamp(deltaTimeMs / REFERENCE_FRAME_MS, 0.0f, MAX_FRAME_SCALE);
 
     if (dir == EDirection::Left || dir == EDirection::Right) {
+        const glm::quat rot = glm::angleAxis(glm::radians((dir == EDirection::Left ? ANGLE_GAIN : -ANGLE_GAIN) * frameScale), _upDir);
         mStartCameraRotation = mEndCameraRotation;
         mInterpolationK = 0.0f;
-        mEndCameraRotation = ((dir == EDirection::Left) ? rotLeft : rotRight) * mEndCameraRotation;
+        mEndCameraRotation = rot * mEndCameraRotation;
     }
 
     if (applyTranslation) {
         glm::vec3 rotDir = mEndCameraRotation * _forwardDir;
-        mTarget += GAIN_MOVEMENT * speedMultiplier * ((dir == EDirection::Back) ? (rotDir * -1.0f) : rotDir);
+        mTarget += GAIN_MOVEMENT * speedMultiplier * frameScale * ((dir == EDirection::Back) ? (rotDir * -1.0f) : rotDir);
     }
 
     // fallback applying changes for Forward\Back direction if update called before move

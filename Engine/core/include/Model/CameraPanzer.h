@@ -10,12 +10,14 @@ public:
     // Base camera update + additional view-only yaw offset (Q/E).
     void update(float deltaTime, bool withSmoothTransition = true) override;
     // Keep custom view offset in sync after movement updates base camera state.
-    void move(EDirection dir, float speedMultiplier = 1.0f, bool applyTranslation = true) override;
+    void move(EDirection dir, float deltaTimeMs, float speedMultiplier = 1.0f, bool applyTranslation = true) override;
     // Keep cached custom view/projection in sync with base perspective reset.
     void resetPerspective(const Perstective& perstective) override;
 
     // Rotate only the view offset around the target, preserving movement orientation.
-    void adjustViewYaw(float deltaDeg);
+    // deltaDeg is per-reference-frame (see Camera::REFERENCE_FRAME_MS), scaled by deltaTimeMs
+    // so turret rotation speed stays constant across frame rates.
+    void adjustViewYaw(float deltaDeg, float deltaTimeMs);
 
     // Return the tank-body transform with the independent barrel yaw applied.
     glm::mat4 barrelModelMat();
