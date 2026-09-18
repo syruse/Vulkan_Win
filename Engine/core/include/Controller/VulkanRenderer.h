@@ -333,6 +333,7 @@ private:
     uint16_t m_uiDisplayHeight{UI::kResolutions[UI::kDefaultResolutionIdx].height};
 #if defined(USE_DLSS) && USE_DLSS
     sl::DLSSMode m_dlssMode{sl::DLSSMode::eMaxQuality};
+    bool m_dlssResetHistory{true};
     bool m_slTagErrorLogged{false};
     bool m_slConstantsErrorLogged{false};
     uint32_t m_slFrameIndex{0};

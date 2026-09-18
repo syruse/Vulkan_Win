@@ -622,6 +622,9 @@ void VulkanRenderer::recreateSwapChain(uint16_t windowWidth, uint16_t windowHeig
                 {FOV, static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight), Z_NEAR, CAMERA_Z_FAR});
         }
         m_resetViewProjHistory = true;
+    #if defined(USE_DLSS) && USE_DLSS
+        m_dlssResetHistory = true;
+    #endif
     #if defined(USE_XESS) && USE_XESS
         m_xessResetHistory = true;
     #endif
@@ -853,9 +856,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& model = mCamera.targetModelMat();
 
     const glm::mat4 currentViewProj = cameraViewProj.proj * cameraViewProj.view;
-#if defined(USE_XESS) && USE_XESS
-    // Reject stale XeSS history while the camera moves to prevent terrain-detail smearing.
-    if (m_isXessEnabled && !m_resetViewProjHistory) {
+#if (defined(USE_DLSS) && USE_DLSS) || (defined(USE_XESS) && USE_XESS)
+    // Reject stale temporal history while the camera moves to prevent terrain-detail smearing.
+    if ((m_isDlssEnabled || m_isXessEnabled) && !m_resetViewProjHistory) {
         float viewProjectionDelta = 0.0f;
         for (uint32_t column = 0u; column < 4u; ++column) {
             for (uint32_t row = 0u; row < 4u; ++row) {
@@ -863,7 +866,12 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
             }
         }
         if (viewProjectionDelta > XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA) {
+#if defined(USE_DLSS) && USE_DLSS
+            m_dlssResetHistory = true;
+#endif
+#if defined(USE_XESS) && USE_XESS
             m_xessResetHistory = true;
+#endif
         }
     }
 #endif
@@ -3218,6 +3226,11 @@ bool VulkanRenderer::renderScene() {
         auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
         hmiStates->upscalerChanged = false;
 
+        m_resetViewProjHistory = true;
+    #if defined(USE_DLSS) && USE_DLSS
+        m_dlssResetHistory = true;
+    #endif
+
         const bool wantDlss = (hmiStates->upscalerType == UpscalerType::DLSS);
     #if defined(USE_XESS) && USE_XESS
         const bool wantXess = (hmiStates->upscalerType == UpscalerType::XESS);
@@ -5467,12 +5480,13 @@ void VulkanRenderer::setDLSSConstants(const sl::FrameToken& frameToken) {
     constants.depthInverted = sl::Boolean::eFalse;
     constants.cameraMotionIncluded = sl::Boolean::eTrue;
     constants.motionVectors3D = sl::Boolean::eFalse;
-    constants.reset = (m_slFrameIndex == 0u) ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    constants.reset = (m_slFrameIndex == 0u || m_dlssResetHistory) ? sl::Boolean::eTrue : sl::Boolean::eFalse;
     constants.motionVectorsDilated = sl::Boolean::eFalse;
     constants.motionVectorsJittered = sl::Boolean::eFalse;
 
     static const sl::ViewportHandle viewport(0);
     sl::Result constantsRes = _core.slSetConstantsSafe(constants, frameToken, viewport);
+    m_dlssResetHistory = false;
     if (constantsRes != sl::Result::eOk && !m_slConstantsErrorLogged) {
         Utils::printLog(INFO_PARAM, "slSetConstants failed, sl::Result=%d", static_cast<int>(constantsRes));
         m_slConstantsErrorLogged = true;
