@@ -264,6 +264,7 @@ private:
 
     // intermediate buffer being served for transferring data to gpu memory
     Model* mp_modelTransferSpace{nullptr};
+    size_t m_modelTransferSpaceSize{0u};
 
     // the main renderpass based on G-Pass
     VkRenderPass m_renderPass{nullptr};

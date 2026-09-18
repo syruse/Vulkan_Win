@@ -53,7 +53,7 @@ void UnixSDLControl::init() {
     }
 
     m_window = SDL_CreateWindow(m_appName.data(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, m_width, m_height,
-                                SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN);
+                                SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN);
     if (!m_window) {
         Utils::printLog(ERROR_PARAM, "SDL_CreateWindow error ", SDL_GetError());
         return;
@@ -63,11 +63,9 @@ void UnixSDLControl::init() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-    io.WantCaptureMouse = true;
     ImGui::StyleColorsDark();
     ImGui_ImplSDL2_InitForVulkan(m_window);
+    SDL_ShowCursor(SDL_DISABLE);
 
     Utils::printLog(INFO_PARAM, "SDL window created");
 }
@@ -120,6 +118,11 @@ IControl::WindowQueueMSG UnixSDLControl::processWindowQueueMSGs() {
                     m_enterPressedEdge = true;
                 }
                 break;
+            case SDL_MOUSEBUTTONDOWN:
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    m_firePressedEdge = true;
+                }
+                break;
             default:
                 break;
         }
@@ -130,6 +133,10 @@ IControl::WindowQueueMSG UnixSDLControl::processWindowQueueMSGs() {
     if (m_enterPressedEdge) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::ENTER;
         m_enterPressedEdge = false;
+    }
+    if (m_firePressedEdge) {
+        m_windowQueueMsg.buttonFlag |= WindowQueueMSG::FIRE;
+        m_firePressedEdge = false;
     }
     if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::UP;
@@ -142,6 +149,12 @@ IControl::WindowQueueMSG UnixSDLControl::processWindowQueueMSGs() {
     }
     if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::RIGHT;
+    }
+    if (keyboardState[SDL_SCANCODE_Q]) {
+        m_windowQueueMsg.buttonFlag |= WindowQueueMSG::LOOK_LEFT;
+    }
+    if (keyboardState[SDL_SCANCODE_E]) {
+        m_windowQueueMsg.buttonFlag |= WindowQueueMSG::LOOK_RIGHT;
     }
     if (keyboardState[SDL_SCANCODE_LSHIFT] || keyboardState[SDL_SCANCODE_RSHIFT]) {
         m_windowQueueMsg.buttonFlag |= WindowQueueMSG::SPRINT;

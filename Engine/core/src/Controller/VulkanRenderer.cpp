@@ -793,6 +793,10 @@ void VulkanRenderer::calculateAdditionalMat() {
 
 void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     assert(_ubo.buffersMemory.size() > currentImage);
+    const size_t modelDataSize = _modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size());
+    // Required: modelDataSize
+    // Available: m_modelTransferSpaceSize
+    assert(mp_modelTransferSpace != nullptr && m_modelTransferSpaceSize >= modelDataSize);
     const float kDelay = deltaMS;
 
     static const glm::mat4 identityMatrix = glm::mat4(1.0f);
@@ -1084,9 +1088,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     vkUnmapMemory(_core.getDevice(), _ubo.buffersMemory[currentImage]);
 
     // Map the list of model data
-    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0,
-                _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()), 0, &data);
-    memcpy(data, mp_modelTransferSpace, _modelUniformAlignment * (objectsAmount + m_semiTransparentModels.size()));
+    data = nullptr;
+    vkMapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage], 0, modelDataSize, 0, &data);
+    memcpy(data, mp_modelTransferSpace, modelDataSize);
     vkUnmapMemory(_core.getDevice(), _dynamicUbo.buffersMemory[currentImage]);
 }
 
@@ -1100,7 +1104,18 @@ void VulkanRenderer::allocateDynamicBufferTransferSpace() {
 
     // Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds m_models.size()
     const size_t bufferSize = _modelUniformAlignment * (m_models.size() + m_semiTransparentModels.size());
-    mp_modelTransferSpace = (Model*)_aligned_malloc(bufferSize, _modelUniformAlignment);
+#ifdef _WIN32
+    mp_modelTransferSpace = static_cast<Model*>(_aligned_malloc(bufferSize, _modelUniformAlignment));
+#else
+    void* alignedSpace = nullptr;
+    // On Unix, _aligned_malloc is replaced by aligned_alloc, but aligned_alloc requires
+    // the size to be a multiple of the alignment. With a buffer size of 3584 and a
+    // different Vulkan alignment, it may return nullptr even though the size field is
+    // already set to 3584. Use posix_memalign instead, which has no such size requirement.
+    const int allocationResult = posix_memalign(&alignedSpace, _modelUniformAlignment, bufferSize);
+    mp_modelTransferSpace = allocationResult == 0 ? static_cast<Model*>(alignedSpace) : nullptr;
+#endif
+    m_modelTransferSpaceSize = mp_modelTransferSpace ? bufferSize : 0u;
     // Trees load asynchronously and their slots aren't written until isReady(); _aligned_malloc leaves
     // them uninitialized, so zero them out to avoid uploading garbage matrices to the GPU meanwhile.
     if (mp_modelTransferSpace) {
@@ -1113,6 +1128,7 @@ void VulkanRenderer::releaseDynamicBufferTransferSpace() {
         _aligned_free(mp_modelTransferSpace);
         mp_modelTransferSpace = nullptr;
     }
+    m_modelTransferSpaceSize = 0u;
 }
 
 void VulkanRenderer::createDescriptorPool() {
