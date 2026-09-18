@@ -183,6 +183,7 @@ private:
     void applyXessOptions();
     void evaluateXessPass(uint32_t currentImage);
 #endif
+    void clearReactiveMask(uint32_t currentImage);
 
 private:
     uint16_t m_currentFrame = 0u;

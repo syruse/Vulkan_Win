@@ -175,7 +175,8 @@ xess_result_t VulkanCore::initializeXess(uint32_t outputWidth, uint32_t outputHe
     xess_vk_init_params_t parameters{};
     parameters.outputResolution = {outputWidth, outputHeight};
     parameters.qualitySetting = quality;
-    parameters.initFlags = XESS_INIT_FLAG_LDR_INPUT_COLOR | XESS_INIT_FLAG_USE_NDC_VELOCITY;
+    parameters.initFlags = XESS_INIT_FLAG_LDR_INPUT_COLOR | XESS_INIT_FLAG_USE_NDC_VELOCITY |
+                           XESS_INIT_FLAG_RESPONSIVE_PIXEL_MASK;
     return xessVKInit(m_xessContext, &parameters);
 }
 #endif

@@ -28,6 +28,13 @@ void PipelineCreatorSkyBox::createPipeline() {
     auto& pipelineIACreateInfo = Pipeliner::getInstance().getInputAssemblyInfo();
     pipelineIACreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
+    auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
+    blendInfo.attachmentCount = 5;
+    auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
+    blendAttachments[4] = blendAttachments[0];
+    blendAttachments[4].blendEnable = VK_FALSE;
+    blendAttachments[4].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+
     m_pipeline = Pipeliner::getInstance().createPipeLine(m_vertShader, m_fragShader, m_vkState._offscreenWidth, m_vkState._offscreenHeight,
                                                          *m_descriptorSetLayout.get(), m_renderPass, m_vkState._core.getDevice(),
                                                          0u, m_pushConstantRange);

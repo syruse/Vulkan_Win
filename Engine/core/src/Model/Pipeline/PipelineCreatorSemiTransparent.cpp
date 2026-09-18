@@ -43,7 +43,7 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 2;  // Scene color + motion vectors (no longer feeds the OIT accum/revealage buffers)
+    blendInfo.attachmentCount = 3;  // Scene color + motion vectors + reactive mask
     auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
     blendAttachments[0].blendEnable = VK_TRUE;
     blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -56,6 +56,8 @@ void PipelineCreatorSemiTransparent::createPipeline() {
     blendAttachments[1].blendEnable = VK_FALSE;
     // Motion vectors are written directly and must not be blended with prior values.
     blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    blendAttachments[2] = blendAttachments[1];
+    blendAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
 
     auto& raster = Pipeliner::getInstance().getRasterizationInfo();
     raster.cullMode = VK_CULL_MODE_NONE;

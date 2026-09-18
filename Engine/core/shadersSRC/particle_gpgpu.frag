@@ -13,6 +13,7 @@ layout(location = 5) in vec2 inMotionVector;
 layout(location = 0) out vec4 outAccum;
 layout(location = 1) out vec4 outRevealage;
 layout(location = 2) out vec2 out_motionVectors;
+layout(location = 3) out vec4 outReactiveMask;
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
@@ -36,5 +37,6 @@ void main() {
     outAccum = vec4(particleColor.rgb * particleColor.a, particleColor.a) * weight;
     outRevealage = vec4(particleColor.a);
     out_motionVectors = inMotionVector;
+    outReactiveMask = vec4(1.0, 0.0, 0.0, 0.0);
     gl_FragDepth = fragDepth;
 }

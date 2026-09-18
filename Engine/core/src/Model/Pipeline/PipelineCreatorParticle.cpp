@@ -20,7 +20,7 @@ void PipelineCreatorParticle::createPipeline() {
     raster.cullMode = VK_CULL_MODE_NONE;
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 3;  // OIT accumulation + revealage + motion vectors
+    blendInfo.attachmentCount = 4;  // OIT accumulation + revealage + motion vectors + reactive mask
     auto blendAttachments = const_cast<VkPipelineColorBlendAttachmentState*>(blendInfo.pAttachments);
     // Accumulate weighted transparent color and weight from every particle fragment.
     blendAttachments[0].blendEnable = VK_TRUE;
@@ -38,6 +38,8 @@ void PipelineCreatorParticle::createPipeline() {
     // Motion vectors are written directly and must not be blended with prior values.
     blendAttachments[2].blendEnable = VK_FALSE;
     blendAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    blendAttachments[3] = blendAttachments[2];
+    blendAttachments[3].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
 
     auto& depthStencil = Pipeliner::getInstance().getDepthStencilInfo();
     depthStencil.depthTestEnable = VK_TRUE;

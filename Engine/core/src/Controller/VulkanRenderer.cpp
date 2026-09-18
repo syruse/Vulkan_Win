@@ -47,7 +47,6 @@ static constexpr float Z_FAR = 1000.0f;
 // to avoid clipping issues with distant objects like boundery cubes
 static constexpr float CAMERA_Z_FAR = 2500.0f;
 static constexpr float FOV = 65.0f;
-static constexpr float XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA = 0.00001f;
 static constexpr float NPC_CORNER_OFFSET = 720.0f;
 static constexpr std::array<float, 3u> NPC_SPAWN_X_POSITIONS{-NPC_CORNER_OFFSET, 0.0f, NPC_CORNER_OFFSET};
 #define NPC_INDEX_OFFSET 1u
@@ -505,6 +504,10 @@ void VulkanRenderer::cleanupSwapChain() {
         vkDestroyImage(_core.getDevice(), _motionVectorsBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _motionVectorsBuffer.colorBufferImageMemory[i], nullptr);
 
+        vkDestroyImageView(_core.getDevice(), _reactiveMaskBuffer.colorBufferImageView[i], nullptr);
+        vkDestroyImage(_core.getDevice(), _reactiveMaskBuffer.colorBufferImage[i], nullptr);
+        vkFreeMemory(_core.getDevice(), _reactiveMaskBuffer.colorBufferImageMemory[i], nullptr);
+
         vkDestroyImageView(_core.getDevice(), _shadingBuffer.colorBufferImageView[i], nullptr);
         vkDestroyImage(_core.getDevice(), _shadingBuffer.colorBufferImage[i], nullptr);
         vkFreeMemory(_core.getDevice(), _shadingBuffer.colorBufferImageMemory[i], nullptr);
@@ -856,25 +859,6 @@ void VulkanRenderer::updateUniformBuffer(uint32_t currentImage, float deltaMS) {
     const auto& model = mCamera.targetModelMat();
 
     const glm::mat4 currentViewProj = cameraViewProj.proj * cameraViewProj.view;
-#if (defined(USE_DLSS) && USE_DLSS) || (defined(USE_XESS) && USE_XESS)
-    // Reject stale temporal history while the camera moves to prevent terrain-detail smearing.
-    if ((m_isDlssEnabled || m_isXessEnabled) && !m_resetViewProjHistory) {
-        float viewProjectionDelta = 0.0f;
-        for (uint32_t column = 0u; column < 4u; ++column) {
-            for (uint32_t row = 0u; row < 4u; ++row) {
-                viewProjectionDelta += std::abs(currentViewProj[column][row] - mViewProj.viewProj[column][row]);
-            }
-        }
-        if (viewProjectionDelta > XESS_HISTORY_RESET_VIEW_PROJECTION_DELTA) {
-#if defined(USE_DLSS) && USE_DLSS
-            m_dlssResetHistory = true;
-#endif
-#if defined(USE_XESS) && USE_XESS
-            m_xessResetHistory = true;
-#endif
-        }
-    }
-#endif
     mViewProj.prevViewProj = m_resetViewProjHistory ? currentViewProj : mViewProj.viewProj;
     mViewProj.viewProj = currentViewProj;
     m_resetViewProjHistory = false;
@@ -1234,6 +1218,9 @@ VkSwapchainCreateInfoKHR VulkanRenderer::createSwapChain() {
     _motionVectorsBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
     _motionVectorsBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
     _motionVectorsBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _reactiveMaskBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _reactiveMaskBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
+    _reactiveMaskBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
     _shadingBuffer.colorBufferImage.assign(_swapchainImageCount, VK_NULL_HANDLE);
     _shadingBuffer.colorBufferImageMemory.assign(_swapchainImageCount, VK_NULL_HANDLE);
     _shadingBuffer.colorBufferImageView.assign(_swapchainImageCount, VK_NULL_HANDLE);
@@ -1506,9 +1493,11 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     VkClearValue clearValue{};
     clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
     // no need to clear MotionVector buffer, since we will write to it in the first subpass
-    std::vector<VkClearValue> clearValues(10, clearValue);
+    std::vector<VkClearValue> clearValues(13, clearValue);
     clearValues[7] = VkClearValue{};
     clearValues[7].depthStencil.depth = 1.0f;
+    clearValues[12] = VkClearValue{};
+    clearValues[12].color = {0.0f, 0.0f, 0.0f, 0.0f};
 
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2010,6 +1999,12 @@ void VulkanRenderer::createColorBufferImage() {
         Utils::printLog(ERROR_PARAM, "failed to find supported format!");
     }
 
+    if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R8_UNORM}, VK_IMAGE_TILING_OPTIMAL,
+                                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT,
+                                          _reactiveMaskBuffer.colorFormat)) {
+        Utils::printLog(ERROR_PARAM, "failed to find reactive mask format!");
+    }
+
     auto HDRFormat = VK_FORMAT_UNDEFINED;
     if (!Utils::VulkanFindSupportedFormat(_core.getPhysDevice(), {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT},
                                           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, HDRFormat)) {
@@ -2130,6 +2125,19 @@ void VulkanRenderer::createColorBufferImage() {
 
         Utils::VulkanCreateImageView(_core.getDevice(), _motionVectorsBuffer.colorBufferImage[i], _motionVectorsBuffer.colorFormat,
                                      VK_IMAGE_ASPECT_COLOR_BIT, _motionVectorsBuffer.colorBufferImageView[i]);
+
+        Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
+                     _reactiveMaskBuffer.colorFormat, VK_IMAGE_TILING_OPTIMAL,
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     _reactiveMaskBuffer.colorBufferImage[i], _reactiveMaskBuffer.colorBufferImageMemory[i]);
+        Utils::VulkanCreateImageView(_core.getDevice(), _reactiveMaskBuffer.colorBufferImage[i],
+                         _reactiveMaskBuffer.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT,
+                         _reactiveMaskBuffer.colorBufferImageView[i]);
+        Utils::VulkanTransitionImageLayout(_core.getDevice(), _queue, _cmdBufPool,
+                           _reactiveMaskBuffer.colorBufferImage[i], _reactiveMaskBuffer.colorFormat,
+                           VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                           VK_IMAGE_ASPECT_COLOR_BIT, 1U, 1U);
 
         // SHADING render target
         Utils::VulkanCreateImage(_core.getDevice(), _core.getPhysDevice(), _offscreenWidth, _offscreenHeight,
@@ -3984,6 +3992,11 @@ void VulkanRenderer::createRenderPass() {
     // we continue writting in motion vectors buffer in the next pass (semi transparent objects)
     motionVecAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription reactiveMaskAttachment = colorAttachment;
+    reactiveMaskAttachment.format = _reactiveMaskBuffer.colorFormat;
+    reactiveMaskAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    reactiveMaskAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -3997,6 +4010,9 @@ void VulkanRenderer::createRenderPass() {
     VkAttachmentReference motionVecColorAttachmentRef = colorAttachmentRef;
     motionVecColorAttachmentRef.attachment = 11;
 
+    VkAttachmentReference reactiveMaskColorAttachmentRef = colorAttachmentRef;
+    reactiveMaskColorAttachmentRef.attachment = 12;
+
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 7;  // temporary depth buffer needed only for correct geometry output in g-pass
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -4005,8 +4021,8 @@ void VulkanRenderer::createRenderPass() {
     footPrintAttachmentRef.attachment = 8;  // depthbuf with trails
     footPrintAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL; // Match descriptor expectation
 
-    std::array<VkAttachmentReference, 4> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef,
-                                                         motionVecColorAttachmentRef};
+    std::array<VkAttachmentReference, 5> gPassAttachment{colorAttachmentRef, gPassNormalAttachmentRef, gPassColorAttachmentRef,
+                                                         motionVecColorAttachmentRef, reactiveMaskColorAttachmentRef};
 
     subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpasses[0].colorAttachmentCount = gPassAttachment.size();
@@ -4144,10 +4160,11 @@ void VulkanRenderer::createRenderPass() {
     // that AMD handles incorrectly when the actual layout is SHADER_READ_ONLY_OPTIMAL.
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    std::array<VkAttachmentDescription, 12> renderPassAttachments = {
+    std::array<VkAttachmentDescription, 13> renderPassAttachments = {
         colorAttachment,          gPassNormalAttachment,   gPassColorAttachment,  colorAttachmentSSAO,
         depthSSAOReadyAttachment, shadowMapLoadAttachment, hdrBloomAttachment,    depthTemporaryAttachment,
-        footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment, motionVecAttachment};
+        footPrintLoadAttachment,  colorAttachmentShading,  viewSpacePosAttachment, motionVecAttachment,
+        reactiveMaskAttachment};
 
     // Create info for Render Pass
     VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -4187,19 +4204,27 @@ void VulkanRenderer::createRenderPass() {
     motionVectorsAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     motionVectorsAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription reactiveMaskAttachmentSemiTrans = colorAttachment;
+    reactiveMaskAttachmentSemiTrans.format = _reactiveMaskBuffer.colorFormat;
+    reactiveMaskAttachmentSemiTrans.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    reactiveMaskAttachmentSemiTrans.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    reactiveMaskAttachmentSemiTrans.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference depthAttachmentSemiTransReference{};
     depthAttachmentSemiTransReference.attachment = 3;
     depthAttachmentSemiTransReference.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference motionVectorAttachmentRef{2u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference reactiveMaskAttachmentRef{5u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkAttachmentReference opaqueColorReference{4u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
-    std::array<VkAttachmentReference, 3> oitColorAttachments{};
+    std::array<VkAttachmentReference, 4> oitColorAttachments{};
     oitColorAttachments[0].attachment = 0u;
     oitColorAttachments[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     oitColorAttachments[1].attachment = 1u;
     oitColorAttachments[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     oitColorAttachments[2] = motionVectorAttachmentRef;
+    oitColorAttachments[3] = reactiveMaskAttachmentRef;
     std::array<VkAttachmentReference, 2> oitInputs{};
     oitInputs[0].attachment = 0u;
     oitInputs[0].layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -4210,7 +4235,8 @@ void VulkanRenderer::createRenderPass() {
     // longer shares the OIT accum/revealage buffers with particles (see semi_transparent.frag). It draws
     // directly to the scene color with real depth test+write in its own subpass before the OIT ones, so a
     // particle actually hidden behind it is rejected by the depth test regardless of draw order.
-    std::array<VkAttachmentReference, 2> foliageColorAttachments{opaqueColorReference, motionVectorAttachmentRef};
+    std::array<VkAttachmentReference, 3> foliageColorAttachments{opaqueColorReference, motionVectorAttachmentRef,
+                                                                  reactiveMaskAttachmentRef};
     std::array<VkSubpassDescription, 3> subpassesSemiTrans{};
     // Subpass 0: foliage forward pass, depth-tested and depth-written directly onto the opaque scene color.
     subpassesSemiTrans[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -4233,9 +4259,9 @@ void VulkanRenderer::createRenderPass() {
     opaqueColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     opaqueColorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     opaqueColorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    std::array<VkAttachmentDescription, 5> renderPassAttachmentsSemiTrans = {
+    std::array<VkAttachmentDescription, 6> renderPassAttachmentsSemiTrans = {
         oitAccumAttachment, oitRevealageAttachment, motionVectorsAttachmentSemiTrans, depthAttachmentSemiTrans,
-        opaqueColorAttachment};
+        opaqueColorAttachment, reactiveMaskAttachmentSemiTrans};
 
     std::array<VkSubpassDependency, 5u> dependencySemiTrans{};
     // Make the opaque depth buffer readable before the foliage forward pass performs depth testing.
@@ -4864,7 +4890,7 @@ void VulkanRenderer::createRenderPass() {
 void VulkanRenderer::createFramebuffer() {
     VkResult res;
     for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
-        std::array<VkImageView, 12> attachments = {_colorBuffer.colorBufferImageView[i],
+        std::array<VkImageView, 13> attachments = {_colorBuffer.colorBufferImageView[i],
                                                    _gPassBuffer.normal.colorBufferImageView[i],
                                                    _gPassBuffer.color.colorBufferImageView[i],
                                                    _ssaoBuffer.colorBufferImageView[i],
@@ -4875,7 +4901,8 @@ void VulkanRenderer::createFramebuffer() {
                                                    _footprintBuffer.depthImageView,
                                                    _shadingBuffer.colorBufferImageView[i],
                                                    _viewSpaceBuffer.colorBufferImageView[i],
-                                                   _motionVectorsBuffer.colorBufferImageView[i]};
+                                                   _motionVectorsBuffer.colorBufferImageView[i],
+                                                   _reactiveMaskBuffer.colorBufferImageView[i]};
 
         // The color attachment differs for every swap chain image,
         // but the same depth image can be used by all of them
@@ -4994,9 +5021,10 @@ void VulkanRenderer::createFramebuffer() {
     //-------------------------------------------------------//
     // FBO SEMI-TRANSPARENT OBJECTS
     for (size_t i = 0; i < static_cast<size_t>(_swapchainImageCount); i++) {
-        std::array<VkImageView, 5> attachments = {
+        std::array<VkImageView, 6> attachments = {
             _oitAccumBuffer.colorBufferImageView[i], _oitRevealageBuffer.colorBufferImageView[i],
-            _motionVectorsBuffer.colorBufferImageView[i], _depthBuffer.depthImageView, _colorBuffer.colorBufferImageView[i]};
+            _motionVectorsBuffer.colorBufferImageView[i], _depthBuffer.depthImageView, _colorBuffer.colorBufferImageView[i],
+            _reactiveMaskBuffer.colorBufferImageView[i]};
 
         VkFramebufferCreateInfo fbCreateInfo = {};
         fbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -5368,6 +5396,26 @@ void VulkanRenderer::createDepthResources() {
                                  VK_IMAGE_ASPECT_DEPTH_BIT, _footprintBuffer.depthImageView);
 }
 
+void VulkanRenderer::clearReactiveMask(uint32_t currentImage) {
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _reactiveMaskBuffer.colorBufferImage[currentImage], _reactiveMaskBuffer.colorFormat,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+        1U, 1U, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    const VkClearColorValue reactiveValue{{1.0f, 1.0f, 1.0f, 1.0f}};
+    const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+    vkCmdClearColorImage(_cmdBufs[currentImage], _reactiveMaskBuffer.colorBufferImage[currentImage],
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &reactiveValue, 1U, &range);
+
+    Utils::VulkanImageMemoryBarrier(
+        _cmdBufs[currentImage], _reactiveMaskBuffer.colorBufferImage[currentImage], _reactiveMaskBuffer.colorFormat,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+        1U, 1U, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+}
+
 #if defined(USE_DLSS) && USE_DLSS
 void VulkanRenderer::applyDLSSOptions() {
     if (!_core.isDlssSupported()) {
@@ -5420,6 +5468,14 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
     motionRes.height = _offscreenHeight;
     motionRes.nativeFormat = static_cast<uint32_t>(_motionVectorsBuffer.colorFormat);
 
+    sl::Resource reactiveMaskRes(sl::ResourceType::eTex2d, _reactiveMaskBuffer.colorBufferImage[currentImage],
+                                 _reactiveMaskBuffer.colorBufferImageMemory[currentImage],
+                                 _reactiveMaskBuffer.colorBufferImageView[currentImage],
+                                 static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+    reactiveMaskRes.width = _offscreenWidth;
+    reactiveMaskRes.height = _offscreenHeight;
+    reactiveMaskRes.nativeFormat = static_cast<uint32_t>(_reactiveMaskBuffer.colorFormat);
+
     sl::Resource outputRes(sl::ResourceType::eTex2d, _dlssOutputBuffer.colorBufferImage[currentImage],
                            _dlssOutputBuffer.colorBufferImageMemory[currentImage], _dlssOutputBuffer.colorBufferImageView[currentImage],
                            static_cast<uint32_t>(VK_IMAGE_LAYOUT_GENERAL));
@@ -5431,6 +5487,7 @@ void VulkanRenderer::setDLSSResourceTags(uint32_t currentImage, const sl::FrameT
         {&depthRes, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent},
         {&colorRes, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent},
         {&motionRes, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent},
+        {&reactiveMaskRes, sl::kBufferTypeReactiveMaskHint, sl::ResourceLifecycle::eValidUntilPresent},
         {&outputRes, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilPresent},
     };
 
@@ -5585,6 +5642,9 @@ void VulkanRenderer::evaluateXessPass(uint32_t currentImage) {
                                   _motionVectorsBuffer.colorFormat, _offscreenWidth, _offscreenHeight};
     parameters.depthTexture = {_depthBuffer.depthImageView, _depthBuffer.depthImage, depthRange, _depthBuffer.depthFormat,
                                _offscreenWidth, _offscreenHeight};
+    parameters.responsivePixelMaskTexture = {_reactiveMaskBuffer.colorBufferImageView[currentImage],
+                                             _reactiveMaskBuffer.colorBufferImage[currentImage], colorRange,
+                                             _reactiveMaskBuffer.colorFormat, _offscreenWidth, _offscreenHeight};
     parameters.outputTexture = {_dlssOutputBuffer.colorBufferImageView[currentImage],
                                 _dlssOutputBuffer.colorBufferImage[currentImage], colorRange,
                                 _dlssOutputBuffer.colorFormat, m_uiDisplayWidth, m_uiDisplayHeight};

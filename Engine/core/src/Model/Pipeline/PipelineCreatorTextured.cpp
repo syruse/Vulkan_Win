@@ -8,7 +8,7 @@ void PipelineCreatorTextured::createPipeline() {
     assert(m_vkState._core.getDevice());
 
     auto& blendInfo = Pipeliner::getInstance().getColorBlendInfo();
-    blendInfo.attachmentCount = 4; // + motion vector buffer for dynamic skybox(morphing clouds)
+    blendInfo.attachmentCount = 5; // + motion vectors and reactive mask
 
     // motion vector buffer
     {
@@ -16,6 +16,9 @@ void PipelineCreatorTextured::createPipeline() {
         blendAttachments[3] = blendAttachments[0];
         blendAttachments[3].blendEnable = VK_FALSE;
         blendAttachments[3].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[4] = blendAttachments[0];
+        blendAttachments[4].blendEnable = VK_FALSE;
+        blendAttachments[4].colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
     }
 
     if (m_isTessellated) {

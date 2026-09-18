@@ -10,6 +10,7 @@ layout(location = 2) in vec2 outTexCoordNormalized;
 
 layout(location = 0) out vec4 out_Color; // not used in g-pass
 layout(location = 1) out vec4 out_GPass[2];
+layout(location = 4) out vec4 outReactiveMask;
 
 //Adjacent samples are taken not 1 texel away, but 3 texels away from the center. This means the blur is wider and the edges are softer.
 #define FOOTPRINT_EDGE_SOFTNESS_TEXELS 3.0
@@ -58,4 +59,5 @@ void main() {
   out_GPass[1] = mix(color1, color2, noiseFactor);
   out_GPass[1].rgb = trailsFactor * out_GPass[1].rgb; // fading of the result color where there are trails
   out_GPass[1].a = 1.0;
+  outReactiveMask = vec4(1.0, 0.0, 0.0, 0.0);
 }

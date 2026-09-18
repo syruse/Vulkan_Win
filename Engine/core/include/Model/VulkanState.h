@@ -163,6 +163,7 @@ struct VulkanState {
     ColorBuffer _colorBuffer{};
     ColorBuffer _viewSpaceBuffer{}; // this is for ssao generation
     ColorBuffer _motionVectorsBuffer{};  // this is for DLAA\TAA
+    ColorBuffer _reactiveMaskBuffer{}; // input-resolution mask for DLSS/XeSS temporal rejection
     ColorBuffer _ssaoBuffer{};
     ColorBuffer _shadingBuffer{}; // this final color buffer devoted to shading only (blurring applying for SSAO and blend with current color)
     // accum is summed additively, and revealage is multiplied by (1−α) to achieve order-independent transparency

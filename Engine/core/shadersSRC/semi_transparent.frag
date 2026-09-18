@@ -9,6 +9,7 @@ layout(location = 3) in vec3 inWorldPos;
 
 layout(location = 0) out vec4 out_Color;
 layout(location = 1) out vec2 out_motionVectors;
+layout(location = 2) out vec4 outReactiveMask;
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
@@ -40,4 +41,5 @@ void main() {
     diffColor.a = alpha;
     out_Color = diffColor;
     out_motionVectors = inMotionVector;
+    outReactiveMask = vec4(0.0);
 }

@@ -7,6 +7,7 @@ layout(location = 5) in vec3 inRotateRow1;
 layout(location = 6) in vec3 inRotateRow2;
 layout(location = 0) out vec4 outColor;
 layout(location = 3) out vec2 outMotionVecColor; // 4th attachment in gSubPass
+layout(location = 4) out vec4 outReactiveMask; // reactive mask for procedural clouds and sky
 
 layout(push_constant) uniform PushConstant {
     vec4 windowSize;
@@ -98,5 +99,6 @@ void main() {
     // prevDir = normalize(prevDir);
 	*/
 	
-	outMotionVecColor = inMotionVector;
+    outMotionVecColor = inMotionVector;
+    outReactiveMask = vec4(1.0, 0.0, 0.0, 0.0);
 }

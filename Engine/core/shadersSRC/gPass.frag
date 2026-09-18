@@ -12,6 +12,8 @@ in VS_OUT {
 
 layout(location = 0) out vec4 out_Color; // not used in g-pass
 layout(location = 1) out vec4 out_GPass[2];
+// we keep it unchaged with zero values
+// layout(location = 4) out vec4 outReactiveMask; 
 
 void main() {
   vec3 normal = vec3(0.0, 0.0, 0.0);
@@ -27,4 +29,6 @@ void main() {
   // Normals, pack -1, +1 range to 0, 1.
   out_GPass[0] = vec4(0.5 * normalize(normal) + 0.5, 1.0);
   out_GPass[1] = texture(texSampler, vec3(fs_in.TexCoord, 0.0));
+  // panzers, trees ... are not reactive
+  // outReactiveMask = vec4(0.0, 0.0, 0.0, 0.0);
 }
