@@ -1,6 +1,10 @@
 #pragma once
 
+#if defined(_WIN32)
 #include <Audio.h>
+#else
+#include <SDL.h>
+#endif
 
 #include <array>
 #include <memory>
@@ -9,6 +13,8 @@
 // Centralized DirectXTK (XAudio2) audio wrapper. Owns the AudioEngine and pre-loaded
 // SoundEffect assets used by the game. Runs on the main/game thread — XAudio2 already
 // mixes on its own internal worker thread, so update() only does lightweight bookkeeping.
+
+// Uses DirectXTK on Windows and SDL audio on Unix platforms.
 class AudioManager {
 public:
     enum class Sound {
@@ -44,11 +50,37 @@ public:
 
 private:
     static constexpr size_t kSoundCount = static_cast<size_t>(Sound::Count);
+#if defined(_WIN32)
     static std::wstring_view fileNameFor(Sound sound);
 
     std::unique_ptr<DirectX::AudioEngine> m_engine;
     std::array<std::unique_ptr<DirectX::SoundEffect>, kSoundCount> m_effects;
     std::array<std::unique_ptr<DirectX::SoundEffectInstance>, kSoundCount> m_loopInstances;
+#else
+    static const char* fileNameFor(Sound sound);
+
+    struct Clip {
+        Uint8* data = nullptr;
+        Uint32 length = 0;
+    };
+
+    struct Voice {
+        size_t clip = 0;
+        Uint32 position = 0;
+        float volume = 0.0f;
+        bool looping = false;
+        bool active = false;
+    };
+
+    static void audioCallback(void* userData, Uint8* stream, int length);
+    void mixAudio(Uint8* stream, int length);
+
+    SDL_AudioDeviceID m_audioDevice = 0;
+    SDL_AudioSpec m_audioSpec{};
+    std::array<Clip, kSoundCount> m_clips;
+    std::array<Voice, kSoundCount> m_loopVoices;
+    std::array<Voice, kSoundCount> m_oneShotVoices;
+#endif
     // Current/target volume per loop slot, ramped in update() to fade instead of hard-cutting.
     std::array<float, kSoundCount> m_currentVolume{};
     std::array<float, kSoundCount> m_targetVolume{};

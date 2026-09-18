@@ -7,8 +7,8 @@ VulkanState::VulkanState(std::string_view appName, uint16_t windowWidth, uint16_
       _offscreenHeight(offscreenHeight == 0 ? windowHeight : offscreenHeight),
 #ifdef _WIN32
       _core(std::make_unique<Win32Control>(appName, _windowWidth, _windowHeight))
-#elif __linux__
-      _core(std::make_unique<XCBControl>(appName, _windowWidth, _windowHeight))
+#elif defined(__linux__) || defined(__APPLE__)
+      _core(std::make_unique<UnixSDLControl>(appName, _windowWidth, _windowHeight))
 #else
 /// other OS
 #endif

@@ -19,12 +19,12 @@ void PipelineCreatorFootprint::createPipeline() {
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::pos);
+    attributeDescriptions[0].offset = offsetof(I3DModel::Vertex, pos);
 
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 2;
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::texCoord);
+    attributeDescriptions[1].offset = offsetof(I3DModel::Vertex, texCoord);
 
     attributeDescriptions[2].binding = 1;
     attributeDescriptions[2].location = 5;

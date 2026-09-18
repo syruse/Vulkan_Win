@@ -10,6 +10,15 @@ option(USE_XESS "Use XeSS" ON)
 option(USE_GPGPU_MIPMAP_GEN "Use GPGPU for mipmap generation" ON)
 option(USE_GPGPU_BLOOM_GAUSSIAN_BLUR "Use GPGPU for bloom and Gaussian blur" ON)
 
+if(APPLE)
+	set(USE_CUDA OFF CACHE BOOL "Use CUDA" FORCE)
+	set(USE_FSR OFF CACHE BOOL "Use FSR" FORCE)
+	set(USE_DLSS OFF CACHE BOOL "Use DLSS" FORCE)
+	set(USE_XESS OFF CACHE BOOL "Use XeSS" FORCE)
+	set(USE_GPGPU_MIPMAP_GEN OFF CACHE BOOL "Use GPGPU for mipmap generation" FORCE)
+	set(USE_GPGPU_BLOOM_GAUSSIAN_BLUR OFF CACHE BOOL "Use GPGPU for bloom and Gaussian blur" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG")
@@ -20,10 +29,9 @@ set(CMAKE_SUPPRESS_REGENERATION true)
 #   set( CMAKE_BUILD_TYPE Release )
 #endif()
 
-if(UNIX AND NOT APPLE)
-    set(LINUX TRUE)
+if(UNIX)
     find_package(Vulkan REQUIRED)
-    find_package(SDL2 REQUIRED)
+	find_package(SDL2 CONFIG REQUIRED)
 endif()
 
 #-----------------------------BulletPhysics-------------------------------
@@ -80,7 +88,7 @@ set(IMGUI_SRC
 )
 if(WIN32)
     list(APPEND IMGUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_win32.cpp")
-elseif(LINUX)
+elseif(UNIX)
 	list(APPEND IMGUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../imgui/backends/imgui_impl_sdl2.cpp")
 endif()
 add_library(imgui STATIC ${IMGUI_SRC})
@@ -97,18 +105,33 @@ set(VOLK_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../Volk/volk.c"
 file(GLOB_RECURSE HEADERS "${CMAKE_SOURCE_DIR}/include/*.h")
 file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
+
+if(WIN32)
+	list(FILTER HEADERS EXCLUDE REGEX "/UnixSDLControl\\.h$")
+	list(FILTER SOURCES EXCLUDE REGEX "/UnixSDLControl\\.cpp$")
+elseif(APPLE)
+	list(FILTER HEADERS EXCLUDE REGEX "/Win32Control\\.h$")
+	list(FILTER SOURCES EXCLUDE REGEX "/Win32Control\\.cpp$")
+elseif(UNIX)
+	list(FILTER HEADERS EXCLUDE REGEX "/Win32Control\\.h$")
+	list(FILTER SOURCES EXCLUDE REGEX "/Win32Control\\.cpp$")
+endif()
+
 file(GLOB_RECURSE include_list LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/include")
 #THIRD_PARTY_INCLUDE_DIR contains: glm; stb_image; tiny_obj_loader; vulkan; directInput/sdl
-if(LINUX)
-	set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "${VULKAN_INCLUDE_DIR}/include")
-    target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "${VULKAN_INCLUDE_DIR}/include")
-else(WIN32)
+if(UNIX)
+	set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" ${Vulkan_INCLUDE_DIRS})
+    target_include_directories(imgui PRIVATE ${IMGUI_HEADER} ${Vulkan_INCLUDE_DIRS})
+else()
     set(THIRD_PARTY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../" "$ENV{VULKAN_SDK}/include" "${CMAKE_SOURCE_DIR}/../DirectXTK12/Inc")
     target_include_directories(imgui PRIVATE ${IMGUI_HEADER} "$ENV{VULKAN_SDK}/include")
 endif()
 
 add_executable(${APP_NAME} ${HEADERS} ${SOURCES} ${VOLK_SRC})
 target_include_directories(${APP_NAME} PRIVATE ${include_list} ${THIRD_PARTY_INCLUDE_DIR} ${IMGUI_HEADER} ${VOLK_HEADER} ${BULLET_PHYSICS_HEADER})
+if(APPLE)
+	target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_METAL_EXT)
+endif()
 #enable debug mode for Vulkan by setting VK_DEBUG_ENABLED(deprecated)
 #target_compile_definitions(${APP_NAME} PRIVATE VK_DEBUG_ENABLED=1)
 
@@ -131,9 +154,9 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR}/)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/sounds DESTINATION ${CMAKE_BINARY_DIR}/)
 
-if(LINUX)
+if(UNIX)
 	target_link_libraries(${APP_NAME} SDL2::SDL2) # no need "libvulkan.so.1" anymore
-else(WIN32)
+else()
     #Volk resolves external symbols like vkCreateWin32SurfaceKHR since we don't use "vulkan-1.lib"
     target_compile_definitions(${APP_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 	if(USE_FSR)
@@ -234,7 +257,7 @@ target_link_libraries(${APP_NAME}
     LinearMath
 )
 
-if(LINUX)
+if(UNIX)
 	target_link_libraries(imgui PRIVATE SDL2::SDL2)
 endif()
 

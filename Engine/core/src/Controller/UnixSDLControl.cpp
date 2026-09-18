@@ -1,6 +1,6 @@
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 
-#include "XCBControl.h"
+#include "UnixSDLControl.h"
 
 #include <SDL2/SDL_vulkan.h>
 
@@ -13,7 +13,7 @@
 
 #include "Utils.h"
 
-XCBControl::~XCBControl() {
+UnixSDLControl::~UnixSDLControl() {
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
@@ -24,7 +24,7 @@ XCBControl::~XCBControl() {
     SDL_Quit();
 }
 
-std::string_view XCBControl::getVulkanWindowSurfaceExtension() const {
+std::string_view UnixSDLControl::getVulkanWindowSurfaceExtension() const {
     const char* videoDriver = SDL_GetCurrentVideoDriver();
     if (!videoDriver) {
         return "";
@@ -36,13 +36,18 @@ std::string_view XCBControl::getVulkanWindowSurfaceExtension() const {
     if (std::strcmp(videoDriver, "wayland") == 0) {
         return "VK_KHR_wayland_surface";
     }
+#if defined(__APPLE__)
+    if (std::strcmp(videoDriver, "cocoa") == 0) {
+        return VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+    }
+#endif
 
     Utils::printLog(ERROR_PARAM, "Unsupported SDL video driver for Vulkan surface extension ", videoDriver);
     return "";
 }
 
-void XCBControl::init() {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+void UnixSDLControl::init() {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         Utils::printLog(ERROR_PARAM, "SDL_Init error ", SDL_GetError());
         return;
     }
@@ -67,7 +72,7 @@ void XCBControl::init() {
     Utils::printLog(INFO_PARAM, "SDL window created");
 }
 
-void XCBControl::imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay) {
+void UnixSDLControl::imGuiNewFrame(VkCommandBuffer command_buffer, const std::function<void()>& drawOverlay) {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
@@ -76,7 +81,7 @@ void XCBControl::imGuiNewFrame(VkCommandBuffer command_buffer, const std::functi
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }
 
-VkSurfaceKHR XCBControl::createSurface(VkInstance& inst) const {
+VkSurfaceKHR UnixSDLControl::createSurface(VkInstance& inst) const {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     if (SDL_Vulkan_CreateSurface(m_window, inst, &surface) != SDL_TRUE) {
@@ -87,7 +92,7 @@ VkSurfaceKHR XCBControl::createSurface(VkInstance& inst) const {
     return surface;
 }
 
-IControl::WindowQueueMSG XCBControl::processWindowQueueMSGs() {
+IControl::WindowQueueMSG UnixSDLControl::processWindowQueueMSGs() {
     m_windowQueueMsg.reset();
     m_windowQueueMsg.hmiRenderData = m_isUiVisible;
 

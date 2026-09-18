@@ -1,17 +1,17 @@
 #pragma once
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 
 #include <SDL2/SDL.h>
 #include "IControl.h"
 
-class XCBControl : public IControl {
+class UnixSDLControl : public IControl {
 public:
-    constexpr XCBControl(std::string_view appName, size_t width, size_t height)
+    constexpr UnixSDLControl(std::string_view appName, size_t width, size_t height)
         : IControl(appName, width, height) {
     }
 
-    virtual ~XCBControl();
+    virtual ~UnixSDLControl();
 
     virtual void init() override;
 

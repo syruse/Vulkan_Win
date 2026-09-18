@@ -55,6 +55,30 @@ and ensure that VULKAN_SDK variable is set
 </br>
 <b><i>cmake --target "ALL_BUILD" --config "Release"</i></b>
 </br>
+for MAC OS platform
+</br>
+download and install the official Vulkan SDK
+</br>
+<code>brew install sdl2</code>
+</br>
+<code>git -c submodule.Engine/DirectXTK12.update=none submodule update --init --recursive</code>
+</br>
+<code>source /VulkanSDK/1.4.357.1/setup-env.sh && echo "$VULKAN_SDK"</code>
+</br>
+<code>cmake -S Engine/core -B build-macos -G Xcode</code>
+</br>
+Open the Xcode project:
+</br>
+<code>open build-macos/VulkanGame.xcodeproj</code>
+</br>
+or build from the terminal:
+</br>
+<code>cmake --build build-macos --config Debug</code>
+</br>
+Run the game from the repository root:
+</br>
+<code>./build-macos/Bin/Debug/VulkanGame</code>
+</br>
 for LINUX platform
 </br>
 install sdl2

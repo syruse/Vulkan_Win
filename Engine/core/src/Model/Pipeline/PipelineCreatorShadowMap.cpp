@@ -19,7 +19,7 @@ void PipelineCreatorShadowMap::createPipeline() {
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(I3DModel::Vertex, I3DModel::Vertex::pos);
+    attributeDescriptions[0].offset = offsetof(I3DModel::Vertex, pos);
 
     attributeDescriptions[1].binding = 1;
     attributeDescriptions[1].location = 5;

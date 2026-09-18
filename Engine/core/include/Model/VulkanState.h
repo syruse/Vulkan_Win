@@ -12,10 +12,10 @@
 #ifdef _WIN32
 #include "Win32Control.h"
 /// already included 'windows.h' with own implementations of aligned_alloc...
-#elif __linux__
+#elif defined(__linux__) || defined(__APPLE__)
 #include <stdlib.h>  // aligned_alloc/free
 #include <cstring>   // memcpy
-#include "XCBControl.h"
+#include "UnixSDLControl.h"
 #define _aligned_free free
 #define _aligned_malloc aligned_alloc
 #else

@@ -579,6 +579,10 @@ void VulkanCore::createInstance() {
     finalInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 #endif
     finalInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+#if defined(__APPLE__)
+    finalInstanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    finalInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+#endif
 #if defined(_WIN32) && defined(USE_CUDA) && USE_CUDA
     finalInstanceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
     finalInstanceExtensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME);
@@ -645,6 +649,9 @@ void VulkanCore::createInstance() {
     // Pass the dynamic extensions vector
     instInfo.enabledExtensionCount = static_cast<uint32_t>(finalInstanceExtensions.size());
     instInfo.ppEnabledExtensionNames = finalInstanceExtensions.data();
+#if defined(__APPLE__)
+    instInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
 
     VkResult res = vkCreateInstance(&instInfo, nullptr, &m_inst);
     CHECK_VULKAN_ERROR("vkCreateInstance %d\n", res);
