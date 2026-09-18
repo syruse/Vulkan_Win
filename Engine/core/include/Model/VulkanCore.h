@@ -157,6 +157,10 @@ public:
         return m_isXessSupported;
     }
 
+    bool isRayTracingSupported() const {
+        return m_isRayTracingSupported;
+    }
+
 #if defined(USE_XESS) && USE_XESS
     xess_context_handle_t getXessContext() const {
         return m_xessContext;
@@ -186,6 +190,7 @@ private:
     VkDevice m_device = nullptr;
     bool m_isDlssSupported = false;
     bool m_isXessSupported = false;
+    bool m_isRayTracingSupported = false;
 #if defined(USE_XESS) && USE_XESS
     xess_context_handle_t m_xessContext = nullptr;
 #endif

@@ -60,6 +60,10 @@ SET OptimizationFlag=%PerfOptimizationFlag%
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/ssaoBlur.vert -o shaders/vert_ssaoBlur.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/ssaoBlur.frag -o shaders/frag_ssaoBlur.spv
 
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -std=460 --target-env=vulkan1.2 shadersSRC/rt_shadow.rgen -o shaders/rt_shadow.rgen.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -std=460 --target-env=vulkan1.2 shadersSRC/rt_shadow.rmiss -o shaders/rt_shadow.rmiss.spv
+%VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% -std=460 --target-env=vulkan1.2 shadersSRC/rt_shadow.rchit -o shaders/rt_shadow.rchit.spv
+
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/semi_transparent.vert -o shaders/vert_semi_transparent.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/semi_transparent.frag -o shaders/frag_semi_transparent.spv
 %VULKAN_SDK%/Bin/glslc.exe %OptimizationFlag% shadersSRC/oitResolve.vert -o shaders/vert_oitResolve.spv

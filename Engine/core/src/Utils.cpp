@@ -1059,7 +1059,7 @@ bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vecto
 template <class T>
 void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
                          const std::vector<uint32_t>& indices, const std::vector<T>& vertices, VkDeviceSize& verticesBufferOffset,
-                         VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory) {
+                         VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory, bool rayTracingUsage) {
     /** Note: general buffer keeping both geometry data,
               index buffer is placed first and next to index buffer the vertex buffer placed
     */
@@ -1080,9 +1080,14 @@ void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCom
     memcpy((char*)data + verticesBufferOffset, vertices.data(), verticesSize);
     vkUnmapMemory(device, stagingBufferMemory);
 
+    VkBufferUsageFlags geometryUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (rayTracingUsage) {
+        geometryUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
     Utils::VulkanCreateBuffer(
-        device, physicalDevice, bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        device, physicalDevice, bufferSize, geometryUsage,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, generalBuffer, generalBufferMemory);
 
     Utils::VulkanCopyBuffer(device, queue, cmdBufPool, stagingBuffer, generalBuffer, bufferSize);
@@ -1095,7 +1100,8 @@ template <class T>
 void createGeneral3in1Buffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
                          const std::vector<uint32_t>& indices, const std::vector<T>& vertices,
                          const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
-                         VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory) {
+                         VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory,
+                         bool rayTracingUsage) {
     /** Note: general buffer keeping both geometry data,
               index buffer is placed first and next to index buffer the vertex buffer placed
     */
@@ -1119,9 +1125,14 @@ void createGeneral3in1Buffer(VkDevice device, VkPhysicalDevice physicalDevice, V
     memcpy((char*)data + instancesBufferOffset, (char*)instances.data(), instancesSize);
     vkUnmapMemory(device, stagingBufferMemory);
 
+    VkBufferUsageFlags geometryUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (rayTracingUsage) {
+        geometryUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
     Utils::VulkanCreateBuffer(
-        device, physicalDevice, bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        device, physicalDevice, bufferSize, geometryUsage,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, generalBuffer, generalBufferMemory);
 
     Utils::VulkanCopyBuffer(device, queue, cmdBufPool, stagingBuffer, generalBuffer, bufferSize);
@@ -1135,21 +1146,22 @@ template void createGeneralBuffer<I3DModel::Vertex>(VkDevice device, VkPhysicalD
                                                     VkQueue queue, const std::vector<uint32_t>& indices,
                                                     const std::vector<I3DModel::Vertex>& vertices,
                                                     VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
-                                                    VkDeviceMemory& generalBufferMemory);
+                                                    VkDeviceMemory& generalBufferMemory, bool rayTracingUsage);
 template void createGeneral3in1Buffer<I3DModel::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
                                                     VkQueue queue, const std::vector<uint32_t>& indices,
                                                     const std::vector<I3DModel::Vertex>& vertices,
                                                     const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
                                                     VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer,
-                                                    VkDeviceMemory& generalBufferMemory);
+                                                    VkDeviceMemory& generalBufferMemory, bool rayTracingUsage);
 template void createGeneral3in1Buffer<Skybox::Vertex>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
                                                     VkQueue queue, const std::vector<uint32_t>& indices, const std::vector<Skybox::Vertex>& vertices,
                                                     const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
-                                                    VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
+                                                    VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory,
+                                                    bool rayTracingUsage);
 template void createGeneralBuffer<Particle::Instance>(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool,
                                                       VkQueue queue, const std::vector<uint32_t>& indices,
                                                       const std::vector<Particle::Instance>& vertices,
                                                       VkDeviceSize& verticesBufferOffset, VkBuffer& generalBuffer,
-                                                      VkDeviceMemory& generalBufferMemory);
+                                                      VkDeviceMemory& generalBufferMemory, bool rayTracingUsage);
 
 }  // namespace Utils

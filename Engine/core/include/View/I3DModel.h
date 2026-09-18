@@ -220,6 +220,18 @@ public:
         return m_radius;
     }
 
+    VkBuffer geometryBuffer() const {
+        return m_generalBuffer;
+    }
+
+    VkDeviceSize geometryVertexOffset() const {
+        return m_verticesBufferOffset;
+    }
+
+    uint32_t geometryIndexCount() const {
+        return m_indexCount;
+    }
+
     /** Note: 
     *   - param 'viewProj', 'camPos' and 'z_far'
     *   are actual for models with many instances
@@ -263,6 +275,7 @@ protected:
     VulkanState::Model m_modelMtrx{glm::mat4(1.0f)};
     VkDeviceSize m_verticesBufferOffset{0U};
     VkDeviceSize m_instancesBufferOffset{0U};
+    uint32_t m_indexCount{0U};
     VkBuffer m_generalBuffer{nullptr};
     VkDeviceMemory m_generalBufferMemory{nullptr};
     std::vector<Instance> m_instances{};

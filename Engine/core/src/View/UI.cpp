@@ -111,6 +111,15 @@ const UI::States& UI::updateAndDraw(const std::function<void()>& drawOverlay) {
         }
         ImGui::PopID();
     }
+    ImGui::TextUnformatted("Ray traced shadows");
+    ImGui::SameLine(300.0f);
+    mStates.rayTracedShadowsChanged = false;
+    if (!mRayTracingSupported) ImGui::BeginDisabled();
+    if (drawToggle("rayTracedShadows", mStates.rayTracedShadowsEnabled.second)) {
+        mStates.rayTracedShadowsEnabled.second = !mStates.rayTracedShadowsEnabled.second;
+        mStates.rayTracedShadowsChanged = true;
+    }
+    if (!mRayTracingSupported) ImGui::EndDisabled();
     ImGui::TextUnformatted("Foliage");
     ImGui::SameLine(300.0f);
     mStates.foliageQualityChanged = false;

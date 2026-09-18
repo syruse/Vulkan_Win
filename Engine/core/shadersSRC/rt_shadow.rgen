@@ -1,0 +1,52 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
+layout(set = 0, binding = 1, r32f) uniform image2D shadowOutput;
+layout(set = 0, binding = 2) uniform sampler2D viewPosition;
+layout(set = 0, binding = 3) uniform sampler2D normalTexture;
+
+layout(location = 0) rayPayloadEXT float visibility;
+
+layout(push_constant) uniform ShadowConstants {
+    vec4 lightDirection;
+    vec4 imageSize;
+} constants;
+
+uint hash(uint value) {
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+float random01(uvec2 pixel, uint sampleIndex) {
+    return float(hash(pixel.x + 0x9e3779b9u * pixel.y + sampleIndex)) / 4294967295.0;
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    const ivec2 size = ivec2(gl_LaunchSizeEXT.xy);
+    const vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    const vec3 position = texture(viewPosition, uv).xyz;
+    const vec3 normal = normalize(texture(normalTexture, uv).xyz * 2.0 - 1.0);
+    const vec3 direction = normalize(-constants.lightDirection.xyz);
+    const float originOffset = 0.05;
+    const float rayLength = constants.lightDirection.w;
+    float visible = 0.0;
+
+    for (uint sampleIndex = 0u; sampleIndex < 3u; ++sampleIndex) {
+        const vec2 jitter = vec2(random01(uvec2(pixel), sampleIndex),
+                                 random01(uvec2(pixel), sampleIndex + 3u)) - 0.5;
+        const vec3 rayDirection = normalize(direction + vec3(jitter * 0.002, 0.0));
+        visibility = 1.0;
+        traceRayEXT(topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+                    0xff, 0, 0, 0, position + normal * originOffset, 0.0,
+                    rayDirection, rayLength, 0);
+        visible += visibility;
+    }
+
+    imageStore(shadowOutput, pixel, vec4(visible / 3.0));
+}

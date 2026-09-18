@@ -152,13 +152,14 @@ bool VulkanFindSupportedFormat(VkPhysicalDevice physicalDevice, const std::vecto
 template <class T>
 void createGeneralBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
                          const std::vector<uint32_t>& indices, const std::vector<T>& vertices, VkDeviceSize& verticesBufferOffset,
-                         VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
+                         VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory, bool rayTracingUsage = false);
 
 template <class T>
 void createGeneral3in1Buffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool cmdBufPool, VkQueue queue,
                          const std::vector<uint32_t>& indices, const std::vector<T>& vertices,
                          const std::vector<Instance>& instances, VkDeviceSize& verticesBufferOffset,
-                         VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory);
+                         VkDeviceSize& instancesBufferOffset, VkBuffer& generalBuffer, VkDeviceMemory& generalBufferMemory,
+                         bool rayTracingUsage = false);
 }  // namespace Utils
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))

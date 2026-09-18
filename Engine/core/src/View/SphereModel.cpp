@@ -89,7 +89,9 @@ void SphereModel::init(bool useTransferQueue) {
     }
 
     Utils::createGeneralBuffer(pDevice, m_vkState._core.getPhysDevice(), cmdBufPool, queue, indices,
-                               vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory);
+                               vertices, m_verticesBufferOffset, m_generalBuffer, m_generalBufferMemory,
+                               m_vkState._core.isRayTracingSupported());
+    m_indexCount = static_cast<uint32_t>(indices.size());
     if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
         Utils::VulkanReleaseBufferOwnership(pDevice, queue, cmdBufPool, m_generalBuffer,
                                             m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());

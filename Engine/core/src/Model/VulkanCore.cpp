@@ -1,4 +1,5 @@
 #include "VulkanCore.h"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <cwchar>
@@ -701,6 +702,49 @@ void VulkanCore::createLogicalDevice() {
     VkDeviceCreateInfo devInfo = {};
     std::vector<const char*> finalExtensions;
 
+    // RT is optional. Enable the complete dependency set only when the selected
+    // adapter exposes every feature required by BLAS/TLAS and ray tracing pipelines.
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES};
+    VkPhysicalDeviceFeatures2 rayTracingFeatureQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    bufferDeviceAddressFeatures.pNext = &accelerationStructureFeatures;
+    accelerationStructureFeatures.pNext = &rayTracingPipelineFeatures;
+    rayTracingFeatureQuery.pNext = &bufferDeviceAddressFeatures;
+    vkGetPhysicalDeviceFeatures2(getPhysDevice(), &rayTracingFeatureQuery);
+
+    uint32_t extensionCount = 0u;
+    std::vector<VkExtensionProperties> extensions;
+    vkEnumerateDeviceExtensionProperties(getPhysDevice(), nullptr, &extensionCount, nullptr);
+    extensions.resize(extensionCount);
+    vkEnumerateDeviceExtensionProperties(getPhysDevice(), nullptr, &extensionCount, extensions.data());
+    const auto hasExtension = [&extensions](const char* name) {
+        return std::any_of(extensions.begin(), extensions.end(), [name](const VkExtensionProperties& extension) {
+            return std::strcmp(extension.extensionName, name) == 0;
+        });
+    };
+    const bool hasRayTracingExtensions =
+        hasExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) &&
+        hasExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) &&
+        hasExtension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) &&
+        hasExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    const bool hasRayTracingFeatures = bufferDeviceAddressFeatures.bufferDeviceAddress == VK_TRUE &&
+                                       accelerationStructureFeatures.accelerationStructure == VK_TRUE &&
+                                       rayTracingPipelineFeatures.rayTracingPipeline == VK_TRUE;
+    const bool enableRayTracing = hasRayTracingExtensions && hasRayTracingFeatures;
+    if (enableRayTracing) {
+        finalExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        finalExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+        finalExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        finalExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        Utils::printLog(INFO_PARAM, "Vulkan ray tracing extensions and features are available");
+    } else {
+        Utils::printLog(INFO_PARAM, "Vulkan ray tracing is unavailable on the selected adapter");
+    }
+
     // Base extensions
     finalExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
@@ -806,6 +850,15 @@ void VulkanCore::createLogicalDevice() {
     deviceFeatures.features.dualSrcBlend = VK_TRUE;      // for VK_BLEND_FACTOR_SRC1_ALPHA
     deviceFeatures.features.independentBlend = VK_TRUE;  // allow different blend state for motion-vector attachment
 
+    if (enableRayTracing) {
+        // Reuse the queried feature values in the device-create chain. The
+        // existing Vulkan 1.3 -> Vulkan 1.2 chain remains intact behind RT.
+        rayTracingPipelineFeatures.pNext = &accelerationStructureFeatures;
+        accelerationStructureFeatures.pNext = &bufferDeviceAddressFeatures;
+        bufferDeviceAddressFeatures.pNext = deviceFeatures.pNext;
+        deviceFeatures.pNext = &rayTracingPipelineFeatures;
+    }
+
 #if defined(USE_XESS) && USE_XESS
     void* xessFeatureChain = &deviceFeatures;
     const xess_result_t xessFeaturesResult =
@@ -832,6 +885,8 @@ void VulkanCore::createLogicalDevice() {
     VkResult res = vkCreateDevice(getPhysDevice(), &devInfo, nullptr, &m_device);
 
     CHECK_VULKAN_ERROR("vkCreateDevice error %d\n", res);
+
+    m_isRayTracingSupported = enableRayTracing;
 
     // Load device-level function pointers for extension/device commands.
     volkLoadDevice(m_device);

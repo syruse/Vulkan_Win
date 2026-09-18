@@ -50,7 +50,8 @@ void Skybox::init(bool useTransferQueue) {
 
 	Utils::createGeneral3in1Buffer(p_devide, m_vkState._core.getPhysDevice(), cmdBufPool, queue, _indices,
                                    _vertices, m_instances, m_verticesBufferOffset, m_instancesBufferOffset, m_generalBuffer,
-                                   m_generalBufferMemory);
+								   m_generalBufferMemory, m_vkState._core.isRayTracingSupported());
+	m_indexCount = static_cast<uint32_t>(_indices.size());
 	if (useTransferQueue && m_vkState._core.hasDedicatedTransferQueue()) {
 		Utils::VulkanReleaseBufferOwnership(p_devide, queue, cmdBufPool, m_generalBuffer,
 											m_vkState._core.getTransferQueueFamily(), m_vkState._core.getQueueFamily());

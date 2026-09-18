@@ -1353,6 +1353,7 @@ void VulkanRenderer::recordCommandBuffers(uint32_t currentImage, bool hmiRenderD
     _core.getWinController()->setWelcome(modelsReady && !m_gameStarted);
     _core.getWinController()->setShowMenu(hmiRenderData);
     _core.getWinController()->setUpscalerSupport(_core.isDlssSupported(), _core.isXessSupported());
+    _core.getWinController()->setRayTracingSupport(false);
     const bool hasCudaAnimationSupport = !m_semiTransparentModels.empty() &&
         static_cast<MD5Model*>(m_semiTransparentModels[0].get())->hasCudaAnimationSupport();
     _core.getWinController()->setGpuAnimationSupport(hasCudaAnimationSupport);
@@ -3311,9 +3312,17 @@ bool VulkanRenderer::renderScene() {
         return ret_status;
     }
 
+    if (windowQueueMSG.hmiStates && windowQueueMSG.hmiStates->rayTracedShadowsChanged) {
+        auto* hmiStates = const_cast<UI::States*>(windowQueueMSG.hmiStates);
+        hmiStates->rayTracedShadowsChanged = false;
+        hmiStates->rayTracedShadowsEnabled.second = false;
+        Utils::printLog(INFO_PARAM, "Ray traced shadows are unavailable: Vulkan RT backend is not initialized");
+    }
+
     if (windowQueueMSG.hmiStates) {
         _pushConstant.renderOptions.x = windowQueueMSG.hmiStates->ssaoEnabled.second ? 1u : 0u;
         _pushConstant.renderOptions.z = static_cast<uint32_t>(windowQueueMSG.hmiStates->shadowQuality);
+        _pushConstant.renderOptions.w = 0u;
     }
     _pushConstant.renderOptions.y = (m_isDlssEnabled && _core.isDlssSupported()) ? 1u : 0u;
 

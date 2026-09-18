@@ -87,6 +87,10 @@ public:
         mUi.setUpscalerSupport(dlssSupported, xessSupported);
     }
 
+    void setRayTracingSupport(bool supported) {
+        mUi.setRayTracingSupport(supported);
+    }
+
     void setGpuAnimationSupport(bool supported) {
         mUi.setGpuAnimationSupport(supported);
     }

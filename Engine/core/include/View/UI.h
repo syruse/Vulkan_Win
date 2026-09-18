@@ -37,6 +37,8 @@ public:
         bool foliageQualityChanged = false;
         ShadowQuality shadowQuality = ShadowQuality::Minimum;
         bool shadowQualityChanged = false;
+        std::pair<const char*, bool> rayTracedShadowsEnabled{"Ray traced shadows", false};
+        bool rayTracedShadowsChanged = false;
         std::pair<const char*, bool> ssaoEnabled{"SSAO", false};
         bool resolutionChanged = false;
         int16_t nextWidth = kResolutions[kDefaultResolutionIdx].width;
@@ -73,6 +75,13 @@ public:
         mXessSupported = xessSupported;
     }
 
+    void setRayTracingSupport(bool supported) {
+        mRayTracingSupported = supported;
+        if (!supported) {
+            mStates.rayTracedShadowsEnabled.second = false;
+        }
+    }
+
     // Enable GPU animation by default when support becomes available, without overriding the user's toggle afterward.
     void setGpuAnimationSupport(bool supported) {
         const bool supportBecameAvailable = supported && !mGpuAnimationSupported;
@@ -103,6 +112,7 @@ private:
     bool mShowMenu = true;
     bool mDlssSupported = false;
     bool mXessSupported = false;
+    bool mRayTracingSupported = false;
     bool mGpuAnimationSupported = false;
     float mHealth = 1.0f;
     float mReloadProgress = 1.0f;
